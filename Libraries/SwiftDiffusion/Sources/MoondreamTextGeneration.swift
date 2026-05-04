@@ -135,16 +135,9 @@ extension MoondreamTextGeneration {
         (cachedTokenLength: 0, tokenLength: seqLen), inputs: inputEmb,
         [costhetaTensorGPU, sinthetaTensorGPU, causalAttentionMaskGPU] + currentKvs)[0].as(
           of: T.self)
-      var nextToken = out.rawValue.toCPU()
-      var topV = nextToken[0, 0]
-      var topK = 0
-      for i in 1..<51_200 {
-        if nextToken[0, i] > topV {
-          topV = nextToken[0, i]
-          topK = i
-        }
-      }
-      var ids = [Int32(topK)]
+      let top1 = Functional.argmax(out, axis: 1)
+      var topK = top1.rawValue.toCPU()[0, 0]
+      var ids = [topK]
       causalAttentionMask = graph.variable(.CPU, .NHWC(1, 1, 1, 1025), of: T.self)
       causalAttentionMask.full(0)
       causalAttentionMaskGPU = causalAttentionMask.toGPU(0)
@@ -162,7 +155,7 @@ extension MoondreamTextGeneration {
       }
       for _ in 0..<maxTokens {
         let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [1], of: Int32.self)
-        tokensTensor[0] = Int32(topK)
+        tokensTensor[0] = topK
         let inputEmb = Functional.indexSelect(input: textEmbedding, index: tokensTensor.toGPU(0))
         costhetaTensor = graph.variable(.CPU, .NHWC(1, 1, 1, 16), of: Float.self)
         sinthetaTensor = graph.variable(.CPU, .NHWC(1, 1, 1, 16), of: Float.self)
@@ -187,17 +180,10 @@ extension MoondreamTextGeneration {
           (cachedTokenLength: cachedTokenLength, tokenLength: 1), inputs: inputEmb,
           [costhetaTensorGPU, sinthetaTensorGPU, causalAttentionMaskGPU] + currentKvs
         )[0].as(of: T.self)
-        nextToken = out.rawValue.toCPU()
-        topV = nextToken[0, 0]
-        topK = 0
-        for i in 1..<51_200 {
-          if nextToken[0, i] > topV {
-            topK = i
-            topV = nextToken[0, i]
-          }
-        }
-        ids.append(Int32(topK))
-        output += tokenizer.decode([Int32(topK)])
+        let top1 = Functional.argmax(out, axis: 1)
+        topK = top1.rawValue.toCPU()[0, 0]
+        ids.append(topK)
+        output += tokenizer.decode([topK])
         if output.hasSuffix(eos) {
           output = String(output.dropLast(eos.count))
           break
