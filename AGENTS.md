@@ -59,6 +59,12 @@
 - Do not introduce `DispatchQueue`, `DispatchGroup`, or `DispatchSemaphore` in utility functions to simulate sync/async behavior unless absolutely necessary.
 - Keep utility functions thread-agnostic and leave threading/queue decisions to upper-level call sites.
 
+## Inline Logic vs Helpers
+- Prefer in-place logic for small, local behavior changes, especially in UI workflows and short persistence paths.
+- Do not introduce one-off private helpers for a few lines of straightforward code unless the logic is reused or the extracted name captures a real domain concept.
+- Good helper candidates are shared policy, non-trivial data transformation, or logic reused across multiple call sites.
+- Poor helper candidates are short project-dictionary reads/writes, one-off alert assembly, or tiny control-flow wrappers added during opportunistic cleanup.
+
 ## Swift Error Style
 - Do not introduce new `NSError` values in Swift-first code paths.
 - Prefer dedicated `enum Error` / `LocalizedError` types, including small file-local enums for one-off errors.
