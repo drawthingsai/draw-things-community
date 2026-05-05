@@ -1,3 +1,4 @@
+import LLM
 import NNC
 
 public struct ImageEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {

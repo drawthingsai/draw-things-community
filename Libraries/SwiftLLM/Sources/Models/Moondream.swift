@@ -51,7 +51,7 @@ private func SigLIPResidualAttentionBlock(
   return Model([x], [out])
 }
 
-func SigLIPVisionTransformer<T: TensorNumeric & BinaryFloatingPoint>(
+public func SigLIPVisionTransformer<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type, gridX: Int, gridY: Int, filterSize: Int, width: Int, layers: Int, heads: Int,
   MLP: Int, batchSize: Int, usesFlashAttention: Bool, approximate: GELU.Approximate
 ) -> Model {

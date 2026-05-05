@@ -39,6 +39,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":Mappings",
+        "//Libraries/SwiftLLM",
         "//Libraries/Tokenizer",
         "//Libraries/WeightsCache",
         "//Vendors/ZIPFoundation",

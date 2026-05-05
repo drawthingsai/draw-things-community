@@ -36,6 +36,7 @@ Libraries/MediaGenerationKit/
 Libraries/SFMT
 Libraries/Scripting
 Libraries/SwiftDiffusion
+Libraries/SwiftLLM
 Libraries/WeightsCache
 Libraries/Tokenizer
 Libraries/Trainer

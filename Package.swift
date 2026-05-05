@@ -99,9 +99,19 @@ let package = Package(
       path: "Libraries/SwiftDiffusion/Sources/Mappings"
     ),
     .target(
+      name: "LLM",
+      dependencies: [
+        "Tokenizer",
+        .product(name: "ccv", package: "ccv"),
+        .product(name: "NNC", package: "s4nnc"),
+      ],
+      path: "Libraries/SwiftLLM/Sources"
+    ),
+    .target(
       name: "Diffusion",
       dependencies: [
         "DiffusionMappings",
+        "LLM",
         "Tokenizer",
         "WeightsCache",
         "ZIPFoundation",
