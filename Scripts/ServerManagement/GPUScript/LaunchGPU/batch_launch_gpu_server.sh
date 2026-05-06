@@ -19,6 +19,7 @@ set -e
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCH_SCRIPT="${SCRIPT_DIR}/launch_gpu_server.sh"
+LORA_CLEANUP_TIMER="${LORA_CLEANUP_TIMER:-drawthings-lora-cleanup.timer}"
 
 # Initialize flags
 DRY_RUN=false
@@ -125,6 +126,16 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
     echo "  LoRA models path: $LORA_MODELS_PATH"
     echo "  Extra flags: ${EXTRA_FLAGS:-none}"
     echo ""
+
+    if [ "$DRY_RUN" != true ]; then
+        TIMER_STATE=$(ssh "$REMOTE_HOST" "systemctl is-enabled --quiet '$LORA_CLEANUP_TIMER' && systemctl is-active --quiet '$LORA_CLEANUP_TIMER' && echo ok || echo warning" 2>/dev/null || echo warning)
+        if [ "$TIMER_STATE" = "ok" ]; then
+            echo "LoRA cleanup timer: ok ($LORA_CLEANUP_TIMER)"
+        else
+            echo "Warning: LoRA cleanup timer is not enabled/active on $REMOTE_HOST ($LORA_CLEANUP_TIMER)"
+        fi
+        echo ""
+    fi
 
     # Build command
     CMD="$LAUNCH_SCRIPT $REMOTE_HOST $MODELS_PATH $UTILS_PATH $LORA_MODELS_PATH"
