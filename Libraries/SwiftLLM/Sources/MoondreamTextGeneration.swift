@@ -153,6 +153,12 @@ extension MoondreamTextGeneration {
         output = Self.removePartialEOS(output, eos: eos)
         return (output, phi, embedding)
       }
+      graph.joined()
+      let queueWatermark = DynamicGraph.queueWatermark
+      DynamicGraph.queueWatermark = queueWatermark * 16 // Expanding queue watermark to support longer generation.
+      defer {
+        DynamicGraph.queueWatermark = queueWatermark
+      }
       for _ in 0..<maxTokens {
         let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [1], of: Int32.self)
         tokensTensor[0] = topK

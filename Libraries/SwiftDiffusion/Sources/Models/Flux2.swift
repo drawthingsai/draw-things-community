@@ -156,7 +156,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, scaleFactor: Fl
   } else {
     out = w3(x)
   }
-  out = out .* w1(x).swish()
+  out = Functional.swishMul(value: out, gate: w1(x))
   let w2 = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
   out = w2(out)
   if let _ = scaleFactor {
@@ -1071,7 +1071,7 @@ private func LoRAFeedForward(
   } else {
     out = w3(x)
   }
-  out = out .* w1(x).swish()
+  out = Functional.swishMul(value: out, gate: w1(x))
   let w2 = LoRADense(
     count: hiddenSize, configuration: configuration, noBias: true, index: index,
     name: "\(name)_down_proj")

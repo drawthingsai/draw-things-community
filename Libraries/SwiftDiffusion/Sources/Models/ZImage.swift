@@ -121,17 +121,21 @@ private func FeedForward(
   let w1 = Dense(
     count: intermediateSize, noBias: true, flags: [.Float16], name: "\(name)_gate_proj")
   let w3 = Dense(count: intermediateSize, noBias: true, name: "\(name)_up_proj")
-  var gate = w1(x)
-  if scaleFactor.projUp > 1 {
-    gate = gate.swish(beta: Float(scaleFactor.projUp))
-  } else {
-    gate = gate.swish()
-  }
+  let gate = w1(x)
   var out = w3(x)
-  if scaleFactor.projDown != scaleFactor.projUp {
-    out = (Float(scaleFactor.projUp) / Float(scaleFactor.projDown)) * out
+  if scaleFactor.projUp > 1 {
+    if scaleFactor.projDown != scaleFactor.projUp {
+      out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp), scale: Float(scaleFactor.projUp) / Float(scaleFactor.projDown))
+    } else {
+      out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp))
+    }
+  } else {
+    if scaleFactor.projDown > 1 {
+      out = Functional.swishMul(value: out, gate: gate, scale: 1 / Float(scaleFactor.projDown))
+    } else {
+      out = Functional.swishMul(value: out, gate: gate)
+    }
   }
-  out = out .* gate
   let w2 = Dense(count: hiddenSize, noBias: true, name: "\(name)_down_proj")
   out = w2(out).to(.Float32)
   return (w1, w2, w3, Model([x], [out], name: name))
@@ -838,17 +842,21 @@ private func LoRAFeedForward(
   let w3 = LoRADense(
     count: intermediateSize, configuration: configuration, noBias: true, prefix: name, index: index,
     name: "\(name)_up_proj")
-  var gate = w1(x)
-  if scaleFactor.projUp > 1 {
-    gate = gate.swish(beta: Float(scaleFactor.projUp))
-  } else {
-    gate = gate.swish()
-  }
+  let gate = w1(x)
   var out = w3(x)
-  if scaleFactor.projDown != scaleFactor.projUp {
-    out = (Float(scaleFactor.projUp) / Float(scaleFactor.projDown)) * out
+  if scaleFactor.projUp > 1 {
+    if scaleFactor.projDown != scaleFactor.projUp {
+      out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp), scale: Float(scaleFactor.projUp) / Float(scaleFactor.projDown))
+    } else {
+      out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp))
+    }
+  } else {
+    if scaleFactor.projDown > 1 {
+      out = Functional.swishMul(value: out, gate: gate, scale: 1 / Float(scaleFactor.projDown))
+    } else {
+      out = Functional.swishMul(value: out, gate: gate)
+    }
   }
-  out = out .* gate
   let w2 = LoRADense(
     count: hiddenSize, configuration: configuration, noBias: true, prefix: name, index: index,
     name: "\(name)_down_proj")

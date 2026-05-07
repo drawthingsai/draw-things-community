@@ -83,7 +83,7 @@ private func FeedForward(hiddenSize: Int, intermediateSize: Int, upcast: Bool, n
   let x = Input()
   let w1 = Dense(count: intermediateSize, noBias: true, flags: [.Float16], name: "\(name)_w1")
   let w3 = Dense(count: intermediateSize, noBias: true, flags: [.Float16], name: "\(name)_w3")
-  var out = w1(x).swish() .* w3(x)
+  var out = Functional.swishMul(value: w3(x), gate: w1(x))
   // The scale down is integrated into out proj bias.
   if upcast {
     let scaleFactor: Float = 4
@@ -764,7 +764,7 @@ private func LoRAFeedForward(
     count: intermediateSize, configuration: configuration, noBias: true, flags: [.Float16],
     index: index,
     name: "\(name)_w3")
-  var out = w1(x).swish() .* w3(x)
+  var out = Functional.swishMul(value: w3(x), gate: w1(x))
   // The scale down is integrated into out proj bias.
   if upcast {
     let scaleFactor: Float = 4
