@@ -33,6 +33,7 @@ Libraries/Invocation
 Libraries/ModelOp
 Libraries/ModelZoo
 Libraries/MediaGenerationKit/
+Libraries/WebSearch
 Libraries/SFMT
 Libraries/Scripting
 Libraries/SwiftDiffusion
@@ -45,6 +46,7 @@ Libraries/Utils
 Scripts/
 Tools/
 Vendors/ZIPFoundation
+Vendors/SwiftSoup
 WORKSPACE.linux
 WORKSPACE.darwin
 SYNCLIST
