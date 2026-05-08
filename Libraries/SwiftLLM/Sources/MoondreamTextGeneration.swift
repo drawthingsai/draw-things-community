@@ -155,7 +155,7 @@ extension MoondreamTextGeneration {
       }
       graph.joined()
       let queueWatermark = DynamicGraph.queueWatermark
-      DynamicGraph.queueWatermark = queueWatermark * 16 // Expanding queue watermark to support longer generation.
+      DynamicGraph.queueWatermark = queueWatermark * 8  // Expanding queue watermark to support longer generation.
       defer {
         DynamicGraph.queueWatermark = queueWatermark
       }

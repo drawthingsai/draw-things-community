@@ -69,7 +69,7 @@ extension BLIP2Encode {
           filePaths[1], flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: filePaths[1])
         ) {
-          $0.read("query_tokens", variable: queryTokens)
+          $0.read("query_tokens", variable: queryTokens, codec: [.q8p, .ezm7, .externalData])
           $0.read("qformer", model: qformer, codec: [.q8p, .ezm7, .externalData])
         }
       }

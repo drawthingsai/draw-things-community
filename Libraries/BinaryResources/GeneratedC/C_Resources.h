@@ -11,6 +11,7 @@
 #include "merges_mistral3_generated.h"
 #include "merges_qwen2.5_generated.h"
 #include "merges_qwen3_generated.h"
+#include "merges_qwen3.5_generated.h"
 #include "pile_t5.spiece_generated.h"
 #include "root_ca_generated.h"
 #include "server_crt_generated.h"
@@ -23,6 +24,7 @@
 #include "vocab_mistral3_generated.h"
 #include "vocab_qwen2.5_generated.h"
 #include "vocab_qwen3_generated.h"
+#include "vocab_qwen3.5_generated.h"
 #include "xlmroberta.bpe_generated.h"
 
 #endif // C_RESOURCES_H

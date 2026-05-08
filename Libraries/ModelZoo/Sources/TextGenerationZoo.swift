@@ -19,6 +19,7 @@ public struct TextGenerationZoo: DownloadZoo {
       "5d4da3537d241b67a808f656594e7386d258f216954ba2d5bac74b2e48a751d8",
     "moondream2_240520_q6p.ckpt":
       "135034a0734021d22df9bc66bc4e0f6cb0f9da2e316c303e34c62133a693143e",
+    "qwen_3.5_4b_i8x.ckpt": "89ddd8bce0d05661c7c4d8cda4393fed01cc78535d1f4a4a984b7816a655d732",
   ]
 
   static let builtinSpecifications: [Specification] = [
@@ -30,6 +31,7 @@ public struct TextGenerationZoo: DownloadZoo {
     Specification(name: "Phi Moondream2 FT (6-bit)", file: "moondream2_q6p.ckpt"),
     Specification(name: "SigLIP (Moondream2/20240520) (8-bit)", file: "siglip_384_240520_q8p.ckpt"),
     Specification(name: "Phi Moondream2/20240520 FT (6-bit)", file: "moondream2_240520_q6p.ckpt"),
+    Specification(name: "Qwen 3.5 4B VL (8-bit S)", file: "qwen_3.5_4b_i8x.ckpt"),
   ]
 
   private static var specificationMapping: [String: Specification] = {
