@@ -28,7 +28,7 @@ public struct Qwen3_5GenerationTiming: Sendable {
   }
 }
 
-public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
+public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoint> {
   let filePath: String
   public let configuration: Qwen3_5ModelConfiguration
   public let eosTokenIds: Set<Int32>
@@ -65,7 +65,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let decoder: ModelBuilder<(cachedTokenLength: Int, tokenLength: Int)> = ModelBuilder {
           (tokenLengths: (cachedTokenLength: Int, tokenLength: Int), _) in
           Qwen3_5CausalLM(
-            T.self, tokenLength: tokenLengths.tokenLength,
+            FloatType.self, tokenLength: tokenLengths.tokenLength,
             cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
             includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding)
         }
@@ -75,7 +75,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let prefillAttentionInputs: [DynamicGraph.AnyTensor]
         if hasFullAttentionLayer {
           let rotary = Qwen3_5RotaryEmbedding(
-            sequenceLength: promptTokenIds.count, configuration: configuration, of: Float16.self)
+            sequenceLength: promptTokenIds.count, configuration: configuration, of: FloatType.self)
           prefillAttentionInputs = [graph.variable(rotary.toGPU(0))]
         } else {
           prefillAttentionInputs = []
@@ -84,11 +84,11 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
           caches, currentTokenLength: promptTokenIds.count, configuration: configuration)
         let maxDecodeCachedTokenLength = cacheCapacity - 1
         let decodeRotaryLength = max(maxTokens - 1, 0)
-        let decodeRotaryGPU: DynamicGraph.Tensor<Float16>?
+        let decodeRotaryGPU: DynamicGraph.Tensor<FloatType>?
         if maxTokens > 1 && hasFullAttentionLayer {
           let rotary = Qwen3_5RotaryEmbedding(
             sequenceLength: decodeRotaryLength, cachedTokenLength: promptTokenIds.count,
-            configuration: configuration, of: Float16.self)
+            configuration: configuration, of: FloatType.self)
           decodeRotaryGPU = graph.variable(rotary.toGPU(0))
         } else {
           decodeRotaryGPU = nil
@@ -97,7 +97,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         if maxTokens > 1 && hasFullAttentionLayer {
           let decodeCompileRotary = Qwen3_5RotaryEmbedding(
             sequenceLength: 1, cachedTokenLength: maxDecodeCachedTokenLength,
-            configuration: configuration, of: Float16.self)
+            configuration: configuration, of: FloatType.self)
           decodeCompileAttentionInputs = [graph.variable(decodeCompileRotary.toGPU(0))]
         } else {
           decodeCompileAttentionInputs = []
@@ -125,7 +125,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
             prefillAttentionInputs + prefillCacheInputs)
           Self.updateLinearCaches(
             &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
-          let logits = prefillOutputs[0].as(of: T.self)
+          let logits = prefillOutputs[0].as(of: FloatType.self)
           // On macOS 26.4.1, native FP16/BF16 MPSGraph argmax was unreliable on Qwen vocab-sized logits.
           let prefillTokenGPU = Functional.argmax(
             DynamicGraph.Tensor<Float>(from: logits), axis: 1
@@ -190,7 +190,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
                   oneAttentionInputs + cacheInputs)
                 Self.updateLinearCaches(
                   &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
-                let logits = decodeOutputs[0].as(of: T.self)
+                let logits = decodeOutputs[0].as(of: FloatType.self)
                 // On macOS 26.4.1, native FP16/BF16 MPSGraph argmax was unreliable on Qwen vocab-sized logits.
                 nextTokenGPU = Functional.argmax(
                   DynamicGraph.Tensor<Float>(from: logits), axis: 1
@@ -250,7 +250,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let decoder: ModelBuilder<(cachedTokenLength: Int, tokenLength: Int)> = ModelBuilder {
           (tokenLengths: (cachedTokenLength: Int, tokenLength: Int), _) in
           Qwen3_5CausalLM(
-            T.self, tokenLength: tokenLengths.tokenLength,
+            FloatType.self, tokenLength: tokenLengths.tokenLength,
             cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
             includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding)
         }
@@ -265,7 +265,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
           let attentionInputs: [DynamicGraph.AnyTensor]
           if hasFullAttentionLayer {
             let rotary = Qwen3_5RotaryEmbedding(
-              sequenceLength: tokenLength, configuration: configuration, of: Float16.self)
+              sequenceLength: tokenLength, configuration: configuration, of: FloatType.self)
             attentionInputs = [graph.variable(rotary.toGPU(0))]
           } else {
             attentionInputs = []
@@ -357,7 +357,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
           graph: graph, capacity: cacheCapacity, configuration: configuration)
 
         let rotary = Qwen3_5VisionRotaryEmbedding(
-          gridThw: imageGridThw, configuration: visionConfiguration, of: Float16.self)
+          gridThw: imageGridThw, configuration: visionConfiguration, of: FloatType.self)
         let sequenceOffsets = Qwen3_5VisionSequenceOffsets(gridThw: imageGridThw).offsets
         let rotaryGPU = graph.variable(rotary.toGPU(0))
         let sequenceOffsetsGPU = graph.variable(sequenceOffsets.toGPU(0))
@@ -392,7 +392,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let imageEmbeds = visionModel(
           inputs: patchesGPU, positionGPU, rotaryGPU, sequenceOffsetsGPU
         )[0].as(of: Float.self)
-        let imageEmbedsTyped = DynamicGraph.Tensor<T>(from: imageEmbeds)
+        let imageEmbedsTyped = DynamicGraph.Tensor<FloatType>(from: imageEmbeds)
 
         let promptTokens = graph.variable(
           Tensor<Int32>(promptTokenIds, .CPU, .C(promptTokenIds.count)).toGPU(0))
@@ -401,9 +401,9 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         for tokenPosition in imageTokenPositions {
           tokenMask[Int(tokenPosition), 0] = 0
         }
-        let tokenMaskGPU = graph.variable(Tensor<T>(from: tokenMask).toGPU(0))
+        let tokenMaskGPU = graph.variable(Tensor<FloatType>(from: tokenMask).toGPU(0))
         var injectedEmbeddings = graph.variable(
-          .GPU(0), .WC(promptTokenIds.count, configuration.hiddenSize), of: T.self)
+          .GPU(0), .WC(promptTokenIds.count, configuration.hiddenSize), of: FloatType.self)
         injectedEmbeddings.full(0)
         for (imageIndex, tokenPosition) in imageTokenPositions.enumerated() {
           injectedEmbeddings[
@@ -417,7 +417,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let decoder: ModelBuilder<(cachedTokenLength: Int, tokenLength: Int)> = ModelBuilder {
           (tokenLengths: (cachedTokenLength: Int, tokenLength: Int), _) in
           Qwen3_5CausalLM(
-            T.self, tokenLength: tokenLengths.tokenLength,
+            FloatType.self, tokenLength: tokenLengths.tokenLength,
             cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
             includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding,
             injectEmbeddings: true)
@@ -431,7 +431,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let prefillAttentionInputs: [DynamicGraph.AnyTensor]
         if hasFullAttentionLayer {
           let prefillRotary = Qwen3_5RotaryEmbedding(
-            positionIDs: positionIDs, configuration: configuration, of: Float16.self)
+            positionIDs: positionIDs, configuration: configuration, of: FloatType.self)
           prefillAttentionInputs = [graph.variable(prefillRotary.toGPU(0))]
         } else {
           prefillAttentionInputs = []
@@ -458,8 +458,8 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
             [tokenMaskGPU, injectedEmbeddings] + prefillAttentionInputs + prefillCacheInputs)
           Self.updateLinearCaches(
             &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
-          let logits = prefillOutputs[0].as(of: T.self)
-          let token = Functional.argmax(DynamicGraph.Tensor<Float>(from: logits), axis: 1).toCPU()
+          let logits = prefillOutputs[0].as(of: FloatType.self)
+          let token = Functional.argmax(logits, axis: 1).toCPU()
           logits.graph.joined()
           nextTokenFromPrefill = Int32(token[0, 0])
           prefillOutputs.removeAll(keepingCapacity: false)
@@ -477,16 +477,16 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let maxDecodeCachedTokenLength = cacheCapacity - 1
         let decodeCompileToken = graph.variable(Tensor<Int32>([nextToken], .CPU, .C(1)).toGPU(0))
         let decodeTokenMask = graph.variable(
-          Tensor<T>(from: Tensor<Float>([1], .CPU, .WC(1, 1))).toGPU(0))
+          Tensor<FloatType>(from: Tensor<Float>([1], .CPU, .WC(1, 1))).toGPU(0))
         let decodeInjectedEmbeddings = graph.variable(
-          .GPU(0), .WC(1, configuration.hiddenSize), of: T.self)
+          .GPU(0), .WC(1, configuration.hiddenSize), of: FloatType.self)
         decodeInjectedEmbeddings.full(0)
         var decodeCompileAttentionInputs = [DynamicGraph.AnyTensor]()
         if hasFullAttentionLayer {
           let decodeCompileRotary = Qwen3_5RotaryEmbedding(
             sequenceLength: 1,
             cachedTokenLength: maxDecodeCachedTokenLength + decodePositionOffset,
-            configuration: configuration, of: Float16.self)
+            configuration: configuration, of: FloatType.self)
           decodeCompileAttentionInputs = [graph.variable(decodeCompileRotary.toGPU(0))]
         }
         let decodeCompileCacheInputs = Self.cacheInputs(
@@ -507,7 +507,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         let rotaryEmbeddingForMaxTokens = graph.variable(
           Qwen3_5RotaryEmbedding(
             sequenceLength: maxTokens, cachedTokenLength: cachedTokenLength + decodePositionOffset,
-            configuration: configuration, of: T.self
+            configuration: configuration, of: FloatType.self
           ).toGPU(0))
         for i in 1..<maxTokens {
           let cachedTokenLength = promptTokenIds.count + generated.count - 1
@@ -527,7 +527,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
               [decodeTokenMask, decodeInjectedEmbeddings] + oneAttentionInputs + cacheInputs)
             Self.updateLinearCaches(
               &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
-            let logits = decodeOutputs[0].as(of: T.self)
+            let logits = decodeOutputs[0].as(of: FloatType.self)
             nextTokenGPU = Functional.argmax(logits, axis: 1).reshaped(.C(1))
             decodeOutputs.removeAll(keepingCapacity: false)
           }
@@ -551,9 +551,9 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
     for layerIndex in 0..<configuration.layers {
       if configuration.isLinearAttentionLayer(layerIndex) {
         let convState = graph.variable(
-          Tensor<T>(
+          Tensor<FloatType>(
             Array(
-              repeating: T.zero,
+              repeating: FloatType.zero,
               count: (configuration.linearConvKernel - 1) * configuration.linearConvDim),
             .CPU,
             .NHWC(1, configuration.linearConvKernel - 1, 1, configuration.linearConvDim)
@@ -572,17 +572,17 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         caches.append(contentsOf: [convState, recurrentState])
       } else {
         let k = graph.variable(
-          Tensor<T>(
+          Tensor<FloatType>(
             Array(
-              repeating: T.zero,
+              repeating: FloatType.zero,
               count: capacity * configuration.keyValueHeads * configuration.attentionHeadDim),
             .CPU,
             .NHWC(1, capacity, configuration.keyValueHeads, configuration.attentionHeadDim)
           ).toGPU(0))
         let v = graph.variable(
-          Tensor<T>(
+          Tensor<FloatType>(
             Array(
-              repeating: T.zero,
+              repeating: FloatType.zero,
               count: capacity * configuration.keyValueHeads * configuration.attentionHeadDim),
             .CPU,
             .NHWC(1, capacity, configuration.keyValueHeads, configuration.attentionHeadDim)
@@ -605,11 +605,11 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
         result.append(caches[cursor + 1])
       } else {
         result.append(
-          caches[cursor].as(of: T.self).reshaped(
+          caches[cursor].as(of: FloatType.self).reshaped(
             .NHWC(
               1, currentTokenLength, configuration.keyValueHeads, configuration.attentionHeadDim)))
         result.append(
-          caches[cursor + 1].as(of: T.self).reshaped(
+          caches[cursor + 1].as(of: FloatType.self).reshaped(
             .NHWC(
               1, currentTokenLength, configuration.keyValueHeads, configuration.attentionHeadDim)))
       }
@@ -626,9 +626,9 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
     var outputCursor = outputOffset
     for layerIndex in 0..<configuration.layers {
       if configuration.isLinearAttentionLayer(layerIndex) {
-        let convState = outputs[outputCursor].as(of: T.self)
+        let convState = outputs[outputCursor].as(of: FloatType.self)
         let recurrentState = outputs[outputCursor + 1].as(of: Float.self)
-        var convStateCache = caches[cacheCursor].as(of: T.self)
+        var convStateCache = caches[cacheCursor].as(of: FloatType.self)
         var recurrentStateCache = caches[cacheCursor + 1].as(of: Float.self)
         convStateCache[
           0..<1, 0..<(configuration.linearConvKernel - 1), 0..<1, 0..<configuration.linearConvDim
@@ -649,7 +649,7 @@ public struct Qwen3_5TextGeneration<T: TensorNumeric & BinaryFloatingPoint> {
     var cursor = 0
     for layerIndex in 0..<configuration.layers {
       if configuration.isLinearAttentionLayer(layerIndex) {
-        caches[cursor].as(of: T.self).full(0)
+        caches[cursor].as(of: FloatType.self).full(0)
         caches[cursor + 1].as(of: Float.self).full(0)
       }
       cursor += 2
