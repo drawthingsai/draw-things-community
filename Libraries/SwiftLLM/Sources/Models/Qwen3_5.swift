@@ -177,9 +177,9 @@ private func Qwen3_5FullAttention(
   return Model([x, rotary, kIn, vIn], [out])
 }
 
-private func Qwen3_5LinearAttention(
+private func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
   prefix: String, configuration: Qwen3_5ModelConfiguration, batchSize: Int, tokenLength: Int,
-  x: Model.IO, convState: Model.IO, recurrentState: Model.IO
+  x: Model.IO, convState: Model.IO, recurrentState: Model.IO, of: FloatType.Type = FloatType.self
 ) -> [Model.IO] {
   precondition(batchSize == 1)
   let keyHeads = configuration.linearNumKeyHeads
@@ -200,7 +200,7 @@ private func Qwen3_5LinearAttention(
     name: "\(prefix).linear_attn.in_proj_a")
   let aScale = Parameter<Float>(
     .GPU(0), .C(valueHeads), initBound: 0, name: "\(prefix).linear_attn.A_log")
-  let dtBias = Parameter<Float16>(
+  let dtBias = Parameter<FloatType>(
     .GPU(0), .C(valueHeads), initBound: 0, name: "\(prefix).linear_attn.dt_bias")
   let mixedQKV = inProjQKV(x).reshaped([batchSize, tokenLength, 1, convDim])
   let convStateLength = configuration.linearConvKernel - 1
@@ -322,7 +322,7 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
       let linearOut = Qwen3_5LinearAttention(
         prefix: prefix, configuration: configuration, batchSize: batchSize,
         tokenLength: tokenLength, x: norm1Out, convState: convState,
-        recurrentState: recurrentState)
+        recurrentState: recurrentState, of: dataType)
       let afterMixer = linearOut[0].to(of: residual) + residual
       let post = Qwen3_5DecoderPost(
         prefix: prefix, x: afterMixer, configuration: configuration)
