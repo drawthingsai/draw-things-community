@@ -539,6 +539,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             }
           }
         }
+        graph.joined()
         return generated
       }
     }
