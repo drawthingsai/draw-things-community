@@ -521,16 +521,13 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let cacheInputs = Self.cacheInputs(
             caches, currentTokenLength: cachedTokenLength + 1, configuration: configuration)
           let oldDecodedTokenCPU = nextTokenGPU.toCPU()
-          do {
-            var decodeOutputs = decoder(
-              (cachedTokenLength: cachedTokenLength, tokenLength: 1), inputs: nextTokenGPU,
-              [decodeTokenMask, decodeInjectedEmbeddings] + oneAttentionInputs + cacheInputs)
-            Self.updateLinearCaches(
-              &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
-            let logits = decodeOutputs[0].as(of: FloatType.self)
-            nextTokenGPU = Functional.argmax(logits, axis: 1).reshaped(.C(1))
-            decodeOutputs.removeAll(keepingCapacity: false)
-          }
+          let decodeOutputs = decoder(
+            (cachedTokenLength: cachedTokenLength, tokenLength: 1), inputs: nextTokenGPU,
+            [decodeTokenMask, decodeInjectedEmbeddings] + oneAttentionInputs + cacheInputs)
+          Self.updateLinearCaches(
+            &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
+          let logits = decodeOutputs[0].as(of: FloatType.self)
+          nextTokenGPU = Functional.argmax(logits, axis: 1).reshaped(.C(1))
           if i > 1 {
             let decodedToken = oldDecodedTokenCPU[0]
             generated.append(decodedToken)

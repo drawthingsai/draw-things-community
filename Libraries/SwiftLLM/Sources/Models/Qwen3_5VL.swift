@@ -418,11 +418,11 @@ private func Qwen3_5VisionAttention(
   let toqueries = Dense(count: hiddenSize, flags: [.Float16], name: "\(prefix).attn.q_proj")
   let tokeys = Dense(count: hiddenSize, flags: [], name: "\(prefix).attn.k_proj")
   let tovalues = Dense(count: hiddenSize, flags: [], name: "\(prefix).attn.v_proj")
-  var queries = toqueries(x).to(of: x).reshaped([1, tokenLength, heads, headDim])
-  var keys = tokeys(x).to(of: x).reshaped([1, tokenLength, heads, headDim])
-  let values = tovalues(x).to(of: x).reshaped([1, tokenLength, heads, headDim])
-  queries = Functional.cmul(left: queries, right: rotary).to(of: queries)
-  keys = Functional.cmul(left: keys, right: rotary).to(of: keys)
+  var queries = toqueries(x).reshaped([1, tokenLength, heads, headDim])
+  var keys = tokeys(x).reshaped([1, tokenLength, heads, headDim])
+  let values = tovalues(x).reshaped([1, tokenLength, heads, headDim]).to(.BFloat16)
+  queries = Functional.cmul(left: queries, right: rotary).to(.BFloat16)
+  keys = Functional.cmul(left: keys, right: rotary).to(.BFloat16)
   let attentionOut = ScaledDotProductAttention(
     scale: 1.0 / Float(headDim).squareRoot(), isVariableLength: true,
     maxSequenceLength: (query: maxSequenceLength, keyValue: maxSequenceLength),
@@ -431,7 +431,7 @@ private func Qwen3_5VisionAttention(
     tokenLength, hiddenSize,
   ])
   let outProj = Dense(count: hiddenSize, flags: [], name: "\(prefix).attn.proj")
-  let out = outProj(attentionOut).to(of: x)
+  let out = outProj(attentionOut.to(of: x))
   return out
 }
 
@@ -445,14 +445,14 @@ private func Qwen3_5VisionBlock(
     prefix: prefix, configuration: configuration, tokenLength: tokenLength,
     maxSequenceLength: maxSequenceLength, x: norm1(x), rotary: rotary,
     sequenceOffsets: sequenceOffsets)
-  var out = x + attention.to(of: x)
+  var out = x + attention
   let norm2 = LayerNorm(
     epsilon: configuration.layerNormEpsilon, axis: [1], name: "\(prefix).norm2")
   let mlpInput = norm2(out)
   let fc1 = Dense(
     count: configuration.intermediateSize, flags: [.Float16], name: "\(prefix).mlp.linear_fc1")
   let fc2 = Dense(count: configuration.hiddenSize, flags: [], name: "\(prefix).mlp.linear_fc2")
-  out = out + fc2(fc1(mlpInput).GELU(approximate: .tanh)).to(of: out)
+  out = out + fc2(fc1(mlpInput).GELU(approximate: .tanh))
   return out
 }
 
@@ -471,14 +471,13 @@ private func Qwen3_5VisionMerger<T: TensorNumeric>(
     count: configuration.mergedHiddenSize, flags: [.Float16], name: "model.visual.merger.linear_fc1")
   let mergerFc2 = Dense(
     count: configuration.outputHiddenSize, flags: [], name: "model.visual.merger.linear_fc2")
-  let out = mergerFc2(mergerFc1(normOut).GELU()).to(T.dataType)
+  let out = mergerFc2(mergerFc1(normOut).GELU())
   return (normOut, out)
 }
 
 public func Qwen3_5VisionTransformer<T: TensorNumeric>(
   _ dataType: T.Type, gridThw: [(t: Int, h: Int, w: Int)],
-  configuration: Qwen3_5VisionConfiguration = .qwen3_5_4B,
-  outputHiddenStates: Bool = false
+  configuration: Qwen3_5VisionConfiguration
 ) -> Model {
   let tokenLength = gridThw.reduce(0) { $0 + $1.t * $1.h * $1.w }
   let maxSequenceLength = Qwen3_5VisionSequenceOffsets(gridThw: gridThw).maxSequenceLength
@@ -488,32 +487,17 @@ public func Qwen3_5VisionTransformer<T: TensorNumeric>(
   let sequenceOffsets = Input()
   let patchEmbed = Dense(
     count: configuration.hiddenSize, name: "model.visual.patch_embed.proj")
-  var out = patchEmbed(patches).to(T.dataType)
-  var outputs = [Model.IO]()
-  if outputHiddenStates {
-    outputs.append(out.copied())
-  }
+  var out = patchEmbed(patches)
   out = out + positionEmbedding.to(T.dataType)
-  if outputHiddenStates {
-    outputs.append(out.copied())
-  }
   for i in 0..<configuration.layers {
     let block = Qwen3_5VisionBlock(
       prefix: "model.visual.blocks.\(i)", configuration: configuration, tokenLength: tokenLength,
       maxSequenceLength: maxSequenceLength, x: out, rotary: rotary,
       sequenceOffsets: sequenceOffsets)
     out = block
-    if outputHiddenStates {
-      outputs.append(out.copied())
-    }
   }
   let merger = Qwen3_5VisionMerger(
     T.self, tokenLength: tokenLength, configuration: configuration, x: out)
-  out = merger.normOut
-  if outputHiddenStates {
-    outputs.append(out.copied())
-  }
   out = merger.out
-  outputs.append(out)
-  return Model([patches, positionEmbedding, rotary, sequenceOffsets], outputs)
+  return Model([patches, positionEmbedding, rotary, sequenceOffsets], [out])
 }
