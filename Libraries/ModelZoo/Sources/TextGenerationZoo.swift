@@ -19,7 +19,7 @@ public struct TextGenerationZoo: DownloadZoo {
       "5d4da3537d241b67a808f656594e7386d258f216954ba2d5bac74b2e48a751d8",
     "moondream2_240520_q6p.ckpt":
       "135034a0734021d22df9bc66bc4e0f6cb0f9da2e316c303e34c62133a693143e",
-    "qwen_3.5_4b_i8x.ckpt": "89ddd8bce0d05661c7c4d8cda4393fed01cc78535d1f4a4a984b7816a655d732",
+    "qwen_3.5_4b_i8x.ckpt": "9e07b480a4e093d1d304ee59a625fc3169a53dc3a597d17f69a2dc167958ee9c",
   ]
 
   static let builtinSpecifications: [Specification] = [
