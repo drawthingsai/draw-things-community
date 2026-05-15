@@ -83,16 +83,6 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         let prefillCacheInputs = Self.cacheInputs(
           caches, currentTokenLength: promptTokenIds.count, configuration: configuration)
         let maxDecodeCachedTokenLength = cacheCapacity - 1
-        let decodeRotaryLength = max(maxTokens - 1, 0)
-        let decodeRotaryGPU: DynamicGraph.Tensor<FloatType>?
-        if maxTokens > 1 && hasFullAttentionLayer {
-          let rotary = Qwen3_5RotaryEmbedding(
-            sequenceLength: decodeRotaryLength, cachedTokenLength: promptTokenIds.count,
-            configuration: configuration, of: FloatType.self)
-          decodeRotaryGPU = graph.variable(rotary.toGPU(0))
-        } else {
-          decodeRotaryGPU = nil
-        }
         let decodeCompileAttentionInputs: [DynamicGraph.AnyTensor]
         if maxTokens > 1 && hasFullAttentionLayer {
           let decodeCompileRotary = Qwen3_5RotaryEmbedding(
@@ -126,17 +116,15 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           Self.updateLinearCaches(
             &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
           let logits = prefillOutputs[0].as(of: FloatType.self)
-          // On macOS 26.4.1, native FP16/BF16 MPSGraph argmax was unreliable on Qwen vocab-sized logits.
-          let prefillTokenGPU = Functional.argmax(
-            DynamicGraph.Tensor<Float>(from: logits), axis: 1
-          ).reshaped(.C(1))
-          let prefillTokenCPU = prefillTokenGPU.toCPU()
+          let prefillTokenTensor = Functional.argmax(logits, axis: 1).reshaped(.C(1))
+          let prefillTokenCPU = prefillTokenTensor.toCPU()
           graph.joined()
           prefillMilliseconds = (Date.timeIntervalSinceReferenceDate - prefillStart) * 1_000
           prefillOutputs.removeAll(keepingCapacity: false)
           let prefillToken = Int32(prefillTokenCPU[0])
           var generated = [prefillToken]
-          if eosTokenIds.contains(prefillToken) {
+          let shouldContinueAfterPrefill = partialHandler(generated)
+          if eosTokenIds.contains(prefillToken) || !shouldContinueAfterPrefill {
             timingHandler?(
               Qwen3_5GenerationTiming(
                 loadAndCompileMilliseconds: loadAndCompileMilliseconds,
@@ -144,10 +132,11 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 decodeCompileMilliseconds: 0,
                 decodeLoopMilliseconds: 0,
                 decodeLoopTokens: 0))
-            _ = partialHandler(generated)
             return generated
           }
-          var nextTokenGPU = prefillTokenGPU
+          let decodeCompileToken = graph.variable(
+            Tensor<Int32>([prefillToken], .CPU, .C(1)).toGPU(0))
+          var nextTokenGPU = graph.variable(Tensor<Int32>([prefillToken], .CPU, .C(1)).toGPU(0))
           var decodeCompileMilliseconds = 0.0
           var decodeLoopMilliseconds = 0.0
           var decodeLoopTokens = 0
@@ -155,7 +144,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             let decodeCompileCacheInputs = Self.cacheInputs(
               caches, currentTokenLength: cacheCapacity, configuration: configuration)
             let decodeCompileInputs: [DynamicGraph.AnyTensor] =
-              [nextTokenGPU] + decodeCompileAttentionInputs + decodeCompileCacheInputs
+              [decodeCompileToken] + decodeCompileAttentionInputs + decodeCompileCacheInputs
             let decodeCompileStart = Date.timeIntervalSinceReferenceDate
             decoder.compile(
               (cachedTokenLength: maxDecodeCachedTokenLength, tokenLength: 1),
@@ -167,41 +156,52 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             DynamicGraph.queueWatermark = queueWatermark * 8
             defer { DynamicGraph.queueWatermark = queueWatermark }
             let decodeLoopStart = Date.timeIntervalSinceReferenceDate
+            let cachedTokenLength = promptTokenIds.count + generated.count - 1
+            let rotaryEmbeddingForMaxTokens: DynamicGraph.Tensor<FloatType>?
+            if hasFullAttentionLayer {
+              rotaryEmbeddingForMaxTokens = graph.variable(
+                Qwen3_5RotaryEmbedding(
+                  sequenceLength: maxTokens, cachedTokenLength: cachedTokenLength,
+                  configuration: configuration, of: FloatType.self
+                ).toGPU(0))
+            } else {
+              rotaryEmbeddingForMaxTokens = nil
+            }
             var shouldAppendPendingToken = true
             for decodeIndex in 0..<(maxTokens - 1) {
               let cachedTokenLength = promptTokenIds.count + decodeIndex
               var oneAttentionInputs = [DynamicGraph.AnyTensor]()
-              if let decodeRotaryGPU = decodeRotaryGPU {
-                oneAttentionInputs.append(
-                  decodeRotaryGPU.reshaped(
-                    .NHWC(1, 1, 1, configuration.attentionHeadDim),
-                    offset: [0, decodeIndex, 0, 0],
-                    strides: [
-                      decodeRotaryLength * configuration.attentionHeadDim,
-                      configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
-                    ]))
+              if let rotaryEmbeddingForMaxTokens = rotaryEmbeddingForMaxTokens {
+                let oneRotary = rotaryEmbeddingForMaxTokens.reshaped(
+                  format: .NHWC, shape: [1, 1, 1, configuration.attentionHeadDim],
+                  offset: [0, 0, decodeIndex, 0],
+                  strides: [
+                    configuration.attentionHeadDim, configuration.attentionHeadDim,
+                    configuration.attentionHeadDim, 1,
+                  ])
+                oneAttentionInputs = [oneRotary.copied()]
               }
               let cacheInputs = Self.cacheInputs(
                 caches, currentTokenLength: cachedTokenLength + 1, configuration: configuration)
               let oldDecodedTokenCPU = nextTokenGPU.toCPU()
               do {
-                var decodeOutputs = decoder(
+                let decodeOutputs = decoder(
                   (cachedTokenLength: cachedTokenLength, tokenLength: 1), inputs: nextTokenGPU,
                   oneAttentionInputs + cacheInputs)
                 Self.updateLinearCaches(
                   &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
                 let logits = decodeOutputs[0].as(of: FloatType.self)
-                // On macOS 26.4.1, native FP16/BF16 MPSGraph argmax was unreliable on Qwen vocab-sized logits.
-                nextTokenGPU = Functional.argmax(
-                  DynamicGraph.Tensor<Float>(from: logits), axis: 1
-                ).reshaped(.C(1))
-                decodeOutputs.removeAll(keepingCapacity: false)
+                nextTokenGPU = Functional.argmax(logits, axis: 1).reshaped(.C(1))
               }
               decodeLoopTokens += 1
               if decodeIndex > 0 {
-                let decodedToken = Int32(oldDecodedTokenCPU[0])
+                let decodedToken = oldDecodedTokenCPU[0]
                 generated.append(decodedToken)
                 if eosTokenIds.contains(decodedToken) {
+                  shouldAppendPendingToken = false
+                  break
+                }
+                if !partialHandler(generated) {
                   shouldAppendPendingToken = false
                   break
                 }
@@ -210,7 +210,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             if shouldAppendPendingToken && generated.count < maxTokens {
               let finalTokenCPU = nextTokenGPU.toCPU()
               graph.joined()
-              let decodedToken = Int32(finalTokenCPU[0])
+              let decodedToken = finalTokenCPU[0]
               generated.append(decodedToken)
             } else {
               graph.joined()

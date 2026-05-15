@@ -164,8 +164,7 @@ private func Qwen3_5FullAttention(
       offset: [0, cachedTokenLength, 0, 0],
       strides: [totalTokenLength * keyValueHeads * headDim, keyValueHeads * headDim, headDim, 1]))
   var out = ScaledDotProductAttention(
-    scale: 1.0 / Float(headDim).squareRoot(), isCausal: true,
-    flags: tokenLength > 1 ? [.Int8, .Float16] : [.Float16])(
+    scale: 1.0 / Float(headDim).squareRoot(), isCausal: true, flags: [.Float16])(
       queries, kIn, vIn
     )
   out.add(dependencies: [kOut, vOut])
