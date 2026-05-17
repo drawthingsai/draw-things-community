@@ -101,8 +101,12 @@ public func Qwen3_5RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoin
 
 private func Qwen3_5FullAttention(
   prefix: String, configuration: Qwen3_5ModelConfiguration, batchSize: Int,
-  tokenLength: Int, cachedTokenLength: Int, lastTokenOnly: Bool
+  tokenLength: Int, cachedTokenLength: Int, lastNumberOfTokens: Int?
 ) -> Model {
+  if let lastNumberOfTokens = lastNumberOfTokens {
+    precondition(lastNumberOfTokens >= 0)
+    precondition(lastNumberOfTokens <= tokenLength)
+  }
   let x = Input()
   let rotary = Input()
   let kIn = Input()
@@ -121,18 +125,28 @@ private func Qwen3_5FullAttention(
   let tovalues = Dense(
     count: keyValueHeads * headDim, noBias: true, name: "\(prefix).self_attn.v_proj")
   let queriesIn: Model.IO
-  let queriesLength: Int
-  if lastTokenOnly {
-    queriesIn = x.reshaped(
-      [1, configuration.hiddenSize], offset: [tokenLength - 1, 0],
-      strides: [configuration.hiddenSize, 1])
-    queriesLength = 1
+  if let lastNumberOfTokens = lastNumberOfTokens {
+    if lastNumberOfTokens == 0 {
+      queriesIn = x.reshaped([0])
+    } else {
+      queriesIn = x.reshaped(
+        [lastNumberOfTokens, configuration.hiddenSize],
+        offset: [tokenLength - lastNumberOfTokens, 0],
+        strides: [configuration.hiddenSize, 1])
+    }
   } else {
     queriesIn = x
-    queriesLength = tokenLength
   }
-  var queries = toqueries(queriesIn).reshaped([batchSize, queriesLength, heads, headDim])
-  let gate = toqueryGates(queriesIn).reshaped([batchSize * queriesLength, queryDim])
+  let queriesLength = lastNumberOfTokens ?? tokenLength
+  var queries = toqueries(queriesIn)
+  var gate = toqueryGates(queriesIn)
+  if queriesLength > 0 {
+    queries = queries.reshaped([batchSize, queriesLength, heads, headDim])
+    gate = gate.reshaped([batchSize * queriesLength, queryDim])
+  } else {
+    queries = queries.reshaped([0])
+    gate = gate.reshaped([0])
+  }
   var keys = tokeys(x).reshaped([
     batchSize, tokenLength, keyValueHeads, headDim,
   ])
@@ -143,12 +157,17 @@ private func Qwen3_5FullAttention(
   queries = qNorm(queries)
   let kNorm = RMSNorm(epsilon: 1e-6, axis: [3], name: "\(prefix).self_attn.k_norm")
   keys = kNorm(keys)
-  if lastTokenOnly {
-    queries = Functional.cmul(
-      left: queries,
-      right: rotary.reshaped(
-        [1, 1, 1, headDim], offset: [0, tokenLength - 1, 0, 0],
-        strides: [tokenLength * headDim, headDim, headDim, 1]))
+  if let lastNumberOfTokens = lastNumberOfTokens {
+    if lastNumberOfTokens > 0 {
+      queries = Functional.cmul(
+        left: queries,
+        right: rotary.reshaped(
+          [1, lastNumberOfTokens, 1, headDim],
+          offset: [0, tokenLength - lastNumberOfTokens, 0, 0],
+          strides: [tokenLength * headDim, headDim, headDim, 1]))
+    } else {
+      queries = Functional.cmul(left: queries, right: rotary.reshaped([0]))
+    }
   } else {
     queries = Functional.cmul(left: queries, right: rotary)
   }
@@ -283,8 +302,11 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
   _ dataType: T.Type, tokenLength: Int, cachedTokenLength: Int = 0,
   configuration: Qwen3_5ModelConfiguration, batchSize: Int = 1,
   outputHiddenStates: Bool = false, includeLogits: Bool = true, outputCacheStates: Bool = false,
-  outputFinalState: Bool = true, tieEmbedding: Bool = false, injectEmbeddings: Bool = false
+  outputFinalState: Bool = true, tieEmbedding: Bool = false, injectEmbeddings: Bool = false,
+  lastNumberOfTokens: Int = 1
 ) -> Model {
+  precondition(lastNumberOfTokens >= 0)
+  precondition(lastNumberOfTokens <= tokenLength)
   let tokens = Input()
   let tokenEmbed = Embedding(
     T.self, vocabularySize: configuration.vocabularySize, embeddingSize: configuration.hiddenSize,
@@ -336,12 +358,13 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
       let attention = Qwen3_5FullAttention(
         prefix: prefix, configuration: configuration, batchSize: batchSize,
         tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-        lastTokenOnly: i == configuration.layers - 1)
+        lastNumberOfTokens: i == configuration.layers - 1 ? lastNumberOfTokens : nil)
       let mixerOut = attention(norm1Out, rotary!, kIn, vIn)
       let residualOut =
         i == configuration.layers - 1
         ? residual.reshaped(
-          [1, configuration.hiddenSize], offset: [tokenLength - 1, 0],
+          [lastNumberOfTokens, configuration.hiddenSize],
+          offset: [tokenLength - lastNumberOfTokens, 0],
           strides: [configuration.hiddenSize, 1])
         : residual
       let afterMixer = mixerOut.to(of: residualOut) + residualOut

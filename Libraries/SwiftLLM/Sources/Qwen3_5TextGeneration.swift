@@ -1,6 +1,8 @@
 import Foundation
 import NNC
 
+private let qwen3_5PrefillChunkSize = 4_096
+
 public enum Qwen3_5TextGenerationError: LocalizedError {
   case missingStoreTensor(String)
   case invalidLogits
@@ -62,26 +64,53 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         var caches = Self.makeCaches(
           graph: graph, capacity: cacheCapacity, configuration: configuration)
 
-        let decoder: ModelBuilder<(cachedTokenLength: Int, tokenLength: Int)> = ModelBuilder {
-          (tokenLengths: (cachedTokenLength: Int, tokenLength: Int), _) in
-          Qwen3_5CausalLM(
-            FloatType.self, tokenLength: tokenLengths.tokenLength,
-            cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
-            includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding)
-        }
+        let decoder:
+          ModelBuilder<(cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int)> =
+            ModelBuilder {
+              (
+                tokenLengths: (
+                  cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int
+                ), _
+              ) in
+              Qwen3_5CausalLM(
+                FloatType.self, tokenLength: tokenLengths.tokenLength,
+                cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
+                includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding,
+                lastNumberOfTokens: tokenLengths.lastNumberOfTokens)
+            }
         decoder.maxConcurrency = .limit(4)
-        let promptTokens = graph.variable(
-          Tensor<Int32>(promptTokenIds, .CPU, .C(promptTokenIds.count)).toGPU(0))
-        let prefillAttentionInputs: [DynamicGraph.AnyTensor]
+        let prefillRotaryEmbedding: DynamicGraph.Tensor<FloatType>?
         if hasFullAttentionLayer {
-          let rotary = Qwen3_5RotaryEmbedding(
-            sequenceLength: promptTokenIds.count, configuration: configuration, of: FloatType.self)
-          prefillAttentionInputs = [graph.variable(rotary.toGPU(0))]
+          prefillRotaryEmbedding = graph.variable(
+            Qwen3_5RotaryEmbedding(
+              sequenceLength: promptTokenIds.count, configuration: configuration, of: FloatType.self
+            ).toGPU(0))
         } else {
-          prefillAttentionInputs = []
+          prefillRotaryEmbedding = nil
         }
-        let prefillCacheInputs = Self.cacheInputs(
-          caches, currentTokenLength: promptTokenIds.count, configuration: configuration)
+        func prefillInputs(start: Int, length: Int) -> (
+          tokens: DynamicGraph.Tensor<Int32>, attentionInputs: [DynamicGraph.AnyTensor],
+          cacheInputs: [DynamicGraph.AnyTensor]
+        ) {
+          let tokenIds = Array(promptTokenIds[start..<(start + length)])
+          let tokens = graph.variable(Tensor<Int32>(tokenIds, .CPU, .C(length)).toGPU(0))
+          let attentionInputs: [DynamicGraph.AnyTensor]
+          if let prefillRotaryEmbedding = prefillRotaryEmbedding {
+            let rotary = prefillRotaryEmbedding.reshaped(
+              format: .NHWC, shape: [1, length, 1, configuration.attentionHeadDim],
+              offset: [0, start, 0, 0],
+              strides: [
+                promptTokenIds.count * configuration.attentionHeadDim,
+                configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
+              ])
+            attentionInputs = [rotary.copied()]
+          } else {
+            attentionInputs = []
+          }
+          let cacheInputs = Self.cacheInputs(
+            caches, currentTokenLength: start + length, configuration: configuration)
+          return (tokens, attentionInputs, cacheInputs)
+        }
         let maxDecodeCachedTokenLength = cacheCapacity - 1
         let decodeCompileAttentionInputs: [DynamicGraph.AnyTensor]
         if maxTokens > 1 && hasFullAttentionLayer {
@@ -95,33 +124,49 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         var loadAndCompileMilliseconds = 0.0
         var prefillMilliseconds = 0.0
         do {
+          let firstChunkLength = min(qwen3_5PrefillChunkSize, promptTokenIds.count)
+          let firstPrefillInputs = prefillInputs(start: 0, length: firstChunkLength)
           let inputs: [DynamicGraph.AnyTensor] =
-            [promptTokens] + prefillAttentionInputs + prefillCacheInputs
+            [firstPrefillInputs.tokens] + firstPrefillInputs.attentionInputs
+            + firstPrefillInputs.cacheInputs
           let loadStart = Date.timeIntervalSinceReferenceDate
           try graph.openStore(
             filePath, flags: .readOnly,
             externalStore: TensorData.externalStore(filePath: filePath)
           ) { store in
             decoder.compile(
-              (cachedTokenLength: 0, tokenLength: promptTokenIds.count),
-              inputs: inputs)
+              (
+                cachedTokenLength: 0, tokenLength: firstChunkLength,
+                lastNumberOfTokens: 1
+              ),
+              inputs: inputs, isEager: true)
             try store.read(
               "text_model", model: decoder, strict: true, codec: [.jit, .i8x, .ezm7, .externalData])
           }
           loadAndCompileMilliseconds = (Date.timeIntervalSinceReferenceDate - loadStart) * 1_000
           let prefillStart = Date.timeIntervalSinceReferenceDate
-          var prefillOutputs = decoder(
-            (cachedTokenLength: 0, tokenLength: promptTokenIds.count), inputs: promptTokens,
-            prefillAttentionInputs + prefillCacheInputs)
-          Self.updateLinearCaches(
-            &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
-          let logits = prefillOutputs[0].as(of: FloatType.self)
-          let prefillTokenTensor = Functional.argmax(logits, axis: 1).reshaped(.C(1))
-          let prefillTokenCPU = prefillTokenTensor.toCPU()
+          var prefillTokenCPU: DynamicGraph.Tensor<Int32>?
+          for start in stride(from: 0, to: promptTokenIds.count, by: qwen3_5PrefillChunkSize) {
+            let length = min(qwen3_5PrefillChunkSize, promptTokenIds.count - start)
+            let isLast = start + length == promptTokenIds.count
+            let chunkInputs = prefillInputs(start: start, length: length)
+            var prefillOutputs = decoder(
+              (
+                cachedTokenLength: start, tokenLength: length,
+                lastNumberOfTokens: isLast ? 1 : 0
+              ), inputs: chunkInputs.tokens,
+              chunkInputs.attentionInputs + chunkInputs.cacheInputs)
+            Self.updateLinearCaches(
+              &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
+            if isLast {
+              let logits = prefillOutputs[0].as(of: FloatType.self)
+              prefillTokenCPU = Functional.argmax(logits, axis: 1).reshaped(.C(1)).toCPU()
+            }
+            prefillOutputs.removeAll(keepingCapacity: false)
+          }
           graph.joined()
           prefillMilliseconds = (Date.timeIntervalSinceReferenceDate - prefillStart) * 1_000
-          prefillOutputs.removeAll(keepingCapacity: false)
-          let prefillToken = Int32(prefillTokenCPU[0])
+          let prefillToken = Int32(prefillTokenCPU![0])
           var generated = [prefillToken]
           let shouldContinueAfterPrefill = partialHandler(generated)
           if eosTokenIds.contains(prefillToken) || !shouldContinueAfterPrefill {
@@ -147,7 +192,10 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               [decodeCompileToken] + decodeCompileAttentionInputs + decodeCompileCacheInputs
             let decodeCompileStart = Date.timeIntervalSinceReferenceDate
             decoder.compile(
-              (cachedTokenLength: maxDecodeCachedTokenLength, tokenLength: 1),
+              (
+                cachedTokenLength: maxDecodeCachedTokenLength, tokenLength: 1,
+                lastNumberOfTokens: 1
+              ),
               inputs: decodeCompileInputs, isEager: true)
             graph.joined()
             decodeCompileMilliseconds =
@@ -186,7 +234,10 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               let oldDecodedTokenCPU = nextTokenGPU.toCPU()
               do {
                 let decodeOutputs = decoder(
-                  (cachedTokenLength: cachedTokenLength, tokenLength: 1), inputs: nextTokenGPU,
+                  (
+                    cachedTokenLength: cachedTokenLength, tokenLength: 1,
+                    lastNumberOfTokens: 1
+                  ), inputs: nextTokenGPU,
                   oneAttentionInputs + cacheInputs)
                 Self.updateLinearCaches(
                   &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
@@ -247,13 +298,20 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         var caches = Self.makeCaches(
           graph: graph, capacity: tokenLength, configuration: configuration)
 
-        let decoder: ModelBuilder<(cachedTokenLength: Int, tokenLength: Int)> = ModelBuilder {
-          (tokenLengths: (cachedTokenLength: Int, tokenLength: Int), _) in
-          Qwen3_5CausalLM(
-            FloatType.self, tokenLength: tokenLengths.tokenLength,
-            cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
-            includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding)
-        }
+        let decoder:
+          ModelBuilder<(cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int)> =
+            ModelBuilder {
+              (
+                tokenLengths: (
+                  cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int
+                ), _
+              ) in
+              Qwen3_5CausalLM(
+                FloatType.self, tokenLength: tokenLengths.tokenLength,
+                cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
+                includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding,
+                lastNumberOfTokens: tokenLengths.lastNumberOfTokens)
+            }
         decoder.maxConcurrency = .limit(4)
 
         func promptInputs() -> (
@@ -280,7 +338,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         ) { store in
           let inputs = promptInputs()
           decoder.compile(
-            (cachedTokenLength: 0, tokenLength: tokenLength),
+            (cachedTokenLength: 0, tokenLength: tokenLength, lastNumberOfTokens: 1),
             inputs: [inputs.tokens] + inputs.attentionInputs + inputs.cacheInputs)
           try store.read(
             "text_model", model: decoder, strict: true, codec: [.jit, .i8x, .ezm7, .externalData])
@@ -291,7 +349,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           graph.joined()
           let inputs = promptInputs()
           var outputs = decoder(
-            (cachedTokenLength: 0, tokenLength: tokenLength), inputs: inputs.tokens,
+            (cachedTokenLength: 0, tokenLength: tokenLength, lastNumberOfTokens: 1),
+            inputs: inputs.tokens,
             inputs.attentionInputs + inputs.cacheInputs)
           Self.updateLinearCaches(
             &caches, from: outputs, outputOffset: 1, configuration: configuration)
@@ -311,7 +370,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let inputs = promptInputs()
           let start = Date.timeIntervalSinceReferenceDate
           var outputs = decoder(
-            (cachedTokenLength: 0, tokenLength: tokenLength), inputs: inputs.tokens,
+            (cachedTokenLength: 0, tokenLength: tokenLength, lastNumberOfTokens: 1),
+            inputs: inputs.tokens,
             inputs.attentionInputs + inputs.cacheInputs)
           Self.updateLinearCaches(
             &caches, from: outputs, outputOffset: 1, configuration: configuration)
@@ -414,14 +474,20 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             ]
         }
 
-        let decoder: ModelBuilder<(cachedTokenLength: Int, tokenLength: Int)> = ModelBuilder {
-          (tokenLengths: (cachedTokenLength: Int, tokenLength: Int), _) in
-          Qwen3_5CausalLM(
-            FloatType.self, tokenLength: tokenLengths.tokenLength,
-            cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
-            includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding,
-            injectEmbeddings: true)
-        }
+        let decoder:
+          ModelBuilder<(cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int)> =
+            ModelBuilder {
+              (
+                tokenLengths: (
+                  cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int
+                ), _
+              ) in
+              Qwen3_5CausalLM(
+                FloatType.self, tokenLength: tokenLengths.tokenLength,
+                cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
+                includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding,
+                injectEmbeddings: true, lastNumberOfTokens: tokenLengths.lastNumberOfTokens)
+            }
         decoder.maxConcurrency = .limit(4)
 
         let positionIDs = Qwen3_5MakeMultimodalPositionIDs(
@@ -448,13 +514,17 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             externalStore: TensorData.externalStore(filePath: filePath)
           ) { store in
             decoder.compile(
-              (cachedTokenLength: 0, tokenLength: promptTokenIds.count),
+              (
+                cachedTokenLength: 0, tokenLength: promptTokenIds.count,
+                lastNumberOfTokens: 1
+              ),
               inputs: inputs)
             try store.read(
               "text_model", model: decoder, strict: true, codec: [.jit, .i8x, .ezm7, .externalData])
           }
           var prefillOutputs = decoder(
-            (cachedTokenLength: 0, tokenLength: promptTokenIds.count), inputs: promptTokens,
+            (cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1),
+            inputs: promptTokens,
             [tokenMaskGPU, injectedEmbeddings] + prefillAttentionInputs + prefillCacheInputs)
           Self.updateLinearCaches(
             &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
@@ -492,7 +562,10 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         let decodeCompileCacheInputs = Self.cacheInputs(
           caches, currentTokenLength: cacheCapacity, configuration: configuration)
         decoder.compile(
-          (cachedTokenLength: maxDecodeCachedTokenLength, tokenLength: 1),
+          (
+            cachedTokenLength: maxDecodeCachedTokenLength, tokenLength: 1,
+            lastNumberOfTokens: 1
+          ),
           inputs: [decodeCompileToken, decodeTokenMask, decodeInjectedEmbeddings]
             + decodeCompileAttentionInputs + decodeCompileCacheInputs,
           isEager: true)
@@ -522,7 +595,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             caches, currentTokenLength: cachedTokenLength + 1, configuration: configuration)
           let oldDecodedTokenCPU = nextTokenGPU.toCPU()
           let decodeOutputs = decoder(
-            (cachedTokenLength: cachedTokenLength, tokenLength: 1), inputs: nextTokenGPU,
+            (cachedTokenLength: cachedTokenLength, tokenLength: 1, lastNumberOfTokens: 1),
+            inputs: nextTokenGPU,
             [decodeTokenMask, decodeInjectedEmbeddings] + oneAttentionInputs + cacheInputs)
           Self.updateLinearCaches(
             &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
