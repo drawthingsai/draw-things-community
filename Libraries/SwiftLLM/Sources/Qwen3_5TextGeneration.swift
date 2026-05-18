@@ -79,6 +79,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 lastNumberOfTokens: tokenLengths.lastNumberOfTokens)
             }
         decoder.maxConcurrency = .limit(4)
+        let promptTokens = graph.variable(
+          Tensor<Int32>(promptTokenIds, .CPU, .C(promptTokenIds.count)).toGPU(0))
         let prefillRotaryEmbedding: DynamicGraph.Tensor<FloatType>?
         if hasFullAttentionLayer {
           prefillRotaryEmbedding = graph.variable(
@@ -92,8 +94,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           tokens: DynamicGraph.Tensor<Int32>, attentionInputs: [DynamicGraph.AnyTensor],
           cacheInputs: [DynamicGraph.AnyTensor]
         ) {
-          let tokenIds = Array(promptTokenIds[start..<(start + length)])
-          let tokens = graph.variable(Tensor<Int32>(tokenIds, .CPU, .C(length)).toGPU(0))
+          let tokens = promptTokens.reshaped(.C(length), offset: [start], strides: [1]).copied()
           let attentionInputs: [DynamicGraph.AnyTensor]
           if let prefillRotaryEmbedding = prefillRotaryEmbedding {
             let rotary = prefillRotaryEmbedding.reshaped(
@@ -139,7 +140,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 cachedTokenLength: 0, tokenLength: firstChunkLength,
                 lastNumberOfTokens: 1
               ),
-              inputs: inputs, isEager: true)
+              inputs: inputs)
             try store.read(
               "text_model", model: decoder, strict: true, codec: [.jit, .i8x, .ezm7, .externalData])
           }
@@ -150,7 +151,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             let length = min(qwen3_5PrefillChunkSize, promptTokenIds.count - start)
             let isLast = start + length == promptTokenIds.count
             let chunkInputs = prefillInputs(start: start, length: length)
-            var prefillOutputs = decoder(
+            let prefillOutputs = decoder(
               (
                 cachedTokenLength: start, tokenLength: length,
                 lastNumberOfTokens: isLast ? 1 : 0
@@ -162,7 +163,6 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               let logits = prefillOutputs[0].as(of: FloatType.self)
               prefillTokenCPU = Functional.argmax(logits, axis: 1).reshaped(.C(1)).toCPU()
             }
-            prefillOutputs.removeAll(keepingCapacity: false)
           }
           graph.joined()
           prefillMilliseconds = (Date.timeIntervalSinceReferenceDate - prefillStart) * 1_000
@@ -201,7 +201,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             decodeCompileMilliseconds =
               (Date.timeIntervalSinceReferenceDate - decodeCompileStart) * 1_000
             let queueWatermark = DynamicGraph.queueWatermark
-            DynamicGraph.queueWatermark = queueWatermark * 8
+            DynamicGraph.queueWatermark = queueWatermark * 16
             defer { DynamicGraph.queueWatermark = queueWatermark }
             let decodeLoopStart = Date.timeIntervalSinceReferenceDate
             let cachedTokenLength = promptTokenIds.count + generated.count - 1
@@ -571,7 +571,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           isEager: true)
         graph.joined()
         let queueWatermark = DynamicGraph.queueWatermark
-        DynamicGraph.queueWatermark = queueWatermark * 8  // Expanding queue watermark to support longer generation.
+        DynamicGraph.queueWatermark = queueWatermark * 16  // Expanding queue watermark to support longer generation.
         defer {
           DynamicGraph.queueWatermark = queueWatermark
         }
