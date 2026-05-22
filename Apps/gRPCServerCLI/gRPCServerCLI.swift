@@ -94,7 +94,9 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       "</tool_call>": 151658, "<|fim_prefix|>": 151659, "<|fim_middle|>": 151660,
       "<|fim_suffix|>": 151661, "<|fim_pad|>": 151662, "<|repo_name|>": 151663,
       "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
-      "<think>": 151667, "</think>": 151668,
+      "<think>": 151667, "</think>": 151668, "<|boi_token|>": 151669,
+      "<|bor_token|>": 151670, "<|eor_token|>": 151671, "<|bot_token|>": 151672,
+      "<|tms_token|>": 151673,
     ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
   let tokenizerMistral3 = TiktokenTokenizer(
     vocabulary: BinaryResources.vocab_mistral3_json, merges: BinaryResources.merges_mistral3_txt,

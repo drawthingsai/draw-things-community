@@ -45,6 +45,78 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
 }
 
 extension TextEncoder {
+  private func encodeHiDreamO1(
+    tokens: [DynamicGraph.Tensor<Int32>], textModels existingTextModels: [Model?]
+  ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
+    let graph = tokens[0].graph
+    let shape = tokens[0].shape
+    let tokenCount = shape.reduce(1, *)
+    let batchSize: Int
+    let textLength: Int
+    if shape.count == 1 {
+      precondition(tokenCount % 2 == 0)
+      batchSize = 2
+      textLength = tokenCount / 2
+    } else {
+      precondition(shape.count == 2)
+      batchSize = shape[0]
+      textLength = shape[1]
+    }
+    let source = tokens[0].rawValue.toCPU()
+    let flatTokensCPU = graph.variable(.CPU, format: .NHWC, shape: [tokenCount], of: Int32.self)
+    if shape.count == 1 {
+      for i in 0..<tokenCount {
+        flatTokensCPU[i] = source[i]
+      }
+    } else {
+      for i in 0..<tokenCount {
+        flatTokensCPU[i] = source[i / shape[1], i % shape[1]]
+      }
+    }
+    let tokensGPU = flatTokensCPU.toGPU(0)
+    let rotary = graph.variable(
+      HiDreamO1RotaryPositionEmbedding(
+        batchSize: batchSize, textLength: textLength, height: 0, width: 0, of: FloatType.self
+      ).toGPU(0))
+    let rotText = rotary[
+      0..<batchSize, 0..<textLength, 0..<1, 0..<128
+    ].copied()
+    let textModel: Model
+    let shouldAttachWeights: Bool
+    if existingTextModels.count >= 1, let existingTextModel = existingTextModels[0] {
+      textModel = existingTextModel
+      shouldAttachWeights = false
+    } else {
+      textModel = HiDreamO1TextFixed(
+        batchSize: batchSize, textLength: textLength, layers: 36, hiddenSize: 4_096,
+        intermediateSize: 12_288, vocabularySize: 151_936)
+      textModel.maxConcurrency = .limit(4)
+      textModel.compile(inputs: tokensGPU, rotText)
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand
+        ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+      let cacheKey = "\(filePaths[0]):[hidream_o1_text_fixed]"
+      if !weightsCache.detach(cacheKey, to: textModel.parameters) {
+        graph.openStore(
+          filePaths[0], flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePaths[0])
+        ) { store in
+          try! store.read(
+            "dit", model: textModel, strict: true,
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      shouldAttachWeights = true
+    }
+    let result = textModel(inputs: tokensGPU, rotText).dropLast().map {
+      DynamicGraph.Tensor<FloatType>(from: $0)
+    }
+    if shouldAttachWeights {
+      weightsCache.attach("\(filePaths[0]):[hidream_o1_text_fixed]", from: textModel.parameters)
+    }
+    return (result, [textModel])
+  }
+
   private func encodeKandinsky(
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>]
   ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
@@ -3428,6 +3500,8 @@ extension TextEncoder {
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         textModels: existingTextModels)
+    case .hiDreamO1:
+      return encodeHiDreamO1(tokens: tokens, textModels: existingTextModels)
     case .zImage:
       return encodeZImage(
         images: images, tokens: tokens, positions: positions, mask: mask,
@@ -3576,8 +3650,8 @@ extension TextEncoder {
           ).0
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3614,9 +3688,9 @@ extension TextEncoder {
                   }
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-                  .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-                  .seedvr2_3b, .seedvr2_7b:
+                  .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
+                  .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
+                  .ltx2_3, .seedvr2_3b, .seedvr2_7b:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3655,9 +3729,9 @@ extension TextEncoder {
                 }
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase,
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
-                .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage,
-                .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-                .seedvr2_3b, .seedvr2_7b:
+                .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
+                .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
+                .ltx2_3, .seedvr2_3b, .seedvr2_7b:
                 fatalError()
               }
               return .continue(name)

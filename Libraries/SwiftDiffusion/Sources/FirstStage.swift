@@ -59,6 +59,43 @@ private struct TemporalTiledDecodingConfiguration {
 }
 
 extension FirstStage {
+
+  private func hiDreamO1Patchify(_ x: DynamicGraph.Tensor<FloatType>)
+    -> DynamicGraph.Tensor<FloatType>
+  {
+    let shape = x.shape
+    let patchSize = 32
+    let imageChannels = 3
+    let patchDimension = imageChannels * patchSize * patchSize
+    precondition(shape[1] % patchSize == 0)
+    precondition(shape[2] % patchSize == 0)
+    precondition(shape[3] == imageChannels)
+    return x.reshaped(
+      format: .NHWC,
+      shape: [
+        shape[0], shape[1] / patchSize, patchSize, shape[2] / patchSize, patchSize, shape[3],
+      ]
+    ).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
+      .NHWC(shape[0], shape[1] / patchSize, shape[2] / patchSize, patchDimension))
+  }
+
+  private func hiDreamO1Unpatchify(
+    _ x: DynamicGraph.Tensor<FloatType>
+  ) -> DynamicGraph.Tensor<FloatType> {
+    let shape = x.shape
+    let patchSize = 32
+    let imageChannels = 3
+    let patchDimension = imageChannels * patchSize * patchSize
+    precondition(shape[3] == patchDimension)
+    return x.reshaped(
+      format: .NHWC,
+      shape: [
+        shape[0], shape[1], shape[2], imageChannels, patchSize, patchSize,
+      ]
+    ).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped(
+      .NHWC(shape[0], shape[1] * patchSize, shape[2] * patchSize, imageChannels))
+  }
+
   public func upsample(
     _ x: DynamicGraph.Tensor<FloatType>,
     latentsUpscaler: (filePath: String, mode: LTX2SpatialUpscalerMode)
@@ -106,7 +143,7 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?, highPrecision: Bool,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model)
+    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model?)
   {
     let shape = x.shape
     let batchSize = shape[0]
@@ -188,6 +225,9 @@ extension FirstStage {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
+      scaleFactorZ = 1
+    case .hiDreamO1:
+      scaleFactor = 32
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .seedvr2_3b,
       .seedvr2_7b:
@@ -341,6 +381,9 @@ extension FirstStage {
         outputChannels = 3
       }
       causalAttentionMask = nil
+    case .hiDreamO1:
+      // No need to do any model related work.
+      return (hiDreamO1Unpatchify(x), nil, nil)
     case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -1019,7 +1062,7 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, decoder existingDecoder: Model?,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model)
+    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model?)
   {
     let (result, audio, decoder) = decode(
       x, decoder: existingDecoder, highPrecision: false, cancellation: cancellation)
@@ -1037,7 +1080,7 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, batchSize: (Int, Int), decoder existingDecoder: Model?,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model)
+    -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model?)
   {
     let shape = x.shape
     if batchSize.1 == 0 {
@@ -1106,10 +1149,10 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, encoder: Model?,
     cancellation: (@escaping () -> Void) -> Void
   ) -> (
-    DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>, Model
+    DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>, Model?
   ) {
     let (parameters, encoder) = encode(x, encoder: encoder, cancellation: cancellation)
-    guard version != .kandinsky21 && version != .wurstchenStageC else {
+    guard version != .kandinsky21 && version != .wurstchenStageC && version != .hiDreamO1 else {
       return (parameters, parameters, encoder)
     }
     guard version != .wurstchenStageB && version != .ltx2 && version != .ltx2_3 else {
@@ -1125,7 +1168,7 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, individualFrames: Int, encoder existingEncoder: Model?,
     cancellation: (@escaping () -> Void) -> Void
   ) -> (
-    DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>, Model
+    DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<FloatType>, Model?
   ) {
     if individualFrames == 0 {
       return sample(x, encoder: existingEncoder, cancellation: cancellation)
@@ -1203,7 +1246,7 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, Model)
+    -> (DynamicGraph.Tensor<FloatType>, Model?)
   {
     let (result, encoder) = encode(
       x, encoder: existingEncoder, highPrecision: false, cancellation: cancellation)
@@ -1236,7 +1279,7 @@ extension FirstStage {
     _ x: DynamicGraph.Tensor<FloatType>, encoder existingEncoder: Model?, highPrecision: Bool,
     cancellation: (@escaping () -> Void) -> Void
   )
-    -> (DynamicGraph.Tensor<FloatType>, Model)
+    -> (DynamicGraph.Tensor<FloatType>, Model?)
   {
     var shape = x.shape
     let batchSize = shape[0]
@@ -1263,6 +1306,9 @@ extension FirstStage {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
+      scaleFactorZ = 1
+    case .hiDreamO1:
+      scaleFactor = 32
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .seedvr2_3b,
       .seedvr2_7b:
@@ -1355,6 +1401,9 @@ extension FirstStage {
       }
       outputChannels = 32
       causalAttentionMask = nil
+    case .hiDreamO1:
+      // No need to initialize anything.
+      return (hiDreamO1Patchify(x), nil)
     case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight

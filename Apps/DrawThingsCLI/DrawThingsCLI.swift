@@ -868,6 +868,14 @@ private enum RecommendedSettingsResolver {
     builder.model = modelSpecification.file
     builder.startWidth = defaultScale
     builder.startHeight = defaultScale
+    if modelSpecification.version == .hiDreamO1 {
+      builder.steps = 28
+      builder.guidanceScale = 1
+      builder.sampler = .dPMPP2MTrailing
+      builder.seedMode = .legacy
+      builder.resolutionDependentShift = true
+      builder.shift = 1
+    }
     return builder.build()
   }
 
@@ -1419,7 +1427,7 @@ private func defaultImportScale(for version: ModelVersion, artifactFileName: Str
     return 12
   case .wan21_1_3b:
     return 8
-  case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .qwenImage, .zImage, .ernieImage,
+  case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .hiDreamO1, .qwenImage, .zImage, .ernieImage,
     .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .auraflow, .flux1, .flux2, .flux2_9b,
     .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3:
     return 16
@@ -1443,7 +1451,7 @@ private func validateCustomTextEncoderSupport(
   case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .ernieImage:
     return
   case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
-    .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
+    .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
     .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
     .seedvr2_3b, .seedvr2_7b:
     throw ValidationError(
@@ -1471,7 +1479,7 @@ private func projectedImportedOutputFiles(
     case .ernieImage:
       files.append("\(modelName)_ministral_3_3b_q8p.ckpt")
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
-      .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
+      .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
       .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b:
       break
@@ -1615,7 +1623,9 @@ private func createLocalImageGenerator(queue: DispatchQueue) throws -> (String, 
       "</tool_call>": 151658, "<|fim_prefix|>": 151659, "<|fim_middle|>": 151660,
       "<|fim_suffix|>": 151661, "<|fim_pad|>": 151662, "<|repo_name|>": 151663,
       "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
-      "<think>": 151667, "</think>": 151668,
+      "<think>": 151667, "</think>": 151668, "<|boi_token|>": 151669,
+      "<|bor_token|>": 151670, "<|eor_token|>": 151671, "<|bot_token|>": 151672,
+      "<|tms_token|>": 151673,
     ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
   let tokenizerMistral3 = TiktokenTokenizer(
     vocabulary: BinaryResources.vocab_mistral3_json, merges: BinaryResources.merges_mistral3_txt,
@@ -3985,7 +3995,9 @@ private func createLoRATrainerTokenizers() -> LoRATrainerTokenizers {
       "</tool_call>": 151658, "<|fim_prefix|>": 151659, "<|fim_middle|>": 151660,
       "<|fim_suffix|>": 151661, "<|fim_pad|>": 151662, "<|repo_name|>": 151663,
       "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
-      "<think>": 151667, "</think>": 151668,
+      "<think>": 151667, "</think>": 151668, "<|boi_token|>": 151669,
+      "<|bor_token|>": 151670, "<|eor_token|>": 151671, "<|bot_token|>": 151672,
+      "<|tms_token|>": 151673,
     ])
   let tokenizerMistral3 = TiktokenTokenizer(
     vocabulary: BinaryResources.vocab_mistral3_json, merges: BinaryResources.merges_mistral3_txt,

@@ -56,8 +56,8 @@ extension UNetFixedEncoder {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2,
+      .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b, .ltx2,
       .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       return true
     case .v1, .v2, .kandinsky21:
@@ -201,7 +201,8 @@ extension UNetFixedEncoder {
       // We don't need other vectors for sampling.
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+      .flux2_4b,
       .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       return []
     case .v1, .v2, .kandinsky21:
@@ -396,6 +397,61 @@ extension UNetFixedEncoder {
       return (kvs, unetFixedWeightMapper)
     case .v1, .v2, .kandinsky21:
       return (textEncoding, nil)
+    case .hiDreamO1:
+      precondition(textEncoding.count == 36 * 2)
+      let selectedTextEncoding: [DynamicGraph.Tensor<FloatType>]
+      if !isCfgEnabled {
+        selectedTextEncoding = textEncoding.map { kv in
+          let shape = kv.shape
+          precondition(shape.count == 4)
+          if shape[0] >= batchSize * 2 {
+            return kv[
+              batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+            ].copied()
+          } else if shape[0] >= 2 {
+            return kv[1..<2, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+          } else {
+            return kv
+          }
+        }
+      } else {
+        selectedTextEncoding = textEncoding
+      }
+      let textKVs: [DynamicGraph.Tensor<FloatType>]
+      if batchSize > 1 {
+        textKVs = selectedTextEncoding.map { kv in
+          let shape = kv.shape
+          precondition(shape.count == 4)
+          guard shape[0] < batchSize * (isCfgEnabled ? 2 : 1) else { return kv }
+          let cBatchSize = batchSize * shape[0]
+          var repeated = graph.variable(
+            kv.kind, .NHWC(cBatchSize, shape[1], shape[2], shape[3]), of: FloatType.self)
+          for i in 0..<batchSize {
+            for j in 0..<shape[0] {
+              repeated[
+                (batchSize * j + i)..<(batchSize * j + i + 1), 0..<shape[1], 0..<shape[2],
+                0..<shape[3]
+              ] = kv[j..<(j + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            }
+          }
+          return repeated
+        }
+      } else {
+        textKVs = selectedTextEncoding
+      }
+      let cBatchSize = textKVs[0].shape[0]
+      let textLength = textKVs[0].shape[1]
+      let rotary = graph.variable(
+        HiDreamO1RotaryPositionEmbedding(
+          batchSize: cBatchSize, textLength: textLength, height: startHeight, width: startWidth,
+          of: FloatType.self
+        ).toGPU(0))
+      let dynamicLength = 1 + startHeight * startWidth
+      let rotDynamic = rotary[
+        0..<cBatchSize, textLength..<(textLength + dynamicLength), 0..<1,
+        0..<128
+      ].copied()
+      return ([rotDynamic] + textKVs, nil)
     case .seedvr2_3b, .seedvr2_7b:
       let tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -640,8 +696,8 @@ extension UNetFixedEncoder {
           dualAttentionLayers: [])
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       var timeEmbeds = graph.variable(

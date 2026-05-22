@@ -281,8 +281,8 @@ public struct TextualInversionZoo: DownloadZoo {
     case .cosmos2_5_2b:
       count = 1024
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .ltx2, .ltx2_3,
-      .seedvr2_3b, .seedvr2_7b:
+      .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .ltx2,
+      .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       fatalError()
     }
     var tensor: Tensor<FloatType>? = nil
@@ -317,8 +317,8 @@ public struct TextualInversionZoo: DownloadZoo {
       case .cosmos2_5_2b:
         tensorName = "string_to_param_qwen3"
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
-        .wan21_14b, .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-        .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       guard let anyTensor = $0.read(tensorName) else { return }

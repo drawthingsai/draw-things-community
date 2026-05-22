@@ -20,6 +20,7 @@ public enum ModelVersion: String, Codable {
   case wan21_1_3b = "wan_v2.1_1.3b"
   case wan21_14b = "wan_v2.1_14b"
   case hiDreamI1 = "hidream_i1"
+  case hiDreamO1 = "hidream_o1"
   case qwenImage = "qwen_image"
   case wan22_5b = "wan_v2.2_5b"
   case zImage = "z_image"
@@ -446,7 +447,7 @@ public struct CfgZeroStarConfiguration {
 
 func isBatchEnabled(_ version: ModelVersion) -> Bool {
   switch version {
-  case .auraflow, .flux1, .hiDreamI1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
+  case .auraflow, .flux1, .hiDreamI1, .hiDreamO1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
     .sdxlRefiner, .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .qwenImage, .zImage,
     .ernieImage,
     .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b:

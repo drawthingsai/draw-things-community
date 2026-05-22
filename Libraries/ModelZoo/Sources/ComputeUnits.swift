@@ -95,7 +95,7 @@ public enum ComputeUnits {
     switch context.modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1, .seedvr2_3b,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1, .hiDreamO1, .seedvr2_3b,
       .seedvr2_7b:
       return (max(1, Int(configuration.batchSize)) * cfgChannels, 1)
     case .svdI2v:
@@ -164,6 +164,8 @@ public enum ComputeUnits {
     case .wan22_5b:
       return (rawWidth * 4, rawHeight * 4)
     case .ltx2, .ltx2_3:
+      return (rawWidth * 2, rawHeight * 2)
+    case .hiDreamO1:
       return (rawWidth * 2, rawHeight * 2)
     default:
       return (rawWidth * 8, rawHeight * 8)
@@ -461,6 +463,11 @@ public enum ComputeUnits {
       let fixedCount = HiDreamFixedInstructionCount(
         timesteps: 1, layers: (16, 32), t5TextLength: baseTokenLength,
         llamaTextLength: baseTokenLength)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .hiDreamO1:
+      let mainCount = HiDreamO1InstructionCount(
+        batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength)
+      let fixedCount = HiDreamO1FixedInstructionCount(batchSize: 1, textLength: baseTokenLength)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .ltx2:
       let videoFrames = numFrames
