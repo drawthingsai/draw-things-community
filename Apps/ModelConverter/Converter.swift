@@ -142,7 +142,7 @@ struct Converter: ParsableCommand {
           autoencoder = "wan_v2.1_video_vae_f16.ckpt"
         }
       }
-    case .hiDreamI1:
+    case .hiDreamI1, .hiDreamO1:
       fatalError()
     case .qwenImage:
       fatalError()
