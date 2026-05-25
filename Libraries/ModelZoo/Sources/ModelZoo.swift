@@ -831,6 +831,8 @@ public struct ModelZoo: DownloadZoo {
       "05daa3433a3719854498ea3694a14e3ecde2c1a8f2a4fc7c4f02ac9ff7ba5a78",
     "seedvr2_7b_q6p.ckpt":
       "92d193e4da2b2bea6e7877ca6c011d693da6dbc9bc9b735aee8c102905fa446f",
+    "hidream_o1_dev_2604_i8x.ckpt":
+      "d8588595c6177ed451d7843af999577f424376c4d2ef77f9408883a13ec0b231",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
@@ -1344,6 +1346,15 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Black Forest Labs"
     ),
     Specification(
+      name: "HiDream O1 [dev] 2604 (8-bit S)", file: "hidream_o1_dev_2604_i8x.ckpt", prefix: "",
+      version: .hiDreamO1, defaultScale: 16, textEncoder: "hidream_o1_dev_2604_i8x.ckpt",
+      autoencoder: "hidream_o1_dev_2604_i8x.ckpt", objective: .u(conditionScale: 1000),
+      noiseScalingFactor: 7.5, paddedTextEncodingLength: 0,
+      note:
+        "HiDream O1 is a Qwen3-style image generation model with no external text encoder or VAE. It uses RGB patch diffusion directly with a model-specific initial noise scale.",
+      huggingFaceLink: "HiDream-ai/HiDream-O1"
+    ),
+    Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
@@ -1569,15 +1580,6 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[Qwen Image Edit](https://huggingface.co/Qwen/Qwen-Image-Edit) is a state-of-the-art open-source image edit model excels at image edit tasks such as background alternation, style transfer, object removal etc. It is Apache 2.0-licensed and commercially friendly. The model is trained at multiple resolutions using a Flow Matching objective; trailing samplers yield the best results, with 30–50 sampling steps recommended.",
       copyright: "© 2025 Alibaba"
-    ),
-    Specification(
-      name: "HiDream O1 [dev] 2604", file: "hidream_o1_dev_2604_f16.ckpt", prefix: "",
-      version: .hiDreamO1, defaultScale: 16, textEncoder: "hidream_o1_dev_2604_f16.ckpt",
-      autoencoder: "hidream_o1_dev_2604_f16.ckpt", objective: .u(conditionScale: 1000),
-      noiseScalingFactor: 7.5, paddedTextEncodingLength: 0,
-      note:
-        "HiDream O1 is a Qwen3-style image generation model with no external text encoder or VAE. It uses RGB patch diffusion directly with a model-specific initial noise scale.",
-      huggingFaceLink: "HiDream-ai/HiDream-O1"
     ),
     Specification(
       name: "HiDream I1 [fast]", file: "hidream_i1_fast_q8p.ckpt", prefix: "",
