@@ -88,6 +88,7 @@ extension TextEncoder {
       shouldAttachWeights = false
     } else {
       textModel = HiDreamO1TextFixed(
+        FloatType.self,
         batchSize: batchSize, textLength: textLength, layers: 36, hiddenSize: 4_096,
         intermediateSize: 12_288, vocabularySize: 151_936)
       textModel.maxConcurrency = .limit(4)

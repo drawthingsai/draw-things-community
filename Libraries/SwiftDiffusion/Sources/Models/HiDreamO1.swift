@@ -2,7 +2,7 @@ import Foundation
 import NNC
 
 public func HiDreamO1TimeEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  timestep: Float, batchSize: Int, of dataType: FloatType.Type = FloatType.self
+  timestep: Float, batchSize: Int, of dataType: FloatType.Type
 ) -> Tensor<FloatType> {
   var embedding = Tensor<FloatType>(.CPU, .WC(batchSize, 256))
   let half = 128
@@ -20,7 +20,7 @@ public func HiDreamO1TimeEmbedding<FloatType: TensorNumeric & BinaryFloatingPoin
 
 public func HiDreamO1RotaryPositionEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   batchSize: Int, textLength: Int, height: Int, width: Int,
-  of dataType: FloatType.Type = FloatType.self
+  of dataType: FloatType.Type
 ) -> Tensor<FloatType> {
   let tokenLength = textLength + 1 + height * width
   let half = 64
@@ -230,14 +230,16 @@ private func HiDreamO1PixelEmbedder(hiddenSize: Int) -> Model {
   return Model([x], [proj2(proj1(x))])
 }
 
-public func HiDreamO1TextFixed(
-  batchSize: Int, textLength: Int, layers: Int, hiddenSize: Int, intermediateSize: Int,
+public func HiDreamO1TextFixed<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  _ dataType: FloatType.Type, batchSize: Int, textLength: Int, layers: Int, hiddenSize: Int,
+  intermediateSize: Int,
   vocabularySize: Int
 ) -> Model {
   let tokens = Input()
   let rot = Input()
   let tokenEmbed = Embedding(
-    Float16.self, vocabularySize: vocabularySize, embeddingSize: hiddenSize, name: "tok_embeddings")
+    FloatType.self, vocabularySize: vocabularySize, embeddingSize: hiddenSize,
+    name: "tok_embeddings")
   var out = tokenEmbed(tokens).to(.Float32).reshaped([
     batchSize, textLength, hiddenSize,
   ])
