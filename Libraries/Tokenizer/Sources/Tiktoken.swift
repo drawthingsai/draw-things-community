@@ -27,6 +27,9 @@ public struct TiktokenTokenizer {
     let jsonVocabulary = try! JSONDecoder().decode([String: Int32].self, from: vocabulary)
     var decoder = [Int32: Data]()
     var vocabulary = [Data: Int32]()
+    for (key, value) in specialTokens {
+      decoder[value] = key.data(using: .utf8)
+    }
     for (k, v) in jsonVocabulary {
       let bytes = Self.unicodeToBytes(k)
       decoder[v] = bytes
