@@ -83,11 +83,6 @@ git_repository(
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps")
 
-local_repository(
-    name = "ccv",
-    path = "ccv",
-)
-
 s4nnc_deps()
 
 load("@ccv//config:ccv.bzl", "ccv_deps", "ccv_setting")
