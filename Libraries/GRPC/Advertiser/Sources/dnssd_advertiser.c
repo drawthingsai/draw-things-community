@@ -13,21 +13,26 @@
 #define MDNS_PORT 5353
 
 // Encode DNS name for mDNS
-void encode_dns_name(char *buffer, const char *name) {
+void encode_dns_name(char *buffer, size_t buf_size, const char *name) {
     char *pos = buffer;
+    char *end = buffer + buf_size;
     const char *start = name;
     const char *dot;
 
     while ((dot = strchr(start, '.'))) {
-        *pos++ = dot - start;
-        memcpy(pos, start, dot - start);
-        pos += dot - start;
+        size_t label_len = (size_t)(dot - start);
+        if (pos + 1 + label_len >= end) return;
+        *pos++ = (char)label_len;
+        memcpy(pos, start, label_len);
+        pos += label_len;
         start = dot + 1;
     }
 
-    *pos++ = strlen(start);  // Last part before null byte
-    memcpy(pos, start, strlen(start));
-    pos += strlen(start);
+    size_t last_len = strlen(start);
+    if (pos + 1 + last_len + 1 > end) return;
+    *pos++ = (char)last_len;  // Last part before null byte
+    memcpy(pos, start, last_len);
+    pos += last_len;
     *pos++ = 0;  // End with null byte
 }
 
@@ -67,7 +72,7 @@ void advertise(const char *service_name, const char *service_domain, const char 
     memcpy(packet + pos, &additional, sizeof(additional)); pos += 2;
 
     // PTR Record (_grpc._tcp.local -> DrawThings._grpc._tcp.local)
-    encode_dns_name(packet + pos, service_domain); pos += strlen(packet + pos) + 1;
+    encode_dns_name(packet + pos, sizeof(packet) - (size_t)pos, service_domain); pos += strlen(packet + pos) + 1;
     uint16_t type_ptr = htons(12);  // PTR record
     uint16_t class_in = htons(0x8001);  // IN class + Cache flush
     uint32_t ttl = htonl(ttl_param);  // Time to live (2 minutes)
