@@ -44,6 +44,7 @@ public struct GPUServerRequest: Sendable {
     case unspecified // = 0
     case add // = 1
     case remove // = 2
+    case clearEchoHold // = 3
     case UNRECOGNIZED(Int)
 
     public init() {
@@ -55,6 +56,7 @@ public struct GPUServerRequest: Sendable {
       case 0: self = .unspecified
       case 1: self = .add
       case 2: self = .remove
+      case 3: self = .clearEchoHold
       default: self = .UNRECOGNIZED(rawValue)
       }
     }
@@ -64,6 +66,7 @@ public struct GPUServerRequest: Sendable {
       case .unspecified: return 0
       case .add: return 1
       case .remove: return 2
+      case .clearEchoHold: return 3
       case .UNRECOGNIZED(let i): return i
       }
     }
@@ -73,6 +76,7 @@ public struct GPUServerRequest: Sendable {
       .unspecified,
       .add,
       .remove,
+      .clearEchoHold,
     ]
 
   }

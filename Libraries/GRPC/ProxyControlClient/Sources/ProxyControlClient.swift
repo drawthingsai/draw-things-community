@@ -100,6 +100,30 @@ public final class ProxyControlClient {
     }
   }
 
+  public func clearEchoHold(address: String, port: Int, completion: @escaping (Bool) -> Void) {
+    guard let client = client else {
+      print("clearEchoHold can not connect to proxy server")
+      completion(false)
+      return
+    }
+
+    var request = GPUServerRequest()
+    request.serverConfig.address = address
+    request.serverConfig.port = Int32(port)
+    request.operation = .clearEchoHold
+
+    let _ = client.manageGPUServer(request).response.always {
+      switch $0 {
+      case .success(let result):
+        print(result.message)
+        completion(true)
+      case .failure(_):
+        print("can not clear echo hold for GPU Server \(address):\(port)")
+        completion(false)
+      }
+    }
+  }
+
   public func updateThrottlingPolicy(policies: [String: Int], completion: @escaping (Bool) -> Void)
   {
     guard let client = client else {

@@ -17,6 +17,7 @@ message GPUServerRequest {
     UNSPECIFIED = 0;
     ADD = 1;
     REMOVE = 2;
+    CLEAR_ECHO_HOLD = 3;
   }
 
   // Server configuration details
