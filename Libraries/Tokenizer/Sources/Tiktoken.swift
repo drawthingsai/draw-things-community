@@ -87,13 +87,30 @@ public struct TiktokenTokenizer {
     self.specialTokens = Array(specialTokens)
   }
 
-  public func decode(_ tokens: [Int32]) -> String {
-    let data = tokens.flatMap {
-      let token = decoder[$0, default: Data()]
-      guard !token.isEmpty else { return [UInt8]() }
-      return [UInt8](token)
+  public func decode(_ tokens: [Int32], specialTokens: [Int32: String] = [:]) -> String {
+    guard !specialTokens.isEmpty else {
+      let data = tokens.flatMap {
+        let token = decoder[$0, default: Data()]
+        guard !token.isEmpty else { return [UInt8]() }
+        return [UInt8](token)
+      }
+      return String(data: Data(data), encoding: .utf8) ?? ""
     }
-    return String(data: Data(data), encoding: .utf8) ?? ""
+    var text = ""
+    var data = [UInt8]()
+    for tokenId in tokens {
+      if let specialToken = specialTokens[tokenId] {
+        text += String(data: Data(data), encoding: .utf8) ?? ""
+        data.removeAll()
+        text += specialToken
+        continue
+      }
+      let token = decoder[tokenId, default: Data()]
+      guard !token.isEmpty else { continue }
+      data.append(contentsOf: token)
+    }
+    text += String(data: Data(data), encoding: .utf8) ?? ""
+    return text
   }
 
   /// byte → Unicode scalar
