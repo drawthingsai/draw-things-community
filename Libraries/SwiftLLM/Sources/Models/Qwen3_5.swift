@@ -197,9 +197,11 @@ private func Qwen3_5FullAttention(
 
 private func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
   prefix: String, configuration: Qwen3_5ModelConfiguration, batchSize: Int, tokenLength: Int,
-  x: Model.IO, convState: Model.IO, recurrentState: Model.IO, of: FloatType.Type = FloatType.self
+  x: Model.IO, convState: Model.IO, recurrentState: Model.IO, of: FloatType.Type = FloatType.self,
+  stateCheckpointCount: Int = 0
 ) -> [Model.IO] {
   precondition(batchSize == 1)
+  precondition(stateCheckpointCount >= 0 && stateCheckpointCount < tokenLength)
   let keyHeads = configuration.linearNumKeyHeads
   let valueHeads = configuration.linearNumValueHeads
   let keyHeadDim = configuration.linearKeyHeadDim
@@ -262,9 +264,11 @@ private func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
   let a = inProjA(x).reshaped([batchSize, tokenLength, valueHeads])
   let dt = (a + dtBias.reshaped([1, 1, valueHeads])).softplus().to(.Float32)
   let g = Functional.mul(left: aScale.reshaped([1, 1, valueHeads]), right: dt, scalar: -1)
-  let recurrent = GatedDelta(logDecay: true, name: "\(prefix).linear_attn.gated_delta")(
-    queries: query, keys: key, values: value, decay: g, beta: beta,
-    state: recurrentState)
+  let recurrent = GatedDelta(
+    logDecay: true, stateCheckpointCount: stateCheckpointCount,
+    name: "\(prefix).linear_attn.gated_delta")(
+      queries: query, keys: key, values: value, decay: g, beta: beta,
+      state: recurrentState)
   let recurrentOut = recurrent.output.reshaped([tokenLength, valueHeads, valueHeadDim])
   var out = recurrentOut.reshaped([batchSize * tokenLength * valueHeads, valueHeadDim])
   let norm = RMSNormGated(epsilon: 1e-6, axis: [1], name: "\(prefix).linear_attn.norm")
@@ -281,7 +285,7 @@ private func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
 
 private func Qwen3_5DecoderPost(
   prefix: String, x: Model.IO, configuration: Qwen3_5ModelConfiguration
-) -> (out: Model.IO, normOut: Model.IO, feedForwardOut: Model.IO) {
+) -> Model.IO {
   let norm = RMSNorm(epsilon: 1e-6, axis: [1], name: "\(prefix).post_attention_layernorm")
   let normOut = norm(x)
   let mlpGate = Dense(
@@ -294,16 +298,16 @@ private func Qwen3_5DecoderPost(
   let upOut = mlpUp(normOut)
   let hidden = Functional.swishMul(value: upOut, gate: gateOut)
   let feedForwardOut = mlpDown(hidden)
-  let out = x + feedForwardOut
-  return (out, normOut, feedForwardOut)
+  return x + feedForwardOut
 }
 
 public func Qwen3_5CausalLM<T: TensorNumeric>(
   _ dataType: T.Type, tokenLength: Int, cachedTokenLength: Int = 0,
   configuration: Qwen3_5ModelConfiguration, batchSize: Int = 1,
   outputHiddenStates: Bool = false, includeLogits: Bool = true, outputCacheStates: Bool = false,
-  outputFinalState: Bool = true, tieEmbedding: Bool = false, injectEmbeddings: Bool = false,
-  lastNumberOfTokens: Int = 1
+  outputFinalState: Bool = true, outputFinalHiddenState: Bool = false,
+  tieEmbedding: Bool = false, injectEmbeddings: Bool = false,
+  lastNumberOfTokens: Int = 1, linearStateCheckpointCount: Int = 0
 ) -> Model {
   precondition(lastNumberOfTokens >= 0)
   precondition(lastNumberOfTokens <= tokenLength)
@@ -343,11 +347,11 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
       let linearOut = Qwen3_5LinearAttention(
         prefix: prefix, configuration: configuration, batchSize: batchSize,
         tokenLength: tokenLength, x: norm1Out, convState: convState,
-        recurrentState: recurrentState, of: dataType)
+        recurrentState: recurrentState, of: dataType,
+        stateCheckpointCount: linearStateCheckpointCount)
       let afterMixer = linearOut[0].to(of: residual) + residual
-      let post = Qwen3_5DecoderPost(
+      out = Qwen3_5DecoderPost(
         prefix: prefix, x: afterMixer, configuration: configuration)
-      out = post.out
       if outputCacheStates {
         cacheOutputs.append(contentsOf: [linearOut[1], linearOut[2]])
       }
@@ -358,23 +362,23 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
       let attention = Qwen3_5FullAttention(
         prefix: prefix, configuration: configuration, batchSize: batchSize,
         tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-        lastNumberOfTokens: i == configuration.layers - 1 ? lastNumberOfTokens : nil)
+        lastNumberOfTokens: i == configuration.layers - 1 && !outputFinalHiddenState
+          ? lastNumberOfTokens : nil)
       let mixerOut = attention(norm1Out, rotary!, kIn, vIn)
       let residualOut =
-        i == configuration.layers - 1
+        i == configuration.layers - 1 && !outputFinalHiddenState
         ? residual.reshaped(
           [lastNumberOfTokens, configuration.hiddenSize],
           offset: [tokenLength - lastNumberOfTokens, 0],
           strides: [configuration.hiddenSize, 1])
         : residual
       let afterMixer = mixerOut.to(of: residualOut) + residualOut
-      let post = Qwen3_5DecoderPost(
+      out = Qwen3_5DecoderPost(
         prefix: prefix, x: afterMixer, configuration: configuration)
-      out = post.out
       inputs.append(contentsOf: [kIn, vIn])
     }
     if outputHiddenStates {
-      outputs.append(out.to(T.dataType))
+      outputs.append(out)
     }
   }
   if !outputFinalState && outputCacheStates {
@@ -383,6 +387,12 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
   }
   if outputFinalState {
     let finalNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "model.language_model.norm")
+    if outputFinalHiddenState {
+      outputs.append(out)
+      out = out.reshaped(
+        [lastNumberOfTokens, configuration.hiddenSize],
+        offset: [tokenLength - lastNumberOfTokens, 0], strides: [configuration.hiddenSize, 1])
+    }
     var finalOut = finalNorm(out)
     if includeLogits {
       if tieEmbedding {
@@ -397,4 +407,53 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
   }
   outputs.append(contentsOf: cacheOutputs)
   return Model(inputs, outputs)
+}
+
+public func Qwen3_5MTP<T: TensorNumeric>(
+  _ dataType: T.Type, configuration: Qwen3_5ModelConfiguration, batchSize: Int,
+  tokenLength: Int, cachedTokenLength: Int, lastNumberOfTokens: Int,
+  tieEmbedding: Bool
+) -> Model {
+  precondition(lastNumberOfTokens >= 0)
+  precondition(lastNumberOfTokens <= tokenLength)
+  let token = Input()
+  let hidden = Input()
+  let rotary = Input()
+  let kIn = Input()
+  let vIn = Input()
+  let tokenEmbed = Embedding(
+    Float16.self, vocabularySize: configuration.vocabularySize,
+    embeddingSize: configuration.hiddenSize,
+    name: "model.language_model.embed_tokens")
+  let embeddingNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.pre_fc_norm_embedding")
+  let hiddenNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.pre_fc_norm_hidden")
+  let fc = Dense(count: configuration.hiddenSize, noBias: true, name: "mtp.fc")
+  let tokenEmbedding = tokenEmbed(token).to(T.dataType)
+  let embeddingNormOut = embeddingNorm(tokenEmbedding)
+  let hiddenNormOut = hiddenNorm(hidden.to(T.dataType))
+  var out = fc(Functional.concat(axis: 1, embeddingNormOut, hiddenNormOut))
+  let residual = out
+  let inputNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.layers.0.input_layernorm")
+  let attentionInput = inputNorm(out)
+  let attention = Qwen3_5FullAttention(
+    prefix: "mtp.layers.0", configuration: configuration, batchSize: batchSize,
+    tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
+    lastNumberOfTokens: lastNumberOfTokens)
+  let residualOut = residual.reshaped(
+    [lastNumberOfTokens, configuration.hiddenSize],
+    offset: [tokenLength - lastNumberOfTokens, 0],
+    strides: [configuration.hiddenSize, 1])
+  out = attention(attentionInput, rotary, kIn, vIn).to(of: residualOut) + residualOut
+  out = Qwen3_5DecoderPost(prefix: "mtp.layers.0", x: out, configuration: configuration)
+  let hiddenOut = out
+  let norm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.norm")
+  out = norm(out).to(.Float16)
+  let logits: Model.IO
+  if tieEmbedding {
+    logits = Matmul(transposeB: (0, 1))(out, tokenEmbed.weight)
+  } else {
+    let lmHead = Dense(count: configuration.vocabularySize, noBias: true, name: "lm_head")
+    logits = lmHead(out)
+  }
+  return Model([token, hidden, rotary, kIn, vIn], [hiddenOut, logits])
 }
