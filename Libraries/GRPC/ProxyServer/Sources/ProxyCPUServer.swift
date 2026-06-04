@@ -111,6 +111,8 @@ extension Worker {
       }
 
       let status = try await callInstance.status.get()
+      let userIdDescription = "\(task.payload.userId as Any)"
+      let generationIdDescription = "\(task.payload.generationId as Any)"
       if numberOfImages > 0 {
         let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
         let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
@@ -118,10 +120,19 @@ extension Worker {
           "Task total time: \(totalTimeMs)ms, Task execution time: \(totalExecutionTimeMs)ms, (Priority: \(task.priority))"
         )
         logger.info(
-          "Succeed: {\"model\": \"\(task.model)\", \"userid\": \"\(task.payload.userId as Any)\",  \"generationId\": \"\(task.payload.generationId as Any)\", \"images\":\(numberOfImages)}"
+          "Succeed: {\"model\": \"\(task.model)\", \"userid\": \"\(userIdDescription)\",  \"generationId\": \"\(generationIdDescription)\", \"images\":\(numberOfImages)}"
         )
       }
       let isTaskSuccessful = (status.code == .ok) && (numberOfImages > 0)
+      if status.code != .ok {
+        logger.error(
+          "Worker \(id) completed with non-OK status, model:\(task.model), userId:\(userIdDescription), generationId:\(generationIdDescription), status:\(status.code), message:\(status.message ?? ""), images:\(numberOfImages), priority:\(task.priority)"
+        )
+      } else if numberOfImages == 0 {
+        logger.error(
+          "Worker \(id) returned OK with zero generated image responses, model:\(task.model), userId:\(userIdDescription), generationId:\(generationIdDescription), priority:\(task.priority)"
+        )
+      }
 
       if task.payload.consumableType == .boost, let amount = task.payload.amount,
         let generationId = task.payload.generationId
@@ -141,9 +152,15 @@ extension Worker {
       task.promise.succeed(status)
       task.context.statusPromise.succeed(status)
 
-      logger.info(
-        "Worker \(id) completed, generationId: \(task.payload.generationId as Any), successfully (Priority: \(task.priority))"
-      )
+      if isTaskSuccessful {
+        logger.info(
+          "Worker \(id) completed, generationId: \(generationIdDescription), successfully (Priority: \(task.priority))"
+        )
+      } else {
+        logger.info(
+          "Worker \(id) completed without successful final image, generationId: \(generationIdDescription), status:\(status.code), images:\(numberOfImages), (Priority: \(task.priority))"
+        )
+      }
 
     } catch {
       if task.payload.consumableType == .boost, let amount = task.payload.amount,

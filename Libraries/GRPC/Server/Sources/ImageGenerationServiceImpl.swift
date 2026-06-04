@@ -324,6 +324,8 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     logger.info(
       "Received image processing request with configuration steps: \(configuration.steps)"
     )
+    let model = configuration.model ?? ""
+    let sizeDescription = "\(configuration.startWidth * 64)x\(configuration.startHeight * 64)"
     let override = request.override
     let jsonDecoder = JSONDecoder()
     jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -481,7 +483,9 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       let imageDatas =
         images?.compactMap { $0.data(using: codec) } ?? []
       let audioData = audio?.compactMap { $0.data(using: codec) }
-      logger.info("Image processed")
+      logger.info(
+        "Image processed, model:\(model), seed:\(configuration.seed), size:\(sizeDescription), steps:\(configuration.steps), sampler:\(configuration.sampler), imageTensors:\(images?.count ?? 0), imageData:\(imageDatas.count), audioTensors:\(audio?.count ?? 0), scaleFactor:\(scaleFactor)"
+      )
       let totalBytes = imageDatas.reduce(0) { partialResult, imageData in
         return partialResult + imageData.count
       }
@@ -506,7 +510,8 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
               configurationDictionary = [:]
             }
             logger.error(
-              "Image processed failed, failed configuration:\(configurationDictionary)")
+              "Image processed failed with empty final images, imagesNil:\(images == nil), imageTensors:\(images?.count ?? 0), imageData:\(imageDatas.count), totalBytes:\(totalBytes), audioTensors:\(audio?.count ?? 0), model:\(model), seed:\(configuration.seed), size:\(sizeDescription), steps:\(configuration.steps), sampler:\(configuration.sampler), failed configuration:\(configurationDictionary)"
+            )
           }
           $0.scaleFactor = Int32(scaleFactor)
           $0.chunkState = .lastChunk
@@ -600,6 +605,9 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         }
       }
     } catch (let error) {
+      logger.error(
+        "Image generation request failed with error:\(error), model:\(model), seed:\(configuration.seed), size:\(sizeDescription), steps:\(configuration.steps), sampler:\(configuration.sampler)"
+      )
       promise.fail(error)
       context.statusPromise.fail(error)
       if let delegate = delegate {
