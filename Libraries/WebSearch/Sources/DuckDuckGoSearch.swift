@@ -68,7 +68,12 @@ public struct DuckDuckGoSearch {
 
       let (data, response) = try await httpTransport.data(for: request)
       guard (200..<300).contains(response.statusCode) else {
-        throw WebSearchError.httpStatus(response.statusCode, response.url)
+        throw WebSearchError.httpStatus(
+          response.statusCode, response.url, body: Self.decodeBody(data),
+          headers: response.allHeaderFields.reduce(into: [String: String]()) {
+            guard let key = $1.key as? String else { return }
+            $0[key] = String(describing: $1.value)
+          }, byteCount: data.count)
       }
       guard let html = Self.decodeBody(data) else {
         throw WebSearchError.bodyDecodingFailed(response.url)

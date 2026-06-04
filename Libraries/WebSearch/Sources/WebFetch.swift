@@ -47,7 +47,12 @@ public struct WebFetch {
         let (data, response) = try result.get()
         let elapsed = Date().timeIntervalSince(start)
         guard (200..<300).contains(response.statusCode) else {
-          throw WebSearchError.httpStatus(response.statusCode, response.url)
+          throw WebSearchError.httpStatus(
+            response.statusCode, response.url, body: DuckDuckGoSearch.decodeBody(data),
+            headers: response.allHeaderFields.reduce(into: [String: String]()) {
+              guard let key = $1.key as? String else { return }
+              $0[key] = String(describing: $1.value)
+            }, byteCount: data.count)
         }
         guard data.count <= options.maxBytes else {
           throw WebSearchError.responseTooLarge(data.count, options.maxBytes)
