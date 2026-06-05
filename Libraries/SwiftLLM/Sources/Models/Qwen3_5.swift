@@ -431,7 +431,9 @@ public func Qwen3_5MTP<T: TensorNumeric>(
   let tokenEmbedding = tokenEmbed(token).to(T.dataType)
   let embeddingNormOut = embeddingNorm(tokenEmbedding)
   let hiddenNormOut = hiddenNorm(hidden.to(T.dataType))
-  var out = fc(Functional.concat(axis: 1, embeddingNormOut, hiddenNormOut))
+  let concat = Concat(axis: 1)
+  concat.flags = .disableOpt
+  var out = fc(concat(embeddingNormOut, hiddenNormOut))
   let residual = out
   let inputNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.layers.0.input_layernorm")
   let attentionInput = inputNorm(out)
