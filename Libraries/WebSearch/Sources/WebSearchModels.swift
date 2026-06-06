@@ -247,6 +247,8 @@ public enum WebSearchError: LocalizedError {
   case unsupportedContentType(String?)
   /// The response body exceeded the configured byte limit.
   case responseTooLarge(Int, Int)
+  /// The search provider returned an interstitial or access challenge instead of results.
+  case searchBlocked(String, URL?)
 
   /// Human-readable error message.
   public var errorDescription: String? {
@@ -271,6 +273,11 @@ public enum WebSearchError: LocalizedError {
       return "Unsupported content type: \(contentType ?? "unknown")"
     case .responseTooLarge(let actual, let maximum):
       return "Response too large: \(actual) bytes exceeds limit of \(maximum) bytes"
+    case .searchBlocked(let message, let url):
+      if let url {
+        return "\(message) from \(url.absoluteString)"
+      }
+      return message
     }
   }
 }

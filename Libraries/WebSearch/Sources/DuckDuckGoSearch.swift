@@ -67,15 +67,20 @@ public struct DuckDuckGoSearch {
       }
 
       let (data, response) = try await httpTransport.data(for: request)
+      let decodedBody = Self.decodeBody(data)
+      if Self.isAccessChallenge(statusCode: response.statusCode, body: decodedBody) {
+        throw WebSearchError.searchBlocked(
+          "DuckDuckGo returned an access challenge instead of search results.", response.url)
+      }
       guard (200..<300).contains(response.statusCode) else {
         throw WebSearchError.httpStatus(
-          response.statusCode, response.url, body: Self.decodeBody(data),
+          response.statusCode, response.url, body: decodedBody,
           headers: response.allHeaderFields.reduce(into: [String: String]()) {
             guard let key = $1.key as? String else { return }
             $0[key] = String(describing: $1.value)
           }, byteCount: data.count)
       }
-      guard let html = Self.decodeBody(data) else {
+      guard let html = decodedBody else {
         throw WebSearchError.bodyDecodingFailed(response.url)
       }
 
@@ -154,6 +159,21 @@ public struct DuckDuckGoSearch {
 
   static func decodeBody(_ data: Data) -> String? {
     String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+  }
+
+  static func isAccessChallenge(statusCode: Int, body: String?) -> Bool {
+    guard let body else {
+      return false
+    }
+    let lowercased = body.lowercased()
+    if lowercased.contains("unfortunately, bots use duckduckgo too")
+      || lowercased.contains("please complete the following challenge")
+      || lowercased.contains("select all squares containing a duck")
+    {
+      return true
+    }
+    return statusCode == 202 && lowercased.contains("duckduckgo")
+      && lowercased.contains("challenge")
   }
 }
 

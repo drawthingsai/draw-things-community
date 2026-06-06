@@ -71,6 +71,34 @@ final class WebSearchTests: XCTestCase {
     XCTAssertEqual(queryItems["df"], "w")
   }
 
+  func testDuckDuckGoAccessChallengeDetection() async throws {
+    let html = """
+      <html><body>
+        <h1>DuckDuckGo</h1>
+        <p>Unfortunately, bots use DuckDuckGo too.</p>
+        <p>Please complete the following challenge to confirm this search was made by a human.</p>
+        <p>Select all squares containing a duck:</p>
+      </body></html>
+      """
+    let response = HTTPURLResponse(
+      url: URL(string: "https://html.duckduckgo.com/html/")!,
+      statusCode: 202,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "text/html"])!
+    let search = DuckDuckGoSearch(
+      httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) })
+
+    do {
+      _ = try await search.search(query: "site:github.com ios_system")
+      XCTFail("Expected searchBlocked")
+    } catch WebSearchError.searchBlocked(let message, let url) {
+      XCTAssertEqual(message, "DuckDuckGo returned an access challenge instead of search results.")
+      XCTAssertEqual(url?.absoluteString, "https://html.duckduckgo.com/html/")
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
   func testMarkdownConversionPreservesCommonShapes() throws {
     let document = try SwiftSoup.parse(
       """
