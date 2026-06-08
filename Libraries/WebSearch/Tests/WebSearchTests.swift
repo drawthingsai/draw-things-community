@@ -69,6 +69,9 @@ final class WebSearchTests: XCTestCase {
     XCTAssertEqual(queryItems["kl"], "us-en")
     XCTAssertEqual(queryItems["kp"], "-2")
     XCTAssertEqual(queryItems["df"], "w")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
+    XCTAssertTrue(request.value(forHTTPHeaderField: "User-Agent")?.contains("Mozilla/5.0") == true)
+    XCTAssertTrue(request.value(forHTTPHeaderField: "User-Agent")?.contains("Chrome/") == true)
   }
 
   func testDuckDuckGoAccessChallengeDetection() async throws {
@@ -206,12 +209,35 @@ final class WebSearchTests: XCTestCase {
       httpVersion: nil,
       headerFields: ["Content-Type": "text/html"])!
     let fetch = WebFetch(
-      httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) })
+      httpTransport: StubHttpTransport { request in
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
+        XCTAssertEqual(
+          request.value(forHTTPHeaderField: "Accept"),
+          WebFetchFormat.markdown.acceptHeader)
+        return .success((Data(html.utf8), response))
+      })
 
     let result = try await fetch.fetch(url: url)
 
     XCTAssertEqual(result.title, "https://example.com (text/html)")
     XCTAssertTrue(result.output.contains("# Title"))
     XCTAssertEqual(result.metadata.format, .markdown)
+  }
+
+  func testWebFetchFallsBackToDefaultUserAgentWhenEmpty() async throws {
+    let html = "<html><body><p>Body</p></body></html>"
+    let url = URL(string: "https://example.com")!
+    let response = HTTPURLResponse(
+      url: url,
+      statusCode: 200,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "text/html"])!
+    let fetch = WebFetch(
+      httpTransport: StubHttpTransport { request in
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
+        return .success((Data(html.utf8), response))
+      })
+
+    _ = try await fetch.fetch(url: url, options: WebFetchOptions(userAgent: " "))
   }
 }

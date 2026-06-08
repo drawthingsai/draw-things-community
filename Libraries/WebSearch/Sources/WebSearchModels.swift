@@ -1,5 +1,10 @@
 import Foundation
 
+/// Browser-style user agent used by default for web search and fetch requests.
+public let WebSearchDefaultUserAgent =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/537.36 "
+  + "(KHTML, like Gecko) Chrome/135.0.7049.95 Safari/537.36"
+
 /// Safe-search setting passed through to DuckDuckGo's HTML search endpoint.
 public enum DuckDuckGoSafeSearch: String, Codable {
   /// Strict filtering.
@@ -71,7 +76,7 @@ public struct DuckDuckGoSearchOptions: Codable {
     maxResults: Int = 10,
     pages: Int = 1,
     timeout: TimeInterval = 15,
-    userAgent: String = "DrawThingsWebSearch/1.0"
+    userAgent: String = WebSearchDefaultUserAgent
   ) {
     self.region = region
     self.safeSearch = safeSearch
@@ -118,7 +123,7 @@ public struct WebFetchOptions: Codable {
     format: WebFetchFormat = .markdown,
     timeout: TimeInterval = 30,
     maxBytes: Int = 5 * 1024 * 1024,
-    userAgent: String = "DrawThingsWebSearch/1.0"
+    userAgent: String = WebSearchDefaultUserAgent
   ) {
     self.format = format
     self.timeout = timeout
