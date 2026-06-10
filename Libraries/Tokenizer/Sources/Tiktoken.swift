@@ -113,6 +113,65 @@ public struct TiktokenTokenizer {
     return text
   }
 
+  public func makeTokenStreamer(
+    specialTokens: [Int32: String] = [:]
+  ) -> TokenStreamer {
+    TokenStreamer(tokenDecoder: decoder, specialTokens: specialTokens)
+  }
+
+  public struct TokenStreamer {
+    private let tokenDecoder: [Int32: Data]
+    private let specialTokens: [Int32: String]
+    private var pendingBytes = [UInt8]()
+
+    fileprivate init(tokenDecoder: [Int32: Data], specialTokens: [Int32: String]) {
+      self.tokenDecoder = tokenDecoder
+      self.specialTokens = specialTokens
+    }
+
+    public mutating func append(_ tokens: [Int32]) -> String {
+      var text = ""
+      for tokenId in tokens {
+        if let specialToken = specialTokens[tokenId] {
+          text += finish()
+          text += specialToken
+          continue
+        }
+        let token = tokenDecoder[tokenId, default: Data()]
+        guard !token.isEmpty else { continue }
+        pendingBytes.append(contentsOf: token)
+        text += consumeCompleteText()
+      }
+      return text
+    }
+
+    public mutating func finish() -> String {
+      let text = String(data: Data(pendingBytes), encoding: .utf8) ?? ""
+      pendingBytes.removeAll(keepingCapacity: true)
+      return text
+    }
+
+    private mutating func consumeCompleteText() -> String {
+      guard !pendingBytes.isEmpty else { return "" }
+      if let text = String(data: Data(pendingBytes), encoding: .utf8) {
+        pendingBytes.removeAll(keepingCapacity: true)
+        return text
+      }
+      for suffixLength in 1...min(3, pendingBytes.count) {
+        let prefixLength = pendingBytes.count - suffixLength
+        guard prefixLength > 0 else { break }
+        guard
+          let text = String(data: Data(pendingBytes[..<prefixLength]), encoding: .utf8)
+        else {
+          continue
+        }
+        pendingBytes.removeFirst(prefixLength)
+        return text
+      }
+      return ""
+    }
+  }
+
   /// byte → Unicode scalar
   private static let byteEncoder: [UInt8: Character] = {
     // 1. printable bytes kept as-is
