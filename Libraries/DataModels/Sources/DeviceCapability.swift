@@ -278,6 +278,22 @@ public struct DeviceCapability {
       return physicalMemory >= 24_696_061_952  // This is 23 * 1024 * 1024 * 1024.
     #endif
   }()
+  public static let shouldConserveMemoryForSmallLLM: Bool = {  // Small here means 20~30B.
+    #if arch(i386) || arch(x86_64) || !canImport(Metal)
+      return true
+    #else
+      if #available(iOS 26, macOS 26, macCatalyst 26, *) {
+        let physicalMemory = ProcessInfo.processInfo.physicalMemory
+        guard physicalMemory >= 50_465_865_728 else {
+          return true
+        }
+        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple10) {
+          return false
+        }
+      }
+      return true
+    #endif
+  }()
   public static var memoryCapacity: MemoryCapacity = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
     if physicalMemory >= 24_696_061_952 {  // This is 23 * 1024 * 1024 * 1024.
