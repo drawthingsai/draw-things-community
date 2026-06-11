@@ -1357,7 +1357,7 @@ public struct ModelZoo: DownloadZoo {
       huggingFaceLink: "HiDream-ai/HiDream-O1"
     ),
     Specification(
-      name: "Ideogram 4", file: "ideogram_4_q8p.ckpt", prefix: "",
+      name: "Ideogram 4 (8-bit S)", file: "ideogram_4_i8x.ckpt", prefix: "",
       version: .ideogram4, defaultScale: 16, textEncoder: "qwen_3_vl_8b_instruct_q8p.ckpt",
       autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000),
       noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
