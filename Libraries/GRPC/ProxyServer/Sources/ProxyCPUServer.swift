@@ -1226,7 +1226,7 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         while !Task.isCancelled {
           // Abort the task if we cannot send response any more. Send empty response as heartbeat to keep Cloudflare alive.
           let _ = try await context.sendResponse(ImageGenerationResponse()).get()
-          try? await Task.sleep(for: .seconds(20))  // Every 20 seconds send a heartbeat.
+          try? await Task.sleep(for: .seconds(10))  // Every 10 seconds send a heartbeat.
         }
       }
       let task = WorkTask(
