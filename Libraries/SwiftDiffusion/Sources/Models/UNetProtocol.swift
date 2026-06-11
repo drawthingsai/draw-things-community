@@ -128,7 +128,7 @@ extension UNetProtocol {
         .toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3:
+      .cosmos2_5_2b, .ideogram4, .ltx2, .ltx2_3:
       return nil
     case .seedvr2_3b, .seedvr2_7b:
       return graph.variable(
@@ -168,7 +168,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
 {
   switch version {
   case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
-    .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
+    .wurstchenStageC, .seedvr2_3b, .seedvr2_7b, .ideogram4:
     return conditions
   case .sd3, .auraflow, .sd3Large:
     return [conditions[0]]
@@ -550,7 +550,7 @@ public func externalOnDemandPartially(
       return false
     case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .wan21_14b, .qwenImage, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
-      .seedvr2_7b:
+      .seedvr2_7b, .ideogram4:
       return true
     }
   }
@@ -635,6 +635,8 @@ extension UNetFromNNC {
       isQuantizedModel || externalOnDemand || externalOnDemandPartially || isBF16
     let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0
     switch version {
+    case .ideogram4:
+      fatalError()
     case .v1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -1824,7 +1826,7 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       }
     }
@@ -1884,7 +1886,7 @@ extension UNetFromNNC {
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      .flux2_4b, .cosmos2_5_2b, .ideogram4, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -2025,7 +2027,7 @@ extension UNetFromNNC {
                   return ($0, $0)
                 })
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-              .seedvr2_7b:
+              .seedvr2_7b, .ideogram4:
               fatalError()
             }
           }()
@@ -2396,7 +2398,8 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
-        .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
+        .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b,
+        .ideogram4:
         break
       case .wan21_1_3b, .wan21_14b, .wan22_5b:
         if $0.0 == 0 {
@@ -2701,7 +2704,7 @@ extension UNetFromNNC {
       unet.compile(inputs: inputs)
       return
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .ideogram4:
       break
     case .hiDreamI1:
       var inputs = inputs.map {
@@ -4152,7 +4155,7 @@ extension UNetFromNNC {
       let reciprocalSigma: Float = 1 / max(timestep / 1000, 1e-6)
       return (firstInput - predicted) * reciprocalSigma
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .ideogram4:
       break
     }
     return unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
@@ -4164,7 +4167,7 @@ extension UNetFromNNC {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
       .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
+      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return (0, 0)
     case .ltx2, .ltx2_3:
       return LTX2ExtractAudioFramesAndHeight(shape)
@@ -4280,7 +4283,7 @@ extension UNetFromNNC {
     case .auraflow, .pixart, .flux1, .ernieImage, .flux2, .flux2_4b, .flux2_9b, .hunyuanVideo,
       .hiDreamI1,
       .kandinsky21, .qwenImage, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
-      .wan21_14b, .wan21_1_3b, .zImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
+      .wan21_14b, .wan21_1_3b, .zImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       tileScaleFactor = 8
     case .hiDreamO1:
       tileScaleFactor = 32
@@ -4522,7 +4525,7 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       }
     }
@@ -4557,7 +4560,7 @@ extension UNetFromNNC {
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
       .cosmos2_5_2b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      .ideogram4, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       return x
     }
   }

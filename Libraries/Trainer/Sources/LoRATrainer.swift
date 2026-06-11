@@ -123,7 +123,7 @@ public struct LoRATrainer {
           return "hunyuan_video_vae_f16.ckpt"
         case .qwenImage:
           return "qwen_image_vae_f16.ckpt"
-        case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+        case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
           return "flux_2_vae_f16.ckpt"
         case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3, .cosmos2_5_2b,
           .seedvr2_3b, .seedvr2_7b:
@@ -163,6 +163,8 @@ public struct LoRATrainer {
           fatalError()
         case .flux2, .flux2_9b, .flux2_4b:
           fatalError()
+        case .ideogram4:
+          return "qwen_3_vl_8b_instruct_q8p.ckpt"
         case .ltx2, .ltx2_3, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
           fatalError()
         }
@@ -1770,7 +1772,7 @@ public struct LoRATrainer {
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage,
         .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-        .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       }
       let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
@@ -1833,7 +1835,7 @@ public struct LoRATrainer {
             .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
             .hiDreamO1,
             .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-            .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+            .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
             fatalError()
           }
           return .continue(name)
@@ -5724,7 +5726,7 @@ public struct LoRATrainer {
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage,
         .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-        .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       }
       let externalData: DynamicGraph.Store.Codec =
@@ -5807,7 +5809,7 @@ public struct LoRATrainer {
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
               .flux2,
-              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
               fatalError()
             }
             if name.contains("lora_up") {
@@ -6006,7 +6008,7 @@ public struct LoRATrainer {
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage,
         .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-        .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       }
       c.full(0)
@@ -6210,7 +6212,7 @@ public struct LoRATrainer {
         case .sdxlRefiner, .wurstchenStageC, .wurstchenStageB:
           embeddingName = ("string_to_param_clip_g", "string_to_param_clip_g")
           firstStd = 0.01
-        case .seedvr2_3b, .seedvr2_7b:
+        case .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         }
         let embedding0 = graph.variable(
@@ -6491,7 +6493,7 @@ public struct LoRATrainer {
                 .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
                 .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
                 .flux2,
-                .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+                .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
                 fatalError()
               }
               if !hasTrainableEmbeddings {
@@ -6631,7 +6633,7 @@ public struct LoRATrainer {
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
               .flux2,
-              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
               fatalError()
             }
             condTokensTensorGPU = tokensTensorGPU
@@ -6735,7 +6737,7 @@ public struct LoRATrainer {
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
               .flux2,
-              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
               fatalError()
             }
             condTokensTensorGPU = nil

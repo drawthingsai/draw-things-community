@@ -2967,6 +2967,70 @@ extension TextEncoder {
     return ([newC], [textModel])
   }
 
+  private func encodeIdeogram4(
+    tokens: [DynamicGraph.Tensor<Int32>], tokenLengthUncond: Int, tokenLengthCond: Int
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    let tokenLength = tokens[0].shape[0] / 2
+    let batchSize = isCfgEnabled ? 2 : 1
+    let textModel = Qwen3(
+      FloatType.self, vocabularySize: 151_936,
+      width: 4_096, tokenLength: tokenLength,
+      layers: 36, MLP: 12_288, heads: 32,
+      outputHiddenStates: [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 35],
+      noFinalNormalizedOutput: true, batchSize: batchSize, usesFlashAttention: usesFlashAttention)
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: batchSize * tokenLength * tokenLength), .CPU,
+      .NHWC(batchSize, 1, tokenLength, tokenLength)
+    )
+    let textLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
+    for batch in 0..<batchSize {
+      let textLength = textLengths[batch]
+      for i in 0..<tokenLength {
+        let tokenStart = min(textLength, i + 1)
+        if tokenStart < tokenLength {
+          for j in tokenStart..<tokenLength {
+            causalAttentionMask[batch, 0, i, j] = -FloatType.greatestFiniteMagnitude
+          }
+        }
+      }
+    }
+    let tokensTensorGPU: DynamicGraph.Tensor<Int32>
+    if isCfgEnabled {
+      tokensTensorGPU = tokens[0].toGPU(0)
+    } else {
+      tokensTensorGPU = tokens[0][tokenLength..<(tokenLength * 2)].toGPU(0)
+    }
+    let rotaryTensorGPU = graph.variable(
+      QwenVLRotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    textModel.compile(inputs: [tokensTensorGPU, rotaryTensorGPU, causalAttentionMaskGPU])
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel, codec: [.q8p, .q6p, .q4p, .ezm7, .jit, externalData])
+      }
+    }
+    let c = textModel(
+      inputs: tokensTensorGPU, [rotaryTensorGPU, causalAttentionMaskGPU]
+    ).map {
+      $0.as(of: FloatType.self).reshaped(.HWC(batchSize, tokenLength, 4_096))
+    }
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+    let concat = Concat(axis: 2)
+    let conditioning = concat(inputs: c[0], Array(c.dropFirst()))[0].as(of: FloatType.self)
+    return ([conditioning], [textModel])
+  }
+
   private func encodeAnima(
     images: [DynamicGraph.Tensor<FloatType>],
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
@@ -3527,6 +3591,9 @@ extension TextEncoder {
         injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
         modifier: modifier, textModels: existingTextModels)
+    case .ideogram4:
+      return encodeIdeogram4(
+        tokens: tokens, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
     case .cosmos2_5_2b:
       return encodeAnima(
         images: images, tokens: tokens, positions: positions, mask: mask,
@@ -3652,7 +3719,7 @@ extension TextEncoder {
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .flux2_4b, .cosmos2_5_2b, .ideogram4, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3691,7 +3758,7 @@ extension TextEncoder {
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                   .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
                   .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
-                  .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+                  .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3732,7 +3799,7 @@ extension TextEncoder {
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                 .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
                 .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
-                .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+                .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
                 fatalError()
               }
               return .continue(name)

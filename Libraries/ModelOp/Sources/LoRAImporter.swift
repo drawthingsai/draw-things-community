@@ -238,7 +238,7 @@ public enum LoRAImporter {
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-      .seedvr2_7b:
+      .seedvr2_7b, .ideogram4:
       fatalError()
     case .ssd1b:
       (unet, _, unetMapper) = UNetXL(
@@ -321,7 +321,8 @@ public enum LoRAImporter {
       case .ltx2_3:
         inputDim = 128
         conditionalLength = 6144
-      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b:
+      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b,
+        .ideogram4:
         fatalError()
       }
       let crossattn: [DynamicGraph.Tensor<FloatType>]
@@ -605,7 +606,7 @@ public enum LoRAImporter {
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-        .seedvr2_7b:
+        .seedvr2_7b, .ideogram4:
         fatalError()
       }
       unetFixed.compile(inputs: crossattn)
@@ -654,7 +655,7 @@ public enum LoRAImporter {
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
         .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
         .zImage,
-        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .cosmos2_5_2b:
+        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .cosmos2_5_2b, .ideogram4:
         vectors = []
       case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
         fatalError()
@@ -886,7 +887,7 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
+      case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       }
       let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
@@ -1469,7 +1470,7 @@ public enum LoRAImporter {
     case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .auraflow:
@@ -1850,7 +1851,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         if let tensorDescGemma3 = stateDict["gemma3"] {
           try archive.with(tensorDescGemma3) {
             let tensor = Tensor<FloatType>(from: $0)
@@ -1900,7 +1901,7 @@ public enum LoRAImporter {
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

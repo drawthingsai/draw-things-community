@@ -29,6 +29,7 @@ public enum ModelVersion: String, Codable {
   case flux2_9b = "flux2_9b"
   case flux2_4b = "flux2_4b"
   case cosmos2_5_2b = "cosmos2.5_2b"
+  case ideogram4 = "ideogram_4"
   case ltx2 = "ltx2"
   case ltx2_3 = "ltx2.3"
   case seedvr2_3b = "seedvr2_3b"
@@ -453,7 +454,7 @@ func isBatchEnabled(_ version: ModelVersion) -> Bool {
     .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b:
     return true
   case .hunyuanVideo, .svdI2v, .wan21_14b, .wan21_1_3b, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
-    .seedvr2_7b:
+    .seedvr2_7b, .ideogram4:
     return false
   }
 }

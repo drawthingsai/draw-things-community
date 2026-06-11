@@ -71,6 +71,8 @@ public struct ModelZoo: DownloadZoo {
       return "LTX-2.3"
     case .seedvr2_3b, .seedvr2_7b:
       return "SeedVR2"
+    case .ideogram4:
+      return "Ideogram 4"
     }
   }
 
@@ -1353,6 +1355,16 @@ public struct ModelZoo: DownloadZoo {
       note:
         "HiDream O1 is a Qwen3-style image generation model with no external text encoder or VAE. It uses RGB patch diffusion directly with a model-specific initial noise scale.",
       huggingFaceLink: "HiDream-ai/HiDream-O1"
+    ),
+    Specification(
+      name: "Ideogram 4", file: "ideogram_4_q8p.ckpt", prefix: "",
+      version: .ideogram4, defaultScale: 16, textEncoder: "qwen_3_vl_8b_instruct_q8p.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000),
+      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      latentsScalingFactor: 1, paddedTextEncodingLength: 0, hiresFixScale: 24,
+      note:
+        "[Ideogram 4](https://huggingface.co/ideogram-ai/ideogram-4-fp8) is Ideogram's non-commercial text-to-image release. The Hugging Face release packages the FP8 checkpoint for Diffusers as an Ideogram4Pipeline flow-matching DiT, with benchmark material focused on typography, design, and image quality. This Draw Things entry uses Qwen3-VL 8B Instruct for text encoding and the FLUX.2 VAE; no separate unconditional model download is required.",
+      copyright: "© 2026 Ideogram", huggingFaceLink: "ideogram-ai/ideogram-4-fp8"
     ),
     Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
@@ -2812,7 +2824,7 @@ public struct ModelZoo: DownloadZoo {
       return .u(conditionScale: 1)
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
-      .ernieImage, .seedvr2_3b, .seedvr2_7b:
+      .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return .u(conditionScale: 1000)
     }
   }
@@ -2827,7 +2839,7 @@ public struct ModelZoo: DownloadZoo {
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
       .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return .timestep
     case .svdI2v:
       return .noise
@@ -2860,7 +2872,7 @@ public struct ModelZoo: DownloadZoo {
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1))
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
-      .ernieImage, .seedvr2_3b, .seedvr2_7b:
+      .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -2883,7 +2895,7 @@ public struct ModelZoo: DownloadZoo {
     case .hiDreamI1:
       return 128
     case .hiDreamO1, .hunyuanVideo, .qwenImage, .zImage, .ernieImage, .flux2, .ltx2, .ltx2_3,
-      .seedvr2_3b, .seedvr2_7b:
+      .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return 0
     case .wan21_1_3b, .wan21_14b, .wan22_5b, .flux2_9b, .flux2_4b, .cosmos2_5_2b:
       return 512
@@ -2912,7 +2924,7 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 0.18215, nil, nil, nil)
     case .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow:
       return (nil, nil, 0.13025, nil, nil, nil)
-    case .kandinsky21, .hiDreamO1:
+    case .kandinsky21, .hiDreamO1, .ideogram4:
       return (nil, nil, 1, nil, nil, nil)
     case .wurstchenStageC, .wurstchenStageB:
       return (nil, nil, 2.32558139535, nil, nil, nil)
@@ -3223,7 +3235,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow, .kandinsky21,
       .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .flux1, .hiDreamI1, .hiDreamO1, .zImage,
       .ernieImage, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .wan22_5b, .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
+      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return 24_000
     case .ltx2:
       return 24_000
@@ -3286,7 +3298,7 @@ public struct ModelZoo: DownloadZoo {
       .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .zImage,
       .ernieImage,
       .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
+      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return 30
     }
   }
@@ -3310,7 +3322,7 @@ public struct ModelZoo: DownloadZoo {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
         .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
-        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .hiDreamO1:
+        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4:
         return nil
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
@@ -3410,6 +3422,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 5 * 1_024 * 1_024 * 1_024
       case .seedvr2_7b:
         return fileSize < 8 * 1_024 * 1_024 * 1_024
+      case .ideogram4:
+        return fileSize < 9 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -3480,6 +3494,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 5 * 1_024 * 1_024 * 1_024
       case .seedvr2_7b:
         return fileSize < 8 * 1_024 * 1_024 * 1_024
+      case .ideogram4:
+        return fileSize < 16 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -3597,6 +3613,7 @@ extension ModelZoo {
       version == .flux1 || version == .sd3 || version == .sd3Large || version == .hiDreamI1
         || version == .qwenImage || version == .zImage || version == .flux2 || version == .flux2_9b
         || version == .flux2_4b || version == .cosmos2_5_2b || version == .ernieImage
+        || version == .ideogram4
     else { return false }
     if isConsistencyModel {
       return false
@@ -3614,7 +3631,7 @@ extension ModelZoo {
     switch version {
     case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .svdI2v, .wan22_5b, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
-      .seedvr2_7b, .hiDreamO1:
+      .seedvr2_7b, .hiDreamO1, .ideogram4:
       return false
     case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,
       .ssd1b, .kandinsky21, .wurstchenStageB, .wurstchenStageC:

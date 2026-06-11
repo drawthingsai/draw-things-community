@@ -439,6 +439,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (LTX-2.3)"
     case .seedvr2_3b, .seedvr2_7b:
       return " (SeedVR2)"
+    case .ideogram4:
+      return " (Ideogram 4)"
     }
   }
 

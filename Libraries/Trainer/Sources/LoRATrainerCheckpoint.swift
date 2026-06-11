@@ -72,7 +72,7 @@ extension LoRATrainerCheckpoint {
           if let textEmbedding2 = textEmbedding2 {
             $0.write("string_to_param_clip_l", variable: textEmbedding2)
           }
-        case .seedvr2_3b, .seedvr2_7b:
+        case .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         }
       }
@@ -103,7 +103,7 @@ extension LoRATrainerCheckpoint {
         .flux2_4b, .ltx2, .ltx2_3:
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-        .seedvr2_7b:
+        .seedvr2_7b, .ideogram4:
         fatalError()
       }
       $0.write(modelName, model: unet) { name, _ in
@@ -137,7 +137,7 @@ extension LoRATrainerCheckpoint {
           if let textEmbedding2 = textEmbedding2 {
             store.write("string_to_param_clip_l", variable: textEmbedding2)
           }
-        case .seedvr2_3b, .seedvr2_7b:
+        case .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         }
       }
@@ -152,7 +152,7 @@ extension LoRATrainerCheckpoint {
           .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
           .qwenImage,
           .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-          .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+          .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
           textModelMapping = LoRAMapping.OpenCLIPTextModelG
@@ -278,7 +278,7 @@ extension LoRATrainerCheckpoint {
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
         .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
-        .seedvr2_7b:
+        .seedvr2_7b, .ideogram4:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B
@@ -325,7 +325,7 @@ extension LoRATrainerCheckpoint {
           if let textEmbedding2 = exponentialMovingAverage.textEmbedding2 {
             store.write("string_to_param_clip_l", tensor: textEmbedding2)
           }
-        case .seedvr2_3b, .seedvr2_7b:
+        case .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         }
       }
@@ -340,7 +340,7 @@ extension LoRATrainerCheckpoint {
           .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
           .qwenImage,
           .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-          .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+          .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         case .sdxlBase, .ssd1b, .sdxlRefiner:
           textModelMapping = LoRAMapping.OpenCLIPTextModelG
@@ -473,7 +473,7 @@ extension LoRATrainerCheckpoint {
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
         .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
-        .seedvr2_7b:
+        .seedvr2_7b, .ideogram4:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B

@@ -950,7 +950,7 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .hunyuanVideo, .kandinsky21, .wan22_5b, .seedvr2_3b, .seedvr2_7b,
+      case .hunyuanVideo, .kandinsky21, .wan22_5b, .seedvr2_3b, .seedvr2_7b, .ideogram4,
         .wurstchenStageB, .wurstchenStageC:
         return []
       }
@@ -1386,7 +1386,7 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
-        case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+        case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
           for i in 0..<imageHeight * imageWidth {
             let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
               fp16[i * 32], fp16[i * 32 + 1], fp16[i * 32 + 2], fp16[i * 32 + 3],

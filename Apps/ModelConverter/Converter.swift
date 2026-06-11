@@ -162,6 +162,15 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "flux_2_vae_f16.ckpt"
       }
+    case .ideogram4:
+      textEncoder =
+        fileNames.first {
+          $0.hasSuffix("_qwen_3_vl_8b_instruct_f16.ckpt")
+            || $0.hasSuffix("_qwen_3_vl_8b_instruct_q8p.ckpt")
+        } ?? "qwen_3_vl_8b_instruct_q8p.ckpt"
+      if autoencoder == nil {
+        autoencoder = "flux_2_vae_f16.ckpt"
+      }
     case .seedvr2_3b, .seedvr2_7b:
       textEncoder = "\(fileName)_f16.ckpt"
       if autoencoder == nil {

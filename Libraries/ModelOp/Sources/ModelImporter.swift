@@ -494,7 +494,7 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
         throw Error.noTextEncoder
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         throw Error.noTextEncoder
       case .kandinsky21:
         fatalError()
@@ -569,7 +569,7 @@ public final class ModelImporter {
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
             .qwenImage,
             .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-            .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+            .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -611,7 +611,7 @@ public final class ModelImporter {
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
               .flux2,
-              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
               fatalError()
             }
           }
@@ -771,7 +771,7 @@ public final class ModelImporter {
     case .flux2_4b:
       conditionalLength = 7680
       batchSize = 1
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
@@ -825,7 +825,7 @@ public final class ModelImporter {
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
           .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b,
           .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
-          .seedvr2_3b, .seedvr2_7b:
+          .seedvr2_3b, .seedvr2_7b, .ideogram4:
           vectors = []
         case .kandinsky21, .v1, .v2:
           fatalError()
@@ -1020,7 +1020,7 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       case .kandinsky21, .v1, .v2:
         break
@@ -1279,7 +1279,7 @@ public final class ModelImporter {
           timesteps: 1,
           channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
           usesFlashAttention: .scale1, kvCache: false)
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
@@ -1432,7 +1432,7 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -1656,7 +1656,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b:
+          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b, .ideogram4:
             fatalError()
           }
           func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
@@ -1999,7 +1999,7 @@ public final class ModelImporter {
           if $0.keys.count != 292 && $0.keys.count != 294 {
             throw Error.tensorWritesFailed
           }
-        case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+        case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
@@ -2280,6 +2280,11 @@ extension ModelImporter {
       }
     case .seedvr2_3b, .seedvr2_7b:
       textEncoder = nil
+    case .ideogram4:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_qwen_3_vl_8b_instruct_f16.ckpt")
+          || $0.hasSuffix("_qwen_3_vl_8b_instruct_q8p.ckpt")
+      }
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -2349,6 +2354,13 @@ extension ModelImporter {
             subtitle: ModelZoo.humanReadableNameForVersion(.wurstchenStageC),
             file: "wurstchen_3.0_stage_c_effnet_previewer_f32_f16.ckpt"
           ))
+      }
+    case .ideogram4:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_vl_8b_instruct_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_2_vae_f16.ckpt"
       }
     case .pixart:
       if specification.textEncoder == nil {

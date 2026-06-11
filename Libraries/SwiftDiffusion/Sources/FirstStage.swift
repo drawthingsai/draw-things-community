@@ -222,6 +222,8 @@ extension FirstStage {
     let scaleFactorZ: Int
     let scaleFactor: Int
     switch version {
+    case .ideogram4:
+      fatalError()
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
@@ -260,6 +262,8 @@ extension FirstStage {
     let outputChannels: Int
     let causalAttentionMask: DynamicGraph.Tensor<Float>?
     switch version {
+    case .ideogram4:
+      fatalError()
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .pixart, .auraflow:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -1303,6 +1307,8 @@ extension FirstStage {
     let scaleFactor: Int
     let scaleFactorZ: Int
     switch version {
+    case .ideogram4:
+      fatalError()
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       scaleFactor = 8
@@ -1341,6 +1347,8 @@ extension FirstStage {
       && (startWidth > encodingTileSize.width || startHeight > encodingTileSize.height)
     let causalAttentionMask: DynamicGraph.Tensor<Float>?
     switch version {
+    case .ideogram4:
+      fatalError()
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .pixart, .auraflow:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
