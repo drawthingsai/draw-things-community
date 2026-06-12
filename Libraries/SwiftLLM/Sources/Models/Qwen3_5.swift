@@ -72,6 +72,14 @@ extension Qwen3_5ModelConfiguration {
     mropeSection: (temporal: 11, height: 11, width: 10),
     ropeTheta: 10_000_000, linearNumKeyHeads: 16, linearNumValueHeads: 32,
     linearKeyHeadDim: 128, linearValueHeadDim: 128, linearConvKernel: 4)
+
+  public static let qwen3_5_9B = Qwen3_5ModelConfiguration(
+    vocabularySize: 248_320, hiddenSize: 4_096, intermediateSize: 12_288,
+    layers: 32, fullAttentionInterval: 4,
+    attentionHeads: 16, keyValueHeads: 4, attentionHeadDim: 256, rotaryDim: 64,
+    mropeSection: (temporal: 11, height: 11, width: 10),
+    ropeTheta: 10_000_000, linearNumKeyHeads: 16, linearNumValueHeads: 32,
+    linearKeyHeadDim: 128, linearValueHeadDim: 128, linearConvKernel: 4)
 }
 
 public func Qwen3_5RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(

@@ -49,6 +49,11 @@ extension Qwen3_5VisionConfiguration {
     hiddenSize: 1_152, intermediateSize: 4_304, outputHiddenSize: 5_120,
     layers: 27, heads: 16, patchSize: 16, temporalPatchSize: 2,
     spatialMergeSize: 2, positionEmbeddings: 2_304, layerNormEpsilon: 1e-6)
+
+  public static let qwen3_5_9B = Qwen3_5VisionConfiguration(
+    hiddenSize: 1_152, intermediateSize: 4_304, outputHiddenSize: 4_096,
+    layers: 27, heads: 16, patchSize: 16, temporalPatchSize: 2,
+    spatialMergeSize: 2, positionEmbeddings: 2_304, layerNormEpsilon: 1e-6)
 }
 
 public struct Qwen3_5MultimodalPositionIDs: Sendable {
@@ -468,7 +473,8 @@ private func Qwen3_5VisionMerger<T: TensorNumeric>(
     mergedTokenLength, configuration.mergedHiddenSize,
   ])
   let mergerFc1 = Dense(
-    count: configuration.mergedHiddenSize, flags: [.Float16], name: "model.visual.merger.linear_fc1")
+    count: configuration.mergedHiddenSize, flags: [.Float16], name: "model.visual.merger.linear_fc1"
+  )
   let mergerFc2 = Dense(
     count: configuration.outputHiddenSize, flags: [], name: "model.visual.merger.linear_fc2")
   let out = mergerFc2(mergerFc1(normOut).GELU())
