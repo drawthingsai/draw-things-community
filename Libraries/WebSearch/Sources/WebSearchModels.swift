@@ -5,6 +5,16 @@ public let WebSearchDefaultUserAgent =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/537.36 "
   + "(KHTML, like Gecko) Chrome/135.0.7049.95 Safari/537.36"
 
+/// Search provider used for web search requests.
+public enum WebSearchProvider: String, Codable, CaseIterable {
+  /// DuckDuckGo HTML search.
+  case duckDuckGo = "duckduckgo"
+  /// Sogou web search.
+  case sogou
+  /// Web search disabled.
+  case disabled
+}
+
 /// Safe-search setting passed through to DuckDuckGo's HTML search endpoint.
 public enum DuckDuckGoSafeSearch: String, Codable {
   /// Strict filtering.
@@ -49,6 +59,19 @@ public enum DuckDuckGoTimeFilter: String, Codable {
       return "y"
     }
   }
+
+  var sogouValue: String {
+    switch self {
+    case .day:
+      return "1"
+    case .week:
+      return "2"
+    case .month:
+      return "3"
+    case .year:
+      return "4"
+    }
+  }
 }
 
 /// Options for a DuckDuckGo HTML search request.
@@ -80,6 +103,35 @@ public struct DuckDuckGoSearchOptions: Codable {
   ) {
     self.region = region
     self.safeSearch = safeSearch
+    self.timeFilter = timeFilter
+    self.maxResults = max(1, maxResults)
+    self.pages = max(1, pages)
+    self.timeout = timeout
+    self.userAgent = userAgent
+  }
+}
+
+/// Options for a Sogou HTML search request.
+public struct SogouSearchOptions: Codable {
+  /// Optional freshness filter.
+  public var timeFilter: DuckDuckGoTimeFilter?
+  /// Maximum number of unique results to return.
+  public var maxResults: Int
+  /// Maximum number of Sogou result pages to request.
+  public var pages: Int
+  /// Request timeout in seconds.
+  public var timeout: TimeInterval
+  /// User agent used for Sogou requests.
+  public var userAgent: String
+
+  /// Creates Sogou search options, clamping counts to at least one.
+  public init(
+    timeFilter: DuckDuckGoTimeFilter? = nil,
+    maxResults: Int = 10,
+    pages: Int = 1,
+    timeout: TimeInterval = 15,
+    userAgent: String = WebSearchDefaultUserAgent
+  ) {
     self.timeFilter = timeFilter
     self.maxResults = max(1, maxResults)
     self.pages = max(1, pages)
@@ -132,15 +184,15 @@ public struct WebFetchOptions: Codable {
   }
 }
 
-/// One normalized DuckDuckGo search result.
+/// One normalized web search result.
 public struct SearchResult: Codable, Equatable {
   /// One-based rank after de-duplication.
   public var rank: Int
   /// Result title.
   public var title: String
-  /// Destination URL after decoding DuckDuckGo redirect wrappers.
+  /// Destination URL after decoding search-provider redirect wrappers when possible.
   public var url: URL
-  /// Display URL shown by DuckDuckGo.
+  /// Display URL shown by the search provider.
   public var displayURL: String
   /// Result snippet text.
   public var snippet: String

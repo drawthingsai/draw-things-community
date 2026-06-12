@@ -20,6 +20,12 @@ private struct StubHttpTransport: HttpTransport {
 }
 
 final class WebSearchTests: XCTestCase {
+  func testWebSearchProviderCodableIncludesDisabled() throws {
+    let encoded = try JSONEncoder().encode(WebSearchProvider.disabled)
+    XCTAssertEqual(String(decoding: encoded, as: UTF8.self), "\"disabled\"")
+    XCTAssertEqual(try JSONDecoder().decode(WebSearchProvider.self, from: encoded), .disabled)
+  }
+
   func testDuckDuckGoRedirectDecoding() {
     let raw =
       "//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fscinfu%2FSwiftSoup&rut=abc"
@@ -100,6 +106,54 @@ final class WebSearchTests: XCTestCase {
     } catch {
       XCTFail("Unexpected error: \(error)")
     }
+  }
+
+  func testSogouSearchRequestParameters() throws {
+    let request = try SogouSearch.makeRequest(
+      endpoint: URL(string: "https://www.sogou.com/web")!,
+      query: "SwiftSoup GitHub",
+      page: 2,
+      options: SogouSearchOptions(
+        timeFilter: .week, maxResults: 10, pages: 2, timeout: 12))
+    let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+    let queryItems = Dictionary(
+      uniqueKeysWithValues: components!.queryItems!.map { ($0.name, $0.value ?? "") })
+    XCTAssertEqual(queryItems["query"], "SwiftSoup GitHub")
+    XCTAssertEqual(queryItems["page"], "2")
+    XCTAssertEqual(queryItems["ie"], "utf8")
+    XCTAssertEqual(queryItems["tsn"], "2")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
+    XCTAssertEqual(
+      request.value(forHTTPHeaderField: "Accept-Language"), "zh-CN,zh;q=0.9,en;q=0.8")
+  }
+
+  func testSogouSearchResultParsingPrefersMetadataURL() throws {
+    let html = """
+      <html><body>
+        <div class="vrwrap" id="sogou_vr_30000000_wrap_4">
+          <h3 class="vr-title">
+            <a target="_blank" href="/link?url=wrapped">GitHub - holzschu/<em>ios_system</em></a>
+          </h3>
+          <div class="fz-mid space-txt base-ellipsis clamp2">
+            Drop-in replacement for system() in iOS.
+          </div>
+          <a class="citeLinkClass" target="_blank" href="/link?url=wrapped">
+            <span>GitHub</span>
+            <span>https://github.com/h...</span>
+            <span>2024-03-23</span>
+          </a>
+          <div class="r-sech ext_query" data-url="https://github.com/holzschu/ios_system"></div>
+        </div>
+      </body></html>
+      """
+    let parsed = try SogouHTMLParser.parse(
+      html: html, baseURL: URL(string: "https://www.sogou.com/web")!)
+    XCTAssertEqual(parsed.results.count, 1)
+    XCTAssertEqual(parsed.results[0].title, "GitHub - holzschu/ios_system")
+    XCTAssertEqual(parsed.results[0].url.absoluteString, "https://github.com/holzschu/ios_system")
+    XCTAssertEqual(parsed.results[0].displayURL, "https://github.com/h...")
+    XCTAssertEqual(parsed.results[0].snippet, "Drop-in replacement for system() in iOS.")
+    XCTAssertEqual(parsed.results[0].source, "sogou")
   }
 
   func testMarkdownConversionPreservesCommonShapes() throws {
