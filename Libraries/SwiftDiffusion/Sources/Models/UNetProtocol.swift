@@ -168,8 +168,16 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
 {
   switch version {
   case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
-    .wurstchenStageC, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+    .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
     return conditions
+  case .ideogram4:
+    let shape = conditions[3].shape
+    return conditions[0..<3]
+      + [
+        DynamicGraph.Tensor<FloatType>(conditions[3])[
+          index..<(index + 1), 0..<shape[1]
+        ].copied()
+      ]
   case .sd3, .auraflow, .sd3Large:
     return [conditions[0]]
       + conditions[1..<conditions.count].map {
@@ -636,7 +644,19 @@ extension UNetFromNNC {
     let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0
     switch version {
     case .ideogram4:
-      fatalError()
+      tiledWidth = startWidth
+      tiledHeight = startHeight
+      tiledAudioHeight = 0
+      tileScaleFactor = 8
+      didRunLoRASeparately = false
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder {
+          let textShape = $0[1].shape
+          return Ideogram4(
+            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+            textLength: textShape[0], usesFlashAttention: valueOr(useFlashAttention, .scale1)
+          ).1
+        })
     case .v1:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -2700,11 +2720,33 @@ extension UNetFromNNC {
           xInput, timestepInput, textInput,
         ] + (useConditional ? Array(inputs[18..<33]) : Array(inputs[3..<18])))
       return
+    case .ideogram4:
+      let x = DynamicGraph.Tensor<FloatType>(inputs[0])
+      let xShape = x.shape
+      let xInput: DynamicGraph.Tensor<FloatType>
+      if isCfgEnabled {
+        xInput = x[0..<(xShape[0] / 2), 0..<xShape[1], 0..<xShape[2], 0..<xShape[3]].copied()
+      } else {
+        xInput = x
+      }
+      let text = DynamicGraph.Tensor<FloatType>(inputs[1])
+      let textShape = text.shape
+      let textInput: DynamicGraph.Tensor<FloatType>
+      if textShape.count == 3 {
+        let textIndex = isCfgEnabled ? min(1, textShape[0] - 1) : 0
+        textInput = text[
+          textIndex..<(textIndex + 1), 0..<textShape[1], 0..<textShape[2]
+        ].copied().reshaped(.WC(textShape[1], textShape[2]))
+      } else {
+        textInput = text
+      }
+      unet.compile(inputs: [xInput, textInput, inputs[2], inputs[3], inputs[4]])
+      return
     case .hiDreamO1:
       unet.compile(inputs: inputs)
       return
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .ideogram4:
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     case .hiDreamI1:
       var inputs = inputs.map {
@@ -3250,6 +3292,42 @@ extension UNetFromNNC {
         etCond = result[0].as(of: FloatType.self)
         teaCache?.cache(outputs: result, marker: index * 2 + 1)
       }
+      return Functional.concat(axis: 0, etUncond, etCond)
+    case .ideogram4:
+      func textInput(_ row: Int) -> DynamicGraph.Tensor<FloatType> {
+        let text = DynamicGraph.Tensor<FloatType>(restInputs[0])
+        let shape = text.shape
+        if shape.count == 3 {
+          let textIndex = min(row, shape[0] - 1)
+          return text[
+            textIndex..<(textIndex + 1), 0..<shape[1], 0..<shape[2]
+          ].copied().reshaped(.WC(shape[1], shape[2]))
+        }
+        return text
+      }
+      guard isCfgEnabled else {
+        let et = -unet(
+          inputs: firstInput, [textInput(0), restInputs[1], restInputs[2], restInputs[3]]
+        )[0].as(of: FloatType.self)
+        return et
+      }
+      let shape = firstInput.shape
+      let xUncond = firstInput[
+        0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+      ].copied()
+      let etUncond = -unet(
+        inputs: xUncond, [textInput(0), restInputs[1], restInputs[2], restInputs[3]]
+      )[0].as(of: FloatType.self)
+      etUncond.graph.joined()
+      guard !isCancelled.load(ordering: .acquiring) else {
+        return Functional.concat(axis: 0, etUncond, etUncond)
+      }
+      let xCond = firstInput[
+        (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+      ].copied()
+      let etCond = -unet(
+        inputs: xCond, [textInput(1), restInputs[1], restInputs[2], restInputs[3]]
+      )[0].as(of: FloatType.self)
       return Functional.concat(axis: 0, etUncond, etCond)
     case .qwenImage:
       guard isCfgEnabled else {
@@ -4155,7 +4233,7 @@ extension UNetFromNNC {
       let reciprocalSigma: Float = 1 / max(timestep / 1000, 1e-6)
       return (firstInput - predicted) * reciprocalSigma
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .ideogram4:
+      .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC:
       break
     }
     return unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)

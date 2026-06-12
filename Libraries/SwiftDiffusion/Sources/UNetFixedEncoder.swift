@@ -58,9 +58,9 @@ extension UNetFixedEncoder {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
       .cosmos2_5_2b, .ltx2,
-      .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       return true
-    case .v1, .v2, .kandinsky21, .ideogram4:
+    case .v1, .v2, .kandinsky21:
       return false
     }
   }
@@ -250,7 +250,43 @@ extension UNetFixedEncoder {
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     switch version {
     case .ideogram4:
-      fatalError()
+      let c0 = textEncoding[0]
+      let textLength = c0.shape[1]
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let imageLength = h * w
+      var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 4_608), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let normalizedTimestep = max(0, 1 - timestep / 1_000)
+        let timeEmbed = graph.variable(
+          Ideogram4TimeEmbedding(timestep: normalizedTimestep, of: FloatType.self).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<4_608] = timeEmbed
+      }
+      let indicatorIDs = graph.variable(
+        Ideogram4IndicatorIDs(textLength: textLength, imageLength: imageLength).toGPU(0))
+      let indicatorInput = Input()
+      let indicatorEmbedding = Embedding(
+        FloatType.self, vocabularySize: 2, embeddingSize: 4_608, name: "indicator_embedding")
+      let indicatorEmbedder = Model([indicatorInput], [indicatorEmbedding(indicatorInput)])
+      indicatorEmbedder.compile(inputs: indicatorIDs)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        guard
+          let tensor = store.read(
+            "indicator_embedding",
+            codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData])
+        else {
+          fatalError("Missing Ideogram 4 indicator embedding.")
+        }
+        indicatorEmbedding.parameters.copy(from: Tensor<FloatType>(from: tensor))
+      }
+      let indicator = indicatorEmbedder(inputs: indicatorIDs)[0].as(of: FloatType.self)
+      let rotary = graph.variable(
+        Ideogram4RotaryPositionEmbedding(
+          textLength: textLength, gridHeight: h, gridWidth: w, of: FloatType.self
+        ).toGPU(0))
+      return ([c0, indicator, rotary, timeEmbeds], nil)
     case .sdxlBase, .ssd1b:
       let batchSize = textEncoding[0].shape[0]
       let maxTokenLength = textEncoding[0].shape[1]

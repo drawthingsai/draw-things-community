@@ -3027,7 +3027,11 @@ extension TextEncoder {
     }
     weightsCache.attach(filePaths[0], from: textModel.parameters)
     let concat = Concat(axis: 2)
-    let conditioning = concat(inputs: c[0], Array(c.dropFirst()))[0].as(of: FloatType.self)
+    let layerMajorHiddenStates = concat(inputs: c[0], Array(c.dropFirst()))[0].as(
+      of: FloatType.self)
+    let conditioning = layerMajorHiddenStates.reshaped(
+      .NHWC(batchSize, tokenLength, c.count, 4_096)
+    ).transposed(2, 3).reshaped(.HWC(batchSize, tokenLength, 4_096 * c.count))
     return ([conditioning], [textModel])
   }
 
