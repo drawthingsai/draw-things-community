@@ -22,6 +22,9 @@ extension DownloadZoo {
     if of != LoRAZoo.self {
       files.formUnion(LoRAZoo.availableFiles(excluding: nil))
     }
+    if of != LLMZoo.self {
+      files.formUnion(LLMZoo.availableFiles(excluding: nil))
+    }
     if of != ModelZoo.self {
       files.formUnion(ModelZoo.availableFiles(excluding: nil))
     }
