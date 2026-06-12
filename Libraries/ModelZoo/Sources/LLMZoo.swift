@@ -16,11 +16,15 @@ public struct LLMZoo: DownloadZoo {
 
   public static let builtinSpecifications: [Specification] = [
     defaultSpecification,
-    Specification(name: "Qwen 3.6 27B (2-bit S)", file: "qwen_3.6_27b_i2x.ckpt"),
     Specification(name: "Qwen 3.6 27B (8-bit S)", file: "qwen_3.6_27b_i8x.ckpt"),
+    Specification(name: "Qwen 3.5 9B (5-bit S)", file: "qwen_3.5_9b_i5x.ckpt"),
   ]
 
-  private static let fileSHA256: [String: String] = [:]
+  private static let fileSHA256: [String: String] = [
+    "qwen_3.6_27b_i4x.ckpt": "20a28fb30af7d1d5228c314fa76080ec0dae7c9519fd69e5ad54c44462eb7dbc",
+    "qwen_3.6_27b_i8x.ckpt": "1cd4b97a358a11dd795326e549e210d88f0aff6d91ebee8adc40eda6f36f7f4d",
+    "qwen_3.5_9b_i5x.ckpt": "559d41f5e6721b4edb5a661c42b6f328a243876c2637cad36cf9937fb0d453c1",
+  ]
 
   private static var specificationMapping: [String: Specification] = {
     var mapping = [String: Specification]()
