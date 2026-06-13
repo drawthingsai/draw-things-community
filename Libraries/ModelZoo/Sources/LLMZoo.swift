@@ -1,23 +1,31 @@
 import Foundation
+import LLM
 
 public struct LLMZoo: DownloadZoo {
   public struct Specification: Codable, Hashable {
     public let name: String
     public let file: String
+    public let version: LLMVersion
 
-    public init(name: String, file: String) {
+    public init(name: String, file: String, version: LLMVersion) {
       self.name = name
       self.file = file
+      self.version = version
     }
   }
 
   public static let defaultSpecification = Specification(
-    name: "Qwen 3.6 27B (4-bit S)", file: "qwen_3.6_27b_i4x.ckpt")
+    name: "Qwen 3.6 27B (4-bit S)", file: "qwen_3.6_27b_i4x.ckpt",
+    version: .qwen_3_5_27b)
 
   public static let builtinSpecifications: [Specification] = [
     defaultSpecification,
-    Specification(name: "Qwen 3.6 27B (8-bit S)", file: "qwen_3.6_27b_i8x.ckpt"),
-    Specification(name: "Qwen 3.5 9B (5-bit S)", file: "qwen_3.5_9b_i5x.ckpt"),
+    Specification(
+      name: "Qwen 3.6 27B (8-bit S)", file: "qwen_3.6_27b_i8x.ckpt",
+      version: .qwen_3_5_27b),
+    Specification(
+      name: "Qwen 3.5 9B (5-bit S)", file: "qwen_3.5_9b_i5x.ckpt",
+      version: .qwen_3_5_9b),
   ]
 
   private static let fileSHA256: [String: String] = [
@@ -56,6 +64,13 @@ public struct LLMZoo: DownloadZoo {
   public static func humanReadableNameForModel(_ name: String) -> String {
     guard let specification = specificationForModel(name) else { return name }
     return specification.name
+  }
+
+  public static func versionForModel(_ name: String) -> LLMVersion {
+    guard let specification = specificationForModel(name) else {
+      return defaultSpecification.version
+    }
+    return specification.version
   }
 
   public static func fileSHA256ForModelDownloaded(_ name: String) -> String? {

@@ -8,6 +8,7 @@ swift_library(
     deps = [
         "//Libraries/DataModels",
         "//Libraries/SwiftDiffusion",
+        "//Libraries/SwiftLLM",
         "//Libraries/Upscaler",
         "@s4nnc//nnc",
     ],

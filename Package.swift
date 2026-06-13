@@ -262,6 +262,7 @@ let package = Package(
       dependencies: [
         "DataModels",
         "Diffusion",
+        "LLM",
         "Upscaler",
         .product(name: "NNC", package: "s4nnc"),
       ],
