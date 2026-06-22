@@ -286,7 +286,7 @@ public struct RemoteImageGenerator: ImageGenerator {
               return nil
             }
           }
-          lastChunk = Data()
+          lastAudioChunk = Data()
         case .moreChunks:
           // There are more chunks to decode, in this case, we just simply append the chunk.
           if let first = response.generatedAudio.first {
