@@ -23,10 +23,59 @@ public enum ProxyTaskPriority: Sendable {
   case background
 }
 
+final class WorkTaskResponseWriter {
+  private let context: StreamingResponseCallContext<ImageGenerationResponse>
+  private let eventLoop: EventLoop
+  private var writeTail: EventLoopFuture<Void>
+  private var finished = false
+  private var firstFailure: Error?
+
+  init(context: StreamingResponseCallContext<ImageGenerationResponse>) {
+    self.context = context
+    eventLoop = context.eventLoop
+    writeTail = eventLoop.makeSucceededFuture(())
+  }
+
+  func send(_ response: ImageGenerationResponse) -> EventLoopFuture<Void> {
+    let promise = eventLoop.makePromise(of: Void.self)
+    eventLoop.execute {
+      if let firstFailure = self.firstFailure {
+        promise.fail(firstFailure)
+        return
+      }
+      guard !self.finished else {
+        promise.fail(GRPCStatus(code: .cancelled, message: "response stream is finishing"))
+        return
+      }
+      let responseWritten = self.writeTail.flatMap {
+        self.context.sendResponse(response)
+      }
+      self.writeTail = responseWritten
+      responseWritten.whenFailure { error in
+        if self.firstFailure == nil {
+          self.firstFailure = error
+        }
+      }
+      responseWritten.cascade(to: promise)
+    }
+    return promise.futureResult
+  }
+
+  func waitForPendingWrites() -> EventLoopFuture<Void> {
+    let promise = eventLoop.makePromise(of: Void.self)
+    eventLoop.execute {
+      self.finished = true
+      self.writeTail.cascade(to: promise)
+    }
+    return promise.futureResult
+  }
+}
+
 struct WorkTask {
   var priority: ProxyTaskPriority
   var request: ImageGenerationRequest
   var context: StreamingResponseCallContext<ImageGenerationResponse>
+  var responseWriter: WorkTaskResponseWriter
   var promise: EventLoopPromise<GRPCStatus>
   var heartbeat: Task<Void, Error>
   var creationTimestamp: Date
@@ -73,8 +122,13 @@ extension Worker {
           "user: \(task.payload.userId as Any), \(errorMessage) (Priority: \(task.priority))")
         // intentionally abort task from throttle queue over 1 hour
         let status = GRPCStatus(code: .aborted, message: errorMessage)
-        task.promise.succeed(status)
-        task.context.statusPromise.succeed(status)
+        do {
+          try await task.responseWriter.waitForPendingWrites().get()
+          task.promise.succeed(status)
+        } catch {
+          task.promise.fail(error)
+          throw error
+        }
         return
       }
     }
@@ -93,7 +147,7 @@ extension Worker {
         if !response.generatedImages.isEmpty {
           numberOfImages += response.generatedImages.count
         }
-        task.context.sendResponse(response).whenComplete { result in
+        task.responseWriter.send(response).whenComplete { result in
           switch result {
           case .success:
             logger.debug("forward response: \(response)")
@@ -107,12 +161,29 @@ extension Worker {
 
       call = callInstance
       task.context.closeFuture.whenComplete { _ in
+        logger.info(
+          "Worker \(workerId) downstream call (proxy<->client) stream closed, model:\(task.model), userId:\(task.payload.userId as Any), generationId:\(task.payload.generationId as Any), priority:\(task.priority)"
+        )
         callInstance.cancel(promise: nil)
       }
 
-      let status = try await callInstance.status.get()
       let userIdDescription = "\(task.payload.userId as Any)"
       let generationIdDescription = "\(task.payload.generationId as Any)"
+      logger.info(
+        "Worker \(id) waiting for upstream call (proxy<->GPU) status, model:\(task.model), userId:\(userIdDescription), generationId:\(generationIdDescription), priority:\(task.priority)"
+      )
+      let status: GRPCStatus
+      do {
+        status = try await callInstance.status.get()
+        logger.info(
+          "Worker \(id) upstream call (proxy<->GPU) status returned, model:\(task.model), userId:\(userIdDescription), generationId:\(generationIdDescription), status:\(status.code), message:\(status.message ?? ""), priority:\(task.priority)"
+        )
+      } catch {
+        logger.error(
+          "Worker \(id) upstream call (proxy<->GPU) status failed, model:\(task.model), userId:\(userIdDescription), generationId:\(generationIdDescription), error:\(error), priority:\(task.priority)"
+        )
+        throw error
+      }
       if numberOfImages > 0 {
         let totalTimeMs = Date().timeIntervalSince(task.creationTimestamp) * 1000
         let totalExecutionTimeMs = Date().timeIntervalSince(taskExecuteStartTimestamp) * 1000
@@ -134,6 +205,7 @@ extension Worker {
         )
       }
 
+      try await task.responseWriter.waitForPendingWrites().get()
       if task.payload.consumableType == .boost, let amount = task.payload.amount,
         let generationId = task.payload.generationId
       {
@@ -149,8 +221,10 @@ extension Worker {
           amount: amount,
           logger: logger)
       }
+      logger.info(
+        "Worker \(id) completing downstream call (proxy<->client) status, model:\(task.model), userId:\(userIdDescription), generationId:\(generationIdDescription), status:\(status.code), message:\(status.message ?? ""), priority:\(task.priority)"
+      )
       task.promise.succeed(status)
-      task.context.statusPromise.succeed(status)
 
       if isTaskSuccessful {
         logger.info(
@@ -178,7 +252,6 @@ extension Worker {
       }
       logger.error("Worker \(id) task failed with error: \(error) (Priority: \(task.priority))")
       task.promise.fail(error)
-      task.context.statusPromise.fail(error)
       throw error
     }
   }
@@ -1222,15 +1295,16 @@ final class ImageGenerationProxyService: ImageGenerationServiceProvider {
         from: payload.userClass, payload: payload,
         throttlePolicies: throttlePolicies)
       // Enqueue task.
+      let responseWriter = WorkTaskResponseWriter(context: context)
       let heartbeat = Task {
         while !Task.isCancelled {
           // Abort the task if we cannot send response any more. Send empty response as heartbeat to keep Cloudflare alive.
-          let _ = try await context.sendResponse(ImageGenerationResponse()).get()
+          let _ = try await responseWriter.send(ImageGenerationResponse()).get()
           try? await Task.sleep(for: .seconds(10))  // Every 10 seconds send a heartbeat.
         }
       }
       let task = WorkTask(
-        priority: priority, request: request, context: context, promise: promise,
+        priority: priority, request: request, context: context, responseWriter: responseWriter, promise: promise,
         heartbeat: heartbeat, creationTimestamp: Date(), model: model, payload: payload)
       await taskQueue.addTask(task)
       if let worker = await taskQueue.nextWorker() {
