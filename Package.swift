@@ -31,7 +31,6 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-crypto.git", from: "3.7.1"),
     .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
     .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.4.5"),
-    .package(url: "https://github.com/apple/swift-nio.git", from: "2.100.0"),
     .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.23.1"),
     .package(url: "https://github.com/jagreenwood/swift-log-datadog.git", from: "0.3.0"),
 
@@ -456,7 +455,6 @@ let package = Package(
         "Utils",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "GRPC", package: "grpc-swift"),
-        .product(name: "NIO", package: "swift-nio"),
         .product(name: "DataDogLog", package: "swift-log-datadog"),
       ],
       path: "Apps/gRPCServerCLI",
