@@ -86,7 +86,8 @@ internal enum MediaGenerationCloudAuthentication {
     estimatedComputeUnits: Double?,
     baseURL: URL = CloudConfiguration.defaultBaseURL,
     timeout: TimeInterval = 30,
-    cancellation: (@escaping () -> Void) -> Void
+    cancellation: (@escaping () -> Void) -> Void,
+    onFailure: ((String) -> Void)? = nil
   ) -> String? {
     let taskCancellationBag = TaskCancellationBag()
     cancellation {
@@ -132,12 +133,23 @@ internal enum MediaGenerationCloudAuthentication {
     let task = URLSession.shared.dataTask(with: request) { data, response, error in
       defer { group.leave() }
 
-      guard error == nil,
-        let httpResponse = response as? HTTPURLResponse,
-        httpResponse.statusCode == 200,
-        let data = data,
-        let authResponse = try? JSONDecoder().decode(AuthenticationResponse.self, from: data)
+      if let error = error {
+        onFailure?("network error: \(error.localizedDescription)")
+        return
+      }
+      guard let httpResponse = response as? HTTPURLResponse else {
+        onFailure?("no HTTP response")
+        return
+      }
+      guard httpResponse.statusCode == 200, let data = data else {
+        let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? "(no body)"
+        onFailure?("HTTP \(httpResponse.statusCode): \(body)")
+        return
+      }
+      guard let authResponse = try? JSONDecoder().decode(AuthenticationResponse.self, from: data)
       else {
+        let raw = String(data: data, encoding: .utf8) ?? "(non-UTF8 body)"
+        onFailure?("decode failed, body: \(raw)")
         return
       }
 

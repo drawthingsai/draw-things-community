@@ -237,7 +237,8 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
         switch self.blockingShortTermToken(authenticator: authenticator, appCheck: appCheck) {
         case .success(let token):
           shortTermToken = token
-        case .failure:
+        case .failure(let error):
+          print("[CloudAuth] Failed to get short-term token: \(error.localizedDescription)")
           return nil
         }
 
@@ -254,7 +255,10 @@ internal final class MediaGenerationRemoteExecutor: @unchecked Sendable {
           estimatedComputeUnits: estimatedComputeUnits,
           baseURL: baseURL,
           timeout: 30,
-          cancellation: cancellation
+          cancellation: cancellation,
+          onFailure: { reason in
+            print("[CloudAuth] /authenticate failed: \(reason)")
+          }
         )
       }
     }
