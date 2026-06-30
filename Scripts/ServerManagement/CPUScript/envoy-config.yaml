@@ -20,21 +20,9 @@ static_resources:
             - name: image_generation_service_https
               domains: ["*"]
               routes:
-              # Allow Pubkey method
+              # Only allow Pubkey method
               - match:
                   path: "/ImageGenerationService/Pubkey"
-                route:
-                  cluster: image_generation_grpc_service
-                  timeout: 60s
-              # Allow GenerateImage method (long timeout for image generation)
-              - match:
-                  path: "/ImageGenerationService/GenerateImage"
-                route:
-                  cluster: image_generation_grpc_service
-                  timeout: 300s
-              # Allow Echo method
-              - match:
-                  path: "/ImageGenerationService/Echo"
                 route:
                   cluster: image_generation_grpc_service
                   timeout: 60s
@@ -44,7 +32,7 @@ static_resources:
                 direct_response:
                   status: 403
                   body:
-                    inline_string: "Access denied"
+                    inline_string: "Access denied: Only Pubkey method is allowed"
               # Block any other requests
               - match:
                   prefix: "/"
@@ -108,3 +96,4 @@ admin:
     socket_address:
       protocol: TCP
       address: 127.0.0.1
+      port_value: 9901

@@ -39,15 +39,23 @@ Configure Tailscale for GPU server connectivity:
 Start the ProxyServiceCLI CPU proxy server:
 
 ```bash
-/path/to/CPUScript/LaunchCPUServer.sh <DATADOG_API_KEY> <PATH_TO_MODEL_LIST_FILE>
+/path/to/CPUScript/LaunchCPUServer.sh <DATADOG_API_KEY> <PATH_TO_MODEL_LIST_FILE> [PROXY_SERVICE_ARGS...]
 ```
 
 **Example:**
 ```bash
-./LaunchCPUServer.sh 'dd_api_123abc...' /home/user/Documents/model-list
+./LaunchCPUServer.sh 'dd_api_123abc...' /home/user/Documents/model-list \
+  -g 100.70.225.70:40001-40008:1 \
+  -g 100.111.187.6:40001-40008:1 \
+  -g 100.115.89.107:40001-40008:1 \
+  -g 100.112.144.13:40001-40008:1 \
+  -g 100.121.197.14:40001-40008:1 \
+  -g 100.110.198.32:40001-40008:1
 ```
 
 **Note:** This will stop and remove any existing container before starting a new one.
+The script mounts the directory containing `model-list` into the container as `/app/Documents`
+so host-side edits and `update-model-list` control-panel writes target the same file.
 
 ### Envoy Proxy Server
 
