@@ -205,6 +205,12 @@ extension Worker {
         )
       }
 
+      // callInstance.status only means the upstream call (proxy<->GPU) has completed.
+      // Response callbacks may have already enqueued downstream writes (proxy<->client)
+      // that are still pending. Drain those forwarded responses before completing the
+      // provider future; otherwise grpc-swift may send downstream status/trailers before
+      // every forwarded response has been flushed.
+
       try await task.responseWriter.waitForPendingWrites().get()
       if task.payload.consumableType == .boost, let amount = task.payload.amount,
         let generationId = task.payload.generationId
