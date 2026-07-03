@@ -416,7 +416,7 @@ public enum ComputeUnits {
         batchSize: 1, textLength: baseTokenLength, channels: 4_096)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .ideogram4:
-      let mainCount = ErnieImageInstructionCount(
+      let mainCount = Ideogram4InstructionCount(
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
         channels: 4_608, layers: 34, intermediateSize: 12_288)
       return (main: mainCount * batchSize, fixed: 0)

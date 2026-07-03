@@ -32,14 +32,20 @@ final class ComputeUnitsTests: XCTestCase {
     .init(version: .wan21_1_3b, width: 8, height: 8, frames: 121),
     .init(version: .wan21_14b, width: 8, height: 8, frames: 121),
     .init(version: .wan22_5b, width: 8, height: 8, frames: 121),
+    .init(version: .hiDreamI1, width: 8, height: 8, frames: 1),
+    .init(version: .hiDreamO1, width: 8, height: 8, frames: 1),
     .init(version: .qwenImage, width: 8, height: 8, frames: 1),
     .init(version: .zImage, width: 8, height: 8, frames: 1),
+    .init(version: .ernieImage, width: 8, height: 8, frames: 1),
     .init(version: .flux2, width: 8, height: 8, frames: 1),
     .init(version: .flux2_9b, width: 8, height: 8, frames: 1),
     .init(version: .flux2_4b, width: 8, height: 8, frames: 1),
-    .init(version: .hiDreamI1, width: 8, height: 8, frames: 1),
+    .init(version: .cosmos2_5_2b, width: 8, height: 8, frames: 1),
+    .init(version: .ideogram4, width: 8, height: 8, frames: 1),
     .init(version: .ltx2, width: 8, height: 8, frames: 121),
     .init(version: .ltx2_3, width: 8, height: 8, frames: 121),
+    .init(version: .seedvr2_3b, width: 8, height: 8, frames: 1),
+    .init(version: .seedvr2_7b, width: 8, height: 8, frames: 1),
   ]
 
   private func configuration(
@@ -128,18 +134,30 @@ final class ComputeUnitsTests: XCTestCase {
       return 1.176470588 * 0.8
     case .hiDreamI1:
       return 2.84465488969
+    case .hiDreamO1:
+      return 2.84465488969
     case .qwenImage:
       return 2.84465488969
     case .zImage:
       return 1.176470588
+    case .ernieImage:
+      return 2.588235294
     case .flux2:
       return 2.588235294 * 2
     case .flux2_9b:
       return 2.588235294
     case .flux2_4b:
       return 1.176470588 * 0.8
+    case .cosmos2_5_2b:
+      return 1.176470588 * 0.8
+    case .ideogram4:
+      return 2.588235294
     case .ltx2, .ltx2_3:
       return 1.176470588 * 0.8
+    case .seedvr2_3b:
+      return 1.176470588 * 0.8
+    case .seedvr2_7b:
+      return 1.176470588
     }
   }
 
@@ -165,7 +183,8 @@ final class ComputeUnitsTests: XCTestCase {
     switch version {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large,
-      .flux1, .qwenImage, .zImage, .flux2, .flux2_9b, .flux2_4b, .hiDreamI1:
+      .flux1, .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .cosmos2_5_2b, .hiDreamI1, .hiDreamO1, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
     case .svdI2v:
@@ -229,7 +248,7 @@ final class ComputeUnitsTests: XCTestCase {
       return 512
     case .hunyuanVideo:
       return 256
-    case .qwenImage, .zImage, .flux2, .flux2_9b, .flux2_4b:
+    case .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
       return 512
     case .ltx2, .ltx2_3:
       return 128
@@ -253,7 +272,7 @@ final class ComputeUnitsTests: XCTestCase {
       )
     case .wan22_5b:
       return (rawWidth * 4, rawHeight * 4)
-    case .ltx2, .ltx2_3:
+    case .hiDreamO1, .ltx2, .ltx2_3:
       return (rawWidth * 2, rawHeight * 2)
     default:
       return (rawWidth * 8, rawHeight * 8)
