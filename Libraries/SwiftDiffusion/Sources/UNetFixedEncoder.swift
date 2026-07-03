@@ -255,6 +255,7 @@ extension UNetFixedEncoder {
       let h = startHeight / 2
       let w = startWidth / 2
       let imageLength = h * w
+      precondition(timesteps.count > 0)
       var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 4_608), of: FloatType.self)
       for (i, timestep) in timesteps.enumerated() {
         let normalizedTimestep = max(0, 1 - timestep / 1_000)
@@ -262,31 +263,35 @@ extension UNetFixedEncoder {
           Ideogram4TimeEmbedding(timestep: normalizedTimestep, of: FloatType.self).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<4_608] = timeEmbed
       }
-      let indicatorIDs = graph.variable(
-        Ideogram4IndicatorIDs(textLength: textLength, imageLength: imageLength).toGPU(0))
-      let indicatorInput = Input()
-      let indicatorEmbedding = Embedding(
-        FloatType.self, vocabularySize: 2, embeddingSize: 4_608, name: "indicator_embedding")
-      let indicatorEmbedder = Model([indicatorInput], [indicatorEmbedding(indicatorInput)])
-      indicatorEmbedder.compile(inputs: indicatorIDs)
+      let textIndicatorIDs = graph.variable(
+        Ideogram4IndicatorIDs(textLength: textLength, imageLength: 0).toGPU(0))
+      let imageIndicatorIDs = graph.variable(
+        Ideogram4IndicatorIDs(textLength: 0, imageLength: imageLength).toGPU(0))
+      let (_, unetFixed) = Ideogram4Fixed(timesteps: timesteps.count)
+      unetFixed.maxConcurrency = .limit(4)
+      let fixedInputs: [DynamicGraph.AnyTensor] = [
+        c0, textIndicatorIDs, imageIndicatorIDs, timeEmbeds,
+      ]
+      unetFixed.compile(inputs: fixedInputs)
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        guard
-          let tensor = store.read(
-            "indicator_embedding",
-            codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData])
-        else {
-          fatalError("Missing Ideogram 4 indicator embedding.")
+        if !loadedFromWeightsCache {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
-        indicatorEmbedding.parameters.copy(from: Tensor<FloatType>(from: tensor))
       }
-      let indicator = indicatorEmbedder(inputs: indicatorIDs)[0].as(of: FloatType.self)
+      let fixedConditions = unetFixed(
+        inputs: c0, [textIndicatorIDs, imageIndicatorIDs, timeEmbeds]
+      ).map { $0.as(of: FloatType.self) }
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       let rotary = graph.variable(
         Ideogram4RotaryPositionEmbedding(
           textLength: textLength, gridHeight: h, gridWidth: w, of: FloatType.self
         ).toGPU(0))
-      return ([c0, indicator, rotary, timeEmbeds], nil)
+      precondition(fixedConditions.count == 2 + 34 * 4 + 1)
+      return ([fixedConditions[0], fixedConditions[1], rotary] + Array(fixedConditions[2...]), nil)
     case .sdxlBase, .ssd1b:
       let batchSize = textEncoding[0].shape[0]
       let maxTokenLength = textEncoding[0].shape[1]

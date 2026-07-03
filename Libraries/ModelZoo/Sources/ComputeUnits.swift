@@ -419,7 +419,9 @@ public enum ComputeUnits {
       let mainCount = Ideogram4InstructionCount(
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
         channels: 4_608, layers: 34, intermediateSize: 12_288)
-      return (main: mainCount * batchSize, fixed: 0)
+      let fixedCount = Ideogram4FixedInstructionCount(
+        timesteps: 1, batchSize: 1, textLength: baseTokenLength, channels: 4_608, layers: 34)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .seedvr2_3b, .seedvr2_7b:
       let configuration: SeedVR2DiTConfiguration =
         context.modelVersion == .seedvr2_7b ? ._7B : ._3B

@@ -171,13 +171,18 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
     .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
     return conditions
   case .ideogram4:
-    let shape = conditions[3].shape
-    return conditions[0..<3]
-      + [
-        DynamicGraph.Tensor<FloatType>(conditions[3])[
-          index..<(index + 1), 0..<shape[1]
+    return Array(conditions[0..<3])
+      + conditions[3..<conditions.count].map {
+        let shape = $0.shape
+        if shape.count == 2 {
+          return DynamicGraph.Tensor<FloatType>($0)[
+            index..<(index + 1), 0..<shape[1]
+          ].copied()
+        }
+        return DynamicGraph.Tensor<FloatType>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
         ].copied()
-      ]
+      }
   case .sd3, .auraflow, .sd3Large:
     return [conditions[0]]
       + conditions[1..<conditions.count].map {
@@ -2740,7 +2745,7 @@ extension UNetFromNNC {
       } else {
         textInput = text
       }
-      unet.compile(inputs: [xInput, textInput, inputs[2], inputs[3], inputs[4]])
+      unet.compile(inputs: [xInput, textInput, inputs[2], inputs[3]] + Array(inputs[4...]))
       return
     case .hiDreamO1:
       unet.compile(inputs: inputs)
@@ -3305,9 +3310,12 @@ extension UNetFromNNC {
         }
         return text
       }
+      func fixedInputs(_ row: Int) -> [DynamicGraph.AnyTensor] {
+        return [textInput(row), restInputs[1], restInputs[2]] + Array(restInputs[3...])
+      }
       guard isCfgEnabled else {
         let et = -unet(
-          inputs: firstInput, [textInput(0), restInputs[1], restInputs[2], restInputs[3]]
+          inputs: firstInput, fixedInputs(0)
         )[0].as(of: FloatType.self)
         return et
       }
@@ -3316,7 +3324,7 @@ extension UNetFromNNC {
         0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
       ].copied()
       let etUncond = -unet(
-        inputs: xUncond, [textInput(0), restInputs[1], restInputs[2], restInputs[3]]
+        inputs: xUncond, fixedInputs(0)
       )[0].as(of: FloatType.self)
       etUncond.graph.joined()
       guard !isCancelled.load(ordering: .acquiring) else {
@@ -3326,7 +3334,7 @@ extension UNetFromNNC {
         (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
       ].copied()
       let etCond = -unet(
-        inputs: xCond, [textInput(1), restInputs[1], restInputs[2], restInputs[3]]
+        inputs: xCond, fixedInputs(1)
       )[0].as(of: FloatType.self)
       return Functional.concat(axis: 0, etUncond, etCond)
     case .qwenImage:
