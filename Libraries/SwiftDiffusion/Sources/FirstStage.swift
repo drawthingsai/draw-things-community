@@ -1736,11 +1736,22 @@ extension FirstStage {
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
         if highPrecision {
-          encoder.compile(
-            inputs:
-              DynamicGraph.Tensor<Float>(
-                from: x[0..<batchSize, 0..<(startHeight * 32), 0..<(startWidth * 32), 0..<shape[3]])
-          )
+          if shape[0] * shape[1] * shape[2] * shape[3] >= Int(Int32.max) {
+            // Slicing plus datatype-converting a tensor with >= 2^31 total elements trips
+            // 32-bit bounds in ccv view / MPS shape handling. compile() only consumes
+            // shapes, so hand it a correctly-shaped placeholder instead of a real slice.
+            encoder.compile(
+              inputs: graph.variable(
+                .GPU(0), .NHWC(batchSize, startHeight * 32, startWidth * 32, shape[3]),
+                of: Float.self))
+          } else {
+            encoder.compile(
+              inputs:
+                DynamicGraph.Tensor<Float>(
+                  from: x[
+                    0..<batchSize, 0..<(startHeight * 32), 0..<(startWidth * 32), 0..<shape[3]])
+            )
+          }
         } else {
           encoder.compile(
             inputs: x[0..<batchSize, 0..<(startHeight * 32), 0..<(startWidth * 32), 0..<shape[3]])
@@ -1865,10 +1876,20 @@ extension FirstStage {
     else {
       if highPrecision {
         if tiledEncoding {
+          let highPrecisionInput: DynamicGraph.Tensor<Float>
+          if shape[0] * shape[1] * shape[2] * shape[3] >= Int(Int32.max) {
+            // A GPU datatype conversion of a tensor with >= 2^31 total elements trips
+            // 32-bit bounds in ccv view / MPS shape handling. Convert through CPU
+            // memory instead (the CPU kernel is size_t-clean for contiguous tensors);
+            // tiledEncode stages tile extraction through CPU for such tensors anyway.
+            highPrecisionInput = graph.variable(Tensor<Float>(from: x.rawValue.toCPU()))
+          } else {
+            highPrecisionInput = DynamicGraph.Tensor<Float>(from: x)
+          }
           return (
             DynamicGraph.Tensor<FloatType>(
               from: tiledEncode(
-                DynamicGraph.Tensor<Float>(from: x), causalAttentionMask: causalAttentionMask,
+                highPrecisionInput, causalAttentionMask: causalAttentionMask,
                 encoder: encoder,
                 tileSize: encodingTileSize,
                 tileOverlap: encodingTileOverlap,
@@ -2299,6 +2320,14 @@ extension FirstStage {
       return graph.variable(
         Tensor<T>(.GPU(0), .NHWC(resultBatchSize, startHeight, startWidth, outputChannels)))
     }
+    // MPS cannot represent a tensor whose flattened element count exceeds INT_MAX, so any
+    // GPU slice op that views a sufficiently large video tensor trips the MPSNDArray
+    // assertion (e.g. 601 frames at 1920x1088x3 is ~3.8B elements). Stage the source
+    // through CPU memory in that case and extract tiles with 64-bit arithmetic; the
+    // individual tiles are small enough for the regular GPU path.
+    let totalElements = shape[0] * shape[1] * shape[2] * shape[3]
+    let stagedCPUSource: Tensor<T>? =
+      totalElements >= Int(Int32.max) ? z.rawValue.toCPU() : nil
     for y in 0..<yTiles {
       let yOfs = y * (tileSize.height - tileOverlap * 2) + (y > 0 ? tileOverlap : 0)
       let (inputStartYPad, inputEndYPad) = paddedTileStartAndEnd(
@@ -2311,12 +2340,43 @@ extension FirstStage {
           iOfs: xOfs * scaleFactor.spatial, length: shape[2],
           tileSize: tileSize.width * scaleFactor.spatial,
           tileOverlap: tileOverlap * scaleFactor.spatial)
+        let tile: DynamicGraph.Tensor<T>
+        if let stagedCPUSource = stagedCPUSource {
+          let tileHeight = inputEndYPad - inputStartYPad
+          let tileWidth = inputEndXPad - inputStartXPad
+          var tileTensor = Tensor<T>(.CPU, .NHWC(batchSize, tileHeight, tileWidth, channels))
+          stagedCPUSource.withUnsafeBytes {
+            guard let source = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
+            tileTensor.withUnsafeMutableBytes {
+              guard let destination = $0.baseAddress?.assumingMemoryBound(to: T.self) else {
+                return
+              }
+              let sourceRowStride = shape[2] * channels
+              let sourceFrameStride = shape[1] * sourceRowStride
+              let rowElements = tileWidth * channels
+              for t in 0..<batchSize {
+                let sourceFrame = source + t * sourceFrameStride
+                let destinationFrame = destination + t * tileHeight * rowElements
+                for row in 0..<tileHeight {
+                  let sourceRow =
+                    sourceFrame + (inputStartYPad + row) * sourceRowStride
+                    + inputStartXPad * channels
+                  destinationFrame.advanced(by: row * rowElements)
+                    .update(from: sourceRow, count: rowElements)
+                }
+              }
+            }
+          }
+          tile = graph.variable(tileTensor.toGPU(0))
+        } else {
+          tile = z[
+            0..<batchSize, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
+            0..<channels
+          ].copied()
+        }
         encodedRawValues.append(
-          encoder(
-            inputs: z[
-              0..<batchSize, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
-              0..<channels
-            ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
+          encoder(inputs: tile, (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self)
+            .rawValue
             .toCPU())
         guard !isCancelled.load(ordering: .acquiring) else {
           return graph.variable(
