@@ -99,6 +99,11 @@ private struct ResolvedGenerationConfiguration {
   let configuration: GenerationConfiguration
   let recommendedNegativePrompt: String?
   let loraOverrideMapping: [String: LoRAZoo.Specification]
+  // fps from the user's --config-json / --config-file, when explicitly provided. The
+  // fpsId field on GenerationConfiguration defaults to 5 and is not populated by
+  // recommended settings, so it cannot be used to tell "user asked for this rate"
+  // apart from "unset"; the export path needs that distinction.
+  let userSpecifiedFramesPerSecond: Double?
 }
 
 private enum NetworkAccessPolicy {
@@ -726,9 +731,11 @@ private enum ConfigurationLoader {
         modelsDirectory: modelsDirectory, allowNetwork: !NetworkAccessPolicy.offline)
     let configuration = try mergeOverrides(
       overrideDictionary, onto: recommendedConfiguration, forcingModel: modelSpecification.file)
+    let userSpecifiedFramesPerSecond = (overrideDictionary?["fps"] as? NSNumber)?.doubleValue
     return ResolvedGenerationConfiguration(
       configuration: configuration, recommendedNegativePrompt: recommendedNegativePrompt,
-      loraOverrideMapping: loraOverrideMapping)
+      loraOverrideMapping: loraOverrideMapping,
+      userSpecifiedFramesPerSecond: userSpecifiedFramesPerSecond)
   }
 
   private static func loadOverrideDictionary(
@@ -1767,6 +1774,7 @@ private final class LocalGenerationRunner {
     prompt: String, negativePrompt: String, configuration: GenerationConfiguration,
     outputPath: String,
     inputImage: Tensor<FloatType>?, videoFormat: VideoExportFormat?,
+    userSpecifiedFramesPerSecond: Double? = nil,
     livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil
   ) throws -> GenerationRunResult {
     let trace = ImageGeneratorTrace(fromBridge: true)
@@ -1803,14 +1811,15 @@ private final class LocalGenerationRunner {
     let timing = timingTracker.summary()
     let outputPaths = try saveOutputs(
       images, audio: audio?.first, outputPath: outputPath, configuration: configuration,
-      videoFormat: videoFormat)
+      videoFormat: videoFormat, userSpecifiedFramesPerSecond: userSpecifiedFramesPerSecond)
     progressPrinter.update(progress: 1, label: "Generated", detail: nil)
     return GenerationRunResult(outputPaths: outputPaths, timing: timing)
   }
 
   private func saveOutputs(
     _ tensors: [Tensor<FloatType>], audio: Tensor<Float>?, outputPath: String,
-    configuration: GenerationConfiguration, videoFormat: VideoExportFormat?
+    configuration: GenerationConfiguration, videoFormat: VideoExportFormat?,
+    userSpecifiedFramesPerSecond: Double? = nil
   ) throws -> [String] {
     let destination = try normalizedOutputDestination(outputPath)
     switch destination {
@@ -1824,7 +1833,8 @@ private final class LocalGenerationRunner {
       }
       return outputPaths
     case .video(let outputURL, let containerExtension):
-      let framesPerSecond = ModelZoo.framesPerSecondForModel(configuration.model ?? "")
+      let framesPerSecond =
+        userSpecifiedFramesPerSecond ?? ModelZoo.framesPerSecondForModel(configuration.model ?? "")
       let audioSampleRate = audio.map { _ in
         Double(ModelZoo.audioSampleRateForModel(configuration.model ?? ""))
       }
@@ -3037,7 +3047,8 @@ private func createConfiguration(
   return ResolvedGenerationConfiguration(
     configuration: builder.build(),
     recommendedNegativePrompt: resolvedConfiguration.recommendedNegativePrompt,
-    loraOverrideMapping: resolvedConfiguration.loraOverrideMapping)
+    loraOverrideMapping: resolvedConfiguration.loraOverrideMapping,
+    userSpecifiedFramesPerSecond: resolvedConfiguration.userSpecifiedFramesPerSecond)
 }
 
 private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
@@ -3455,7 +3466,9 @@ extension DrawThingsCLI {
       let result = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
         configuration: configuration, outputPath: outputPath, inputImage: inputImageTensor,
-        videoFormat: output.videoFormat, livePreviewSession: livePreviewSession)
+        videoFormat: output.videoFormat,
+        userSpecifiedFramesPerSecond: resolvedConfiguration.userSpecifiedFramesPerSecond,
+        livePreviewSession: livePreviewSession)
       let renderedFinalImageInPlace =
         livePreviewSession.flatMap { session in
           result.outputPaths.first.flatMap { path in
