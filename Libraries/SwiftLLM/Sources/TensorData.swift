@@ -26,6 +26,8 @@ public enum TensorData {
   ) {
     // Only move it back if the external store exists.
     guard TensorData.externalStoreExists(filePath: filePath) else { return }
+    // Trailer store is read-only.
+    guard !DynamicGraph.Store.isTrailerStore(filePath) else { return }
     let externalStoreFilePath = TensorData.externalStore(filePath: filePath)
     let fileManager = FileManager.default
     guard
@@ -72,6 +74,8 @@ public enum TensorData {
   ) {
     // Before load, we move most of the tensors to -tensordata file if it doesn't exist yet.
     guard !TensorData.externalStoreExists(filePath: filePath) else { return }
+    // Trailer store is read-only.
+    guard !DynamicGraph.Store.isTrailerStore(filePath) else { return }
     // First, checking the externalStore, if the file has size, we need to move data back into the database prior to move it out (we cannot write to the externalStore while reading from it).
     let externalStoreFilePath = TensorData.externalStore(filePath: filePath)
     if let externalFileSize =
