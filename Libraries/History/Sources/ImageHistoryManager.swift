@@ -1379,13 +1379,24 @@ public final class ImageHistoryManager {
       assert(logicalTime >= 0 && logicalTime <= maxLogicalTime)
       logicalTime = min(max(0, logicalTime), maxLogicalTime)
     }
-    if let imageHistory =
-      nodeCache[logicalTime]?.0
-      ?? project.fetch(for: TensorHistoryNode.self).where(
-        TensorHistoryNode.logicalTime == logicalTime,
-        limit: .limit(1), orderBy: [TensorHistoryNode.lineage.descending]
-      ).first
-    {
+    let isClearCanvas = logicalTime == 0 && (lineage == nil || lineage == 0)
+    var imageHistory: TensorHistoryNode?
+    if !isClearCanvas {
+      imageHistory = nodeCache[logicalTime]?.0
+      if let cachedImageHistory = imageHistory,
+        cachedImageHistory.logicalTime != logicalTime || cachedImageHistory.lineage > maxLineage
+      {
+        nodeCache[logicalTime] = nil
+        imageHistory = nil
+      }
+      if imageHistory == nil {
+        imageHistory = project.fetch(for: TensorHistoryNode.self).where(
+          TensorHistoryNode.logicalTime == logicalTime && TensorHistoryNode.lineage <= maxLineage,
+          limit: .limit(1), orderBy: [TensorHistoryNode.lineage.descending]
+        ).first
+      }
+    }
+    if let imageHistory = imageHistory {
       precondition(imageHistory.lineage <= maxLineage)
       let targetLineage = lineage
       if let lineage = lineage, imageHistory.lineage != lineage {
