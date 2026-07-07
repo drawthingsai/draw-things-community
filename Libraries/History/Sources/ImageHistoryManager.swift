@@ -167,6 +167,28 @@ extension DataModels.CompressionMethod {
   }
 }
 
+extension ColorCalibration {
+  public init(from colorCalibration: DataModels.ColorCalibration) {
+    switch colorCalibration {
+    case .disabled:
+      self = .disabled
+    case .lab:
+      self = .lab
+    }
+  }
+}
+
+extension DataModels.ColorCalibration {
+  public init(from colorCalibration: ColorCalibration) {
+    switch colorCalibration {
+    case .disabled:
+      self = .disabled
+    case .lab:
+      self = .lab
+    }
+  }
+}
+
 extension ControlMode {
   public init(from controlMode: DataModels.ControlMode) {
     switch controlMode {
@@ -687,7 +709,8 @@ public final class ImageHistoryManager {
       cfgZeroInitSteps: imageHistory.cfgZeroInitSteps,
       compressionArtifacts: DataModels.CompressionMethod(
         from: imageHistory.compressionArtifacts),
-      compressionArtifactsQuality: imageHistory.compressionArtifactsQuality
+      compressionArtifactsQuality: imageHistory.compressionArtifactsQuality,
+      colorCalibration: DataModels.ColorCalibration(from: imageHistory.colorCalibration)
     )
     isVideo = imageHistory.clipId >= 0
     _profileData = imageHistory.profileData
@@ -1055,7 +1078,8 @@ public final class ImageHistoryManager {
         reason: history.reason,
         compressionArtifacts: CompressionMethod(from: configuration.compressionArtifacts),
         compressionArtifactsQuality: configuration.compressionArtifactsQuality,
-        audio: audioId != nil
+        audio: audioId != nil,
+        colorCalibration: ColorCalibration(from: configuration.colorCalibration)
       )
       // Only needs to append
       clipData?.frames.append(

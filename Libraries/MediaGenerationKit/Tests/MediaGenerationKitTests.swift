@@ -5,8 +5,8 @@ import ImageGenerator
 import Logging
 import ModelZoo
 import NNC
-import XCTest
 import UniformTypeIdentifiers
+import XCTest
 
 @testable import MediaGenerationKit
 
@@ -86,7 +86,8 @@ final class MediaGenerationKitTests: XCTestCase {
 
   func testEnvironmentResolveModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
     XCTAssertNoThrow(
-      try MediaGenerationEnvironment.default.resolveModel("flux_2_klein_4b_q8p.ckpt", offline: false)
+      try MediaGenerationEnvironment.default.resolveModel(
+        "flux_2_klein_4b_q8p.ckpt", offline: false)
     )
 
     XCTAssertThrowsError(
@@ -118,7 +119,8 @@ final class MediaGenerationKitTests: XCTestCase {
 
   func testEnvironmentInspectModelSyncThrowsOnlyWhenRemoteFetchWouldBeNeeded() throws {
     XCTAssertNoThrow(
-      try MediaGenerationEnvironment.default.inspectModel("flux_2_klein_4b_q8p.ckpt", offline: false)
+      try MediaGenerationEnvironment.default.inspectModel(
+        "flux_2_klein_4b_q8p.ckpt", offline: false)
     )
 
     XCTAssertThrowsError(
@@ -348,6 +350,7 @@ final class MediaGenerationKitTests: XCTestCase {
     pipeline.configuration.cfgZeroInitSteps = 4
     pipeline.configuration.compressionArtifacts = .H264
     pipeline.configuration.compressionArtifactsQuality = 55
+    pipeline.configuration.colorCalibration = .lab
 
     let runtime = try pipeline.configuration.runtimeConfiguration(template: .default)
 
@@ -421,6 +424,7 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertEqual(runtime.cfgZeroInitSteps, 4)
     XCTAssertEqual(runtime.compressionArtifacts, .H264)
     XCTAssertEqual(runtime.compressionArtifactsQuality, 55, accuracy: 0.0001)
+    XCTAssertEqual(runtime.colorCalibration, .lab)
   }
 
   func testStateMapsSamplingSignpost() {

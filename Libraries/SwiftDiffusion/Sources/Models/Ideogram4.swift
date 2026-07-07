@@ -2,33 +2,14 @@ import DiffusionMappings
 import Foundation
 import NNC
 
-public func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
-) -> Tensor<FloatType> {
-  let headDim = 128
-  let half = headDim / 2
-  let theta: Double = 5_000_000
-  var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, headDim))
-  for i in 0..<sequenceLength {
-    for k in 0..<half {
-      let angle = Double(i) / pow(theta, Double(k * 2) / Double(headDim))
-      rotary[0, i, 0, k * 2] = FloatType(cos(angle))
-      rotary[0, i, 0, k * 2 + 1] = FloatType(sin(angle))
-    }
-  }
-  return rotary
-}
-
 public func Ideogram4TimeEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   timestep: Float, dim: Int = 4_608, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   precondition(dim % 2 == 0)
   let half = dim / 2
-  let scaledTimestep = 10_000 * timestep
-  let frequencyScale = log(Float(10_000)) / Float(half - 1)
   var embedding = Tensor<FloatType>(.CPU, .WC(1, dim))
   for i in 0..<half {
-    let value = scaledTimestep * exp(Float(i) * -frequencyScale)
+    let value = 10_000 * timestep * exp(-log(Float(10_000)) * Float(i) / Float(half - 1))
     embedding[0, i] = FloatType(sin(value))
     embedding[0, i + half] = FloatType(cos(value))
   }
@@ -42,18 +23,12 @@ public func Ideogram4RotaryPositionEmbedding<FloatType: TensorNumeric & BinaryFl
   let half = headDim / 2
   let theta: Double = 5_000_000
   let imagePositionOffset = 65_536
+  let imageLength = gridHeight * gridWidth
   var rotary = Tensor<FloatType>(
-    .CPU, .NHWC(1, textLength + gridHeight * gridWidth, 1, headDim))
-  for i in 0..<textLength {
-    for k in 0..<half {
-      let angle = Double(i) / pow(theta, Double(k * 2) / Double(headDim))
-      rotary[0, i, 0, k * 2] = FloatType(cos(angle))
-      rotary[0, i, 0, k * 2 + 1] = FloatType(sin(angle))
-    }
-  }
+    .CPU, .NHWC(1, imageLength + textLength, 1, headDim))
   for y in 0..<gridHeight {
     for x in 0..<gridWidth {
-      let i = textLength + y * gridWidth + x
+      let i = y * gridWidth + x
       for k in 0..<half {
         let position: Int
         if k < 60 && k % 3 == 1 {
@@ -67,6 +42,14 @@ public func Ideogram4RotaryPositionEmbedding<FloatType: TensorNumeric & BinaryFl
         rotary[0, i, 0, k * 2] = FloatType(cos(angle))
         rotary[0, i, 0, k * 2 + 1] = FloatType(sin(angle))
       }
+    }
+  }
+  for i in 0..<textLength {
+    let offset = imageLength + i
+    for k in 0..<half {
+      let angle = Double(i) / pow(theta, Double(k * 2) / Double(headDim))
+      rotary[0, offset, 0, k * 2] = FloatType(cos(angle))
+      rotary[0, offset, 0, k * 2 + 1] = FloatType(sin(angle))
     }
   }
   return rotary
@@ -84,7 +67,7 @@ public func Ideogram4IndicatorIDs(textLength: Int, imageLength: Int) -> Tensor<I
 }
 
 private func Ideogram4Attention(
-  prefix: String, tokenLength: Int, imageLength: Int, contextBlockPreOnly: Bool,
+  prefix: String, batchSize: Int, tokenLength: Int, imageLength: Int, contextBlockPreOnly: Bool,
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   precondition(!contextBlockPreOnly || imageLength <= tokenLength)
@@ -96,21 +79,20 @@ private func Ideogram4Attention(
   let v = Dense(count: 4_608, noBias: true, name: "v")
   let queryIn: Model.IO =
     contextBlockPreOnly
-    ? x.reshaped(
-      [queryLength, 4_608], offset: [tokenLength - queryLength, 0], strides: [4_608, 1]
-    ).contiguous() : x
-  var queries = q(queryIn).reshaped([1, queryLength, 18, 256])
+    ? x.reshaped([batchSize, queryLength, 4_608], strides: [tokenLength * 4_608, 4_608, 1])
+      .contiguous() : x
+  var queries = q(queryIn).reshaped([batchSize, queryLength, 18, 256])
   let normQ = RMSNorm(epsilon: 1e-5, axis: [3], name: "norm_q")
   queries = normQ(queries)
-  var keys = k(x).reshaped([1, tokenLength, 18, 256])
+  var keys = k(x).reshaped([batchSize, tokenLength, 18, 256])
   let normK = RMSNorm(epsilon: 1e-5, axis: [3], name: "norm_k")
   keys = normK(keys)
-  let values = v(x).reshaped([1, tokenLength, 18, 256])
+  let values = v(x).reshaped([batchSize, tokenLength, 18, 256])
   keys = Functional.cmul(left: keys, right: rot)
   let queryRot: Model.IO =
     contextBlockPreOnly
     ? rot.reshaped(
-      [1, queryLength, 1, 256], offset: [0, tokenLength - queryLength, 0, 0],
+      [1, queryLength, 1, 256],
       strides: [
         tokenLength * 256, 256, 256, 1,
       ]) : rot
@@ -122,23 +104,25 @@ private func Ideogram4Attention(
     let transposedQueries = ((1.0 / Float(256).squareRoot()) * queries).permuted(0, 2, 1, 3)
     let transposedValues = values.permuted(0, 2, 1, 3)
     var dot = Matmul(transposeB: (2, 3))(transposedQueries, transposedKeys)
-    dot = dot.reshaped([18 * queryLength, tokenLength])
+    dot = dot.reshaped([batchSize * 18 * queryLength, tokenLength])
     dot = dot.softmax()
-    dot = dot.reshaped([1, 18, queryLength, tokenLength])
+    dot = dot.reshaped([batchSize, 18, queryLength, tokenLength])
     out = dot * transposedValues
-    out = out.reshaped([1, 18, queryLength, 256]).transposed(1, 2).reshaped([
-      queryLength, 4_608,
+    out = out.reshaped([batchSize, 18, queryLength, 256]).transposed(1, 2).reshaped([
+      batchSize, queryLength, 4_608,
     ])
   case .scale1:
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     out = scaledDotProductAttention(
       (1.0 / Float(256).squareRoot()) * queries, keys, values
-    ).reshaped([queryLength, 4_608])
+    ).reshaped([batchSize, queryLength, 4_608])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(256).squareRoot(),
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
-    out = scaledDotProductAttention(queries, keys, values).reshaped([queryLength, 4_608])
+    out = scaledDotProductAttention(queries, keys, values).reshaped([
+      batchSize, queryLength, 4_608,
+    ])
   }
   let o = Dense(count: 4_608, noBias: true, name: "o")
   out = o(out)
@@ -173,7 +157,7 @@ private func Ideogram4MLP(prefix: String) -> (ModelWeightMapper, Model) {
 }
 
 private func Ideogram4Block(
-  prefix: String, tokenLength: Int, imageLength: Int, contextBlockPreOnly: Bool,
+  prefix: String, batchSize: Int, tokenLength: Int, imageLength: Int, contextBlockPreOnly: Bool,
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -183,21 +167,20 @@ private func Ideogram4Block(
   let scaleMLP = Input()
   let gateMLP = Input()
 
-  let attentionNorm1 = RMSNorm(epsilon: 1e-5, axis: [1], name: "attention_norm1")
+  let attentionNorm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "attention_norm1")
   let attnIn = attentionNorm1(x).to(.Float16) .* scaleMSA
   let (attentionMapper, attention) = Ideogram4Attention(
-    prefix: prefix, tokenLength: tokenLength, imageLength: imageLength,
+    prefix: prefix, batchSize: batchSize, tokenLength: tokenLength, imageLength: imageLength,
     contextBlockPreOnly: contextBlockPreOnly, usesFlashAttention: usesFlashAttention)
-  let attentionNorm2 = RMSNorm(epsilon: 1e-5, axis: [1], name: "attention_norm2")
+  let attentionNorm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "attention_norm2")
   let xIn: Model.IO =
     contextBlockPreOnly
-    ? x.reshaped(
-      [imageLength, 4_608], offset: [tokenLength - imageLength, 0], strides: [4_608, 1]
-    ).contiguous() : x
+    ? x.reshaped([batchSize, imageLength, 4_608], strides: [tokenLength * 4_608, 4_608, 1])
+      .contiguous() : x
   var out = xIn + (attentionNorm2(attention(attnIn, rot)) .* gateMSA).to(of: xIn)
-  let ffnNorm1 = RMSNorm(epsilon: 1e-5, axis: [1], name: "ffn_norm1")
+  let ffnNorm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "ffn_norm1")
   let (mlpMapper, mlp) = Ideogram4MLP(prefix: prefix)
-  let ffnNorm2 = RMSNorm(epsilon: 1e-5, axis: [1], name: "ffn_norm2")
+  let ffnNorm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "ffn_norm2")
   out = out + (ffnNorm2(mlp(ffnNorm1(out).to(.Float16) .* scaleMLP)) .* gateMLP).to(of: out)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
@@ -286,7 +269,6 @@ public func Ideogram4(
   batchSize: Int, height: Int, width: Int, textLength: Int,
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
-  precondition(batchSize == 1)
   precondition(height % 2 == 0 && width % 2 == 0)
   let h = height / 2
   let w = width / 2
@@ -296,32 +278,35 @@ public func Ideogram4(
   let textOut = Input()
   let imageIndicator = Input()
   let rot = Input()
-  let xImage = x.reshaped([1, h, 2, w, 2, 32]).permuted(0, 1, 3, 2, 4, 5).contiguous()
-    .reshaped([imageLength, 128])
+  let xImage = x.reshaped([batchSize, h, 2, w, 2, 32]).permuted(0, 1, 3, 2, 4, 5)
+    .contiguous().reshaped([batchSize, imageLength, 128])
   let inputProj = Dense(count: 4_608, name: "input_proj")
-  let imageOut = inputProj(xImage) + imageIndicator
-  var out = Functional.concat(axis: 0, textOut, imageOut).to(.Float32)
+  let imageOut = inputProj(xImage) + imageIndicator.reshaped([1, imageLength, 4_608])
+  var out = Functional.concat(axis: 1, imageOut, textOut).to(.Float32)
+  let rotResized = rot.reshaped(.NHWC(1, tokenLength, 1, 256))
 
   var blockMappers = [ModelWeightMapper]()
   var adalns = [Input]()
   let layers = 34
   for i in 0..<layers {
     let (mapper, block) = Ideogram4Block(
-      prefix: "layers.\(i)", tokenLength: tokenLength, imageLength: imageLength,
+      prefix: "layers.\(i)", batchSize: batchSize, tokenLength: tokenLength,
+      imageLength: imageLength,
       contextBlockPreOnly: i == layers - 1, usesFlashAttention: usesFlashAttention)
     let blockAdalns = (0..<4).map { _ in Input() }
-    out = block([out, rot] + blockAdalns)
+    out = block([out, rotResized] + blockAdalns)
     adalns.append(contentsOf: blockAdalns)
     blockMappers.append(mapper)
   }
 
-  let norm = LayerNorm(epsilon: 1e-6, axis: [1], elementwiseAffine: false)
+  let norm = LayerNorm(epsilon: 1e-6, axis: [2], elementwiseAffine: false)
   let finalScale = Input()
   let finalLinear = Dense(count: 128, name: "final_linear")
-  out = finalLinear(norm(out).to(.Float16) .* finalScale)
-  out = out.reshaped([1, h, w, 2, 2, 32]).permuted(0, 1, 3, 2, 4, 5).contiguous().reshaped([
-    1, height, width, 32,
-  ])
+  out = -finalLinear(norm(out).to(.Float16) .* finalScale)
+  out = out.reshaped([batchSize, h, w, 2, 2, 32]).permuted(0, 1, 3, 2, 4, 5).contiguous()
+    .reshaped([
+      batchSize, height, width, 32,
+    ])
 
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()

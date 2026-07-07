@@ -57,8 +57,7 @@ extension UNetFixedEncoder {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ltx2,
-      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -202,8 +201,7 @@ extension UNetFixedEncoder {
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -251,7 +249,21 @@ extension UNetFixedEncoder {
     switch version {
     case .ideogram4:
       let c0 = textEncoding[0]
-      let textLength = c0.shape[1]
+      let featureLength = c0.shape[2]
+      let textLength = (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond
+      var c = graph.variable(
+        .GPU(0), .HWC(batchSize, textLength, featureLength), of: FloatType.self)
+      if isCfgEnabled {
+        c[0..<batchSize, 0..<tokenLengthUncond, 0..<featureLength] =
+          c0[0..<batchSize, 0..<tokenLengthUncond, 0..<featureLength]
+        c[
+          0..<batchSize, tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+          0..<featureLength] =
+          c0[batchSize..<(batchSize * 2), 0..<tokenLengthCond, 0..<featureLength]
+      } else {
+        c[0..<batchSize, 0..<tokenLengthCond, 0..<featureLength] =
+          c0[0..<batchSize, 0..<tokenLengthCond, 0..<featureLength]
+      }
       let h = startHeight / 2
       let w = startWidth / 2
       let imageLength = h * w
@@ -270,7 +282,7 @@ extension UNetFixedEncoder {
       let (_, unetFixed) = Ideogram4Fixed(timesteps: timesteps.count)
       unetFixed.maxConcurrency = .limit(4)
       let fixedInputs: [DynamicGraph.AnyTensor] = [
-        c0, textIndicatorIDs, imageIndicatorIDs, timeEmbeds,
+        c, textIndicatorIDs, imageIndicatorIDs, timeEmbeds,
       ]
       unetFixed.compile(inputs: fixedInputs)
       let loadedFromWeightsCache = weightsCache.detach(
@@ -283,15 +295,60 @@ extension UNetFixedEncoder {
         }
       }
       let fixedConditions = unetFixed(
-        inputs: c0, [textIndicatorIDs, imageIndicatorIDs, timeEmbeds]
+        inputs: c, [textIndicatorIDs, imageIndicatorIDs, timeEmbeds]
       ).map { $0.as(of: FloatType.self) }
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      let maxTextLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
       let rotary = graph.variable(
         Ideogram4RotaryPositionEmbedding(
-          textLength: textLength, gridHeight: h, gridWidth: w, of: FloatType.self
+          textLength: maxTextLength, gridHeight: h, gridWidth: w, of: FloatType.self
         ).toGPU(0))
       precondition(fixedConditions.count == 2 + 34 * 4 + 1)
       return ([fixedConditions[0], fixedConditions[1], rotary] + Array(fixedConditions[2...]), nil)
+    case .krea2:
+      let c0 = textEncoding[0]
+      let featureLength = c0.shape[2]
+      let textLength = (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond
+      var c = graph.variable(
+        .GPU(0), .HWC(batchSize, textLength, featureLength), of: FloatType.self)
+      for i in 0..<batchSize {
+        c[i..<(i + 1), 0..<textLength, 0..<featureLength] =
+          c0[0..<1, 0..<textLength, 0..<featureLength]
+      }
+      let h = startHeight / 2
+      let w = startWidth / 2
+      precondition(timesteps.count > 0)
+      var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
+      }
+      let (_, unetFixed) = Krea2Fixed(timesteps: timesteps.count)
+      unetFixed.maxConcurrency = .limit(4)
+      let fixedInputs: [DynamicGraph.AnyTensor] = [c, timeEmbeds]
+      unetFixed.compile(inputs: fixedInputs)
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !loadedFromWeightsCache {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      let fixedConditions = unetFixed(inputs: c, [timeEmbeds]).map { $0.as(of: FloatType.self) }
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      let maxTextLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
+      let rotary = graph.variable(
+        Krea2RotaryPositionEmbedding(
+          textLength: maxTextLength, gridHeight: h, gridWidth: w, of: FloatType.self
+        ).toGPU(0))
+      precondition(fixedConditions.count == 1 + 6 + 1)
+      return ([fixedConditions[0], rotary] + Array(fixedConditions[1...]), nil)
     case .sdxlBase, .ssd1b:
       let batchSize = textEncoding[0].shape[0]
       let maxTokenLength = textEncoding[0].shape[1]
@@ -740,7 +797,7 @@ extension UNetFixedEncoder {
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       var timeEmbeds = graph.variable(

@@ -450,8 +450,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             codec: [.jit, .i8x, .ezm7, .externalData])
         }
 
-        let decodeTokenLength = 3
-        let mtpDraftTokenCount = decodeTokenLength - 1
+        let decodeTokenLength = 2
         let mtpCacheCapacity = cacheCapacity
         let mtpCacheElementCount =
           mtpCacheCapacity * configuration.keyValueHeads * configuration.attentionHeadDim
@@ -516,13 +515,21 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 configuration.attentionHeadDim, 1,
               ]),
           ])
-        try graph.openStore(
+        graph.openStore(
           filePath, flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: filePath)
         ) { store in
-          try store.read(
-            "text_model", model: mtpStep, strict: true,
-            codec: [.jit, .i8x, .ezm7, .externalData])
+          store.read(
+            "text_model", model: mtpStep, codec: [.jit, .i8x, .ezm7, .externalData]
+          ) { name, _, _, _ in
+            if name.contains("lm_head") || name.contains("model.language_model.embed_tokens") {
+              return .fail
+            }
+            return .continue(name)
+          }
+          mtpStep.parameters.share(from: decoder.parameters) { name, _ in
+            .continue(name)
+          }
         }
         let loadAndCompileMilliseconds =
           (Date.timeIntervalSinceReferenceDate - loadStart) * 1_000
@@ -558,22 +565,30 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             acceptedDrafts: 0, rejectedDrafts: 0, d1AcceptedDrafts: 0, d1RejectedDrafts: 0,
             d2AcceptedDrafts: 0, d2RejectedDrafts: 0, replayRounds: 0)
         }
-        let mtpPrefillTokens: DynamicGraph.Tensor<Int32>
+        let zeroMTPHidden = graph.variable(
+          Tensor<BFloat16>(
+            Array(repeating: BFloat16.zero, count: configuration.hiddenSize),
+            .CPU, .NC(1, configuration.hiddenSize)
+          ).toGPU(0))
+        let mtpPrefillHidden: DynamicGraph.Tensor<BFloat16>
         if promptTokenIds.count > 1 {
-          mtpPrefillTokens = Functional.concat(
+          mtpPrefillHidden = Functional.concat(
             axis: 0,
-            promptTokens.reshaped(
-              .C(promptTokenIds.count - 1), offset: [1], strides: [1]
-            ).copied(),
-            currentTokenGPU)
+            zeroMTPHidden,
+            DynamicGraph.Tensor<BFloat16>(
+              from: prefillHidden[
+                0..<(promptTokenIds.count - 1), 0..<configuration.hiddenSize
+              ]
+            ).copied()
+          )
         } else {
-          mtpPrefillTokens = currentTokenGPU
+          mtpPrefillHidden = zeroMTPHidden
         }
-        let mtpPrefillOutputs = mtpStep(
+        var mtpPrefillOutputs = mtpStep(
           (cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1),
-          inputs: mtpPrefillTokens,
+          inputs: promptTokens,
           [
-            DynamicGraph.Tensor<BFloat16>(from: prefillHidden), mtpPrefillRotary,
+            mtpPrefillHidden, mtpPrefillRotary,
             mtpK.reshaped(
               .NHWC(
                 1, promptTokenIds.count, configuration.keyValueHeads,
@@ -593,17 +608,63 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 configuration.attentionHeadDim, 1,
               ]),
           ])
-        var currentMTPHidden = mtpPrefillOutputs[0].as(of: BFloat16.self)
-        let mtpPrefillLogits = mtpPrefillOutputs[1].as(of: Float16.self)
-        var currentDraftTokenGPU = Functional.argmax(mtpPrefillLogits, axis: 1).reshaped(.C(1))
+        mtpPrefillOutputs.removeAll(keepingCapacity: false)
+        let rotaryEmbedding: DynamicGraph.Tensor<FloatType>?
+        if hasFullAttentionLayer {
+          rotaryEmbedding = graph.variable(
+            Qwen3_5RotaryEmbedding(
+              sequenceLength: maxTokens + 2, cachedTokenLength: promptTokenIds.count,
+              configuration: configuration, of: FloatType.self
+            ).toGPU(0))
+        } else {
+          rotaryEmbedding = nil
+        }
+        let firstDraftRotary = rotaryEmbedding!.reshaped(
+          .NHWC(1, 1, 1, configuration.attentionHeadDim),
+          offset: [0, 0, 0, 0],
+          strides: [
+            (maxTokens + 2) * configuration.attentionHeadDim,
+            configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
+          ]
+        ).copied()
+        let firstDraftHidden = DynamicGraph.Tensor<BFloat16>(
+          from: prefillHidden[
+            (promptTokenIds.count - 1)..<promptTokenIds.count, 0..<configuration.hiddenSize
+          ]
+        ).copied()
+        var firstDraftOutputs = mtpStep(
+          (cachedTokenLength: promptTokenIds.count, tokenLength: 1, lastNumberOfTokens: 1),
+          inputs: currentTokenGPU,
+          [
+            firstDraftHidden, firstDraftRotary,
+            mtpK.reshaped(
+              .NHWC(
+                1, promptTokenIds.count + 1, configuration.keyValueHeads,
+                configuration.attentionHeadDim),
+              offset: [0, 0, 0, 0],
+              strides: [
+                mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
+                configuration.attentionHeadDim, 1,
+              ]),
+            mtpV.reshaped(
+              .NHWC(
+                1, promptTokenIds.count + 1, configuration.keyValueHeads,
+                configuration.attentionHeadDim),
+              offset: [0, 0, 0, 0],
+              strides: [
+                mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
+                configuration.attentionHeadDim, 1,
+              ]),
+          ])
+        let firstDraftLogits = firstDraftOutputs[1].as(of: Float16.self)
+        var currentDraftTokenGPU = Functional.argmax(firstDraftLogits, axis: 1).reshaped(.C(1))
           .copied()
+        firstDraftOutputs.removeAll(keepingCapacity: false)
         let prefillMilliseconds = (Date.timeIntervalSinceReferenceDate - prefillStart) * 1_000
 
         let maxDecodeCachedTokenLength = cacheCapacity - decodeTokenLength
         var decodeCompileInputs: [DynamicGraph.AnyTensor] = [
-          Functional.concat(
-            axis: 0, Functional.concat(axis: 0, currentTokenGPU, currentTokenGPU),
-            currentTokenGPU)
+          Functional.concat(axis: 0, currentTokenGPU, currentDraftTokenGPU)
         ]
         if hasFullAttentionLayer {
           decodeCompileInputs.append(
@@ -623,8 +684,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             linearStateCheckpointCount: decodeTokenLength - 1, includeLogits: true
           ),
           inputs: decodeCompileInputs, isEager: true)
-        let mtpCompileTokenBlock = Functional.concat(
-          axis: 0, Functional.concat(axis: 0, currentTokenGPU, currentTokenGPU), currentTokenGPU)
+        let mtpCompileTokenBlock = Functional.concat(axis: 0, currentTokenGPU, currentDraftTokenGPU)
         var mtpCompileInputs: [DynamicGraph.AnyTensor] = [
           mtpCompileTokenBlock,
           graph.variable(
@@ -664,7 +724,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         mtpStep.compile(
           (
             cachedTokenLength: maxDecodeCachedTokenLength, tokenLength: decodeTokenLength,
-            lastNumberOfTokens: decodeTokenLength
+            lastNumberOfTokens: 1
           ), inputs: mtpCompileInputs, isEager: true)
         graph.joined()
         let decodeCompileMilliseconds =
@@ -673,36 +733,20 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         DynamicGraph.queueWatermark = queueWatermark
         defer { DynamicGraph.queueWatermark = queueWatermark }
 
-        let rotaryEmbedding: DynamicGraph.Tensor<FloatType>?
-        if hasFullAttentionLayer {
-          rotaryEmbedding = graph.variable(
-            Qwen3_5RotaryEmbedding(
-              sequenceLength: maxTokens + 2, cachedTokenLength: promptTokenIds.count,
-              configuration: configuration, of: FloatType.self
-            ).toGPU(0))
-        } else {
-          rotaryEmbedding = nil
-        }
-
         var currentCachedTokenLength = promptTokenIds.count
         var currentCacheBankIndex = 0
         var acceptedDrafts = 0
         var rejectedDrafts = 0
         var d1AcceptedDrafts = 0
         var d1RejectedDrafts = 0
-        var d2AcceptedDrafts = 0
-        var d2RejectedDrafts = 0
         var replayRounds = 0
         var shouldContinue = !eosTokenIds.contains(generated[0])
         let decodeLoopStart = Date.timeIntervalSinceReferenceDate
 
-        var pendingGeneratedTokenGPU: DynamicGraph.Tensor<Int32>?
-
         while shouldContinue && generated.count < maxTokens {
-          let pendingGeneratedTokenCPU = pendingGeneratedTokenGPU?.toCPU()
-          pendingGeneratedTokenGPU = nil
           let roundCachedTokenLength = currentCachedTokenLength
           let firstTokenGPU = currentTokenGPU
+          let firstDraftTokenGPU = currentDraftTokenGPU
           let inputCacheBankIndex = currentCacheBankIndex
           var outputCacheBankIndex = -1
           for bankIndex in cacheBanks.indices where bankIndex != currentCacheBankIndex {
@@ -711,58 +755,6 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           }
           if outputCacheBankIndex < 0 {
             fatalError("No available Qwen3.5 MTP cache bank.")
-          }
-
-          var mtpStepToken = currentDraftTokenGPU
-          var mtpStepHidden = currentMTPHidden
-          var draftTokenGPUs = [currentDraftTokenGPU]
-          var draftTokenCPUs = [currentDraftTokenGPU.toCPU()]
-          draftTokenGPUs.reserveCapacity(mtpDraftTokenCount)
-          draftTokenCPUs.reserveCapacity(mtpDraftTokenCount)
-          for draftIndex in 1..<mtpDraftTokenCount {
-            let mtpCachedTokenLength = roundCachedTokenLength + draftIndex - 1
-            let mtpRotary = rotaryEmbedding!.reshaped(
-              .NHWC(1, 1, 1, configuration.attentionHeadDim),
-              offset: [0, mtpCachedTokenLength - promptTokenIds.count, 0, 0],
-              strides: [
-                (maxTokens + 2) * configuration.attentionHeadDim,
-                configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
-              ]
-            ).copied()
-            var mtpOutputs = mtpStep(
-              (cachedTokenLength: mtpCachedTokenLength, tokenLength: 1, lastNumberOfTokens: 1),
-              inputs: mtpStepToken,
-              [
-                mtpStepHidden, mtpRotary,
-                mtpK.reshaped(
-                  .NHWC(
-                    1, mtpCachedTokenLength + 1, configuration.keyValueHeads,
-                    configuration.attentionHeadDim),
-                  offset: [0, 0, 0, 0],
-                  strides: [
-                    mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
-                    configuration.attentionHeadDim, 1,
-                  ]),
-                mtpV.reshaped(
-                  .NHWC(
-                    1, mtpCachedTokenLength + 1, configuration.keyValueHeads,
-                    configuration.attentionHeadDim),
-                  offset: [0, 0, 0, 0],
-                  strides: [
-                    mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
-                    configuration.attentionHeadDim, 1,
-                  ]),
-              ])
-            mtpStepHidden = DynamicGraph.Tensor<BFloat16>(from: mtpOutputs[0]).copied()
-            let draftLogits = mtpOutputs[1].as(of: Float16.self)
-            let draftTokenGPU = Functional.argmax(
-              DynamicGraph.Tensor<Float>(from: draftLogits), axis: 1
-            ).reshaped(.C(1)).copied()
-            let draftTokenCPU = draftTokenGPU.toCPU()
-            mtpOutputs.removeAll(keepingCapacity: false)
-            draftTokenGPUs.append(draftTokenGPU)
-            draftTokenCPUs.append(draftTokenCPU)
-            mtpStepToken = draftTokenGPU
           }
 
           var attentionInputs = [DynamicGraph.AnyTensor]()
@@ -781,9 +773,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             cacheBanks[inputCacheBankIndex],
             currentTokenLength: roundCachedTokenLength + decodeTokenLength,
             configuration: configuration)
-          let tokenBlock = Functional.concat(
-            axis: 0, Functional.concat(axis: 0, firstTokenGPU, draftTokenGPUs[0]),
-            draftTokenGPUs[1])
+          let tokenBlock = Functional.concat(axis: 0, firstTokenGPU, firstDraftTokenGPU)
           var outputCaches = cacheBanks[outputCacheBankIndex]
           var outputs = decoder(
             (
@@ -794,28 +784,10 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             inputs: tokenBlock, attentionInputs + cacheInputs)
           let logits = outputs[logitsOutputIndex].as(of: FloatType.self)
           let tokenBlockGPU = Functional.argmax(logits, axis: 1).reshaped(.C(decodeTokenLength))
-          let verifiedTokenGPU = tokenBlockGPU.reshaped(.C(1), offset: [0], strides: [1])
-            .copied()
-          let verifiedTokenCPU = verifiedTokenGPU.toCPU()
-          let secondVerifiedTokenGPU = tokenBlockGPU.reshaped(.C(1), offset: [1], strides: [1])
-            .copied()
-          let secondVerifiedTokenCPU = secondVerifiedTokenGPU.toCPU()
-          if let pendingGeneratedTokenCPU {
-            let pendingGeneratedToken = Int32(pendingGeneratedTokenCPU[0])
-            if generated.count < maxTokens {
-              generated.append(pendingGeneratedToken)
-            }
-            shouldContinue =
-              generated.count < maxTokens && !eosTokenIds.contains(pendingGeneratedToken)
-            guard shouldContinue else {
-              outputs.removeAll(keepingCapacity: false)
-              break
-            }
-          }
-          let firstDraftToken = Int32(draftTokenCPUs[0][0])
-          let secondDraftToken = Int32(draftTokenCPUs[1][0])
-          let firstVerifiedToken = Int32(verifiedTokenCPU[0])
-          let secondVerifiedToken = Int32(secondVerifiedTokenCPU[0])
+          let draftTokenCPU = firstDraftTokenGPU.toCPU()
+          let tokenBlockCPU = tokenBlockGPU.toCPU()
+          let firstDraftToken = Int32(draftTokenCPU[0])
+          let firstVerifiedToken = Int32(tokenBlockCPU[0])
 
           let hidden = outputs[finalHiddenOutputIndex].as(of: FloatType.self)
           var acceptedDraftCount = 0
@@ -823,15 +795,6 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             acceptedDrafts += 1
             d1AcceptedDrafts += 1
             acceptedDraftCount = 1
-            if secondDraftToken == secondVerifiedToken {
-              acceptedDrafts += 1
-              d2AcceptedDrafts += 1
-              acceptedDraftCount = 2
-            } else {
-              rejectedDrafts += 1
-              d2RejectedDrafts += 1
-              replayRounds += 1
-            }
           } else {
             rejectedDrafts += 1
             d1RejectedDrafts += 1
@@ -851,59 +814,57 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           }
           cacheBanks[outputCacheBankIndex] = outputCaches
 
-          let processTokens = tokenBlockGPU.reshaped(
-            .C(advanceCount), offset: [0], strides: [1]
-          ).copied()
-          let processHidden = hidden[
-            0..<advanceCount, 0..<configuration.hiddenSize
-          ].copied()
-          let processRotary = rotaryEmbedding!.reshaped(
-            .NHWC(1, advanceCount, 1, configuration.attentionHeadDim),
-            offset: [0, roundCachedTokenLength - promptTokenIds.count, 0, 0],
-            strides: [
-              (maxTokens + 2) * configuration.attentionHeadDim,
-              configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
-            ]
-          ).copied()
-          var processMTPOutputs = mtpStep(
-            (
-              cachedTokenLength: roundCachedTokenLength, tokenLength: advanceCount,
-              lastNumberOfTokens: advanceCount
-            ),
-            inputs: processTokens,
-            [
-              DynamicGraph.Tensor<BFloat16>(from: processHidden), processRotary,
-              mtpK.reshaped(
-                .NHWC(
-                  1, roundCachedTokenLength + advanceCount, configuration.keyValueHeads,
-                  configuration.attentionHeadDim),
-                offset: [0, 0, 0, 0],
-                strides: [
-                  mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
-                  configuration.attentionHeadDim, 1,
-                ]),
-              mtpV.reshaped(
-                .NHWC(
-                  1, roundCachedTokenLength + advanceCount, configuration.keyValueHeads,
-                  configuration.attentionHeadDim),
-                offset: [0, 0, 0, 0],
-                strides: [
-                  mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
-                  configuration.attentionHeadDim, 1,
-                ]),
-            ])
-          let processedMTPHidden = processMTPOutputs[0].as(of: BFloat16.self)
-          currentMTPHidden = processedMTPHidden[
-            (advanceCount - 1)..<advanceCount, 0..<configuration.hiddenSize
-          ].copied()
-          let processedMTPLogits = processMTPOutputs[1].as(of: Float16.self)
-          currentDraftTokenGPU = Functional.argmax(
-            DynamicGraph.Tensor<Float>(
-              from: processedMTPLogits[
-                (advanceCount - 1)..<advanceCount, 0..<configuration.vocabularySize]),
-            axis: 1
-          ).reshaped(.C(1)).copied()
-          processMTPOutputs.removeAll(keepingCapacity: false)
+          for processIndex in 0..<advanceCount {
+            let mtpCachedTokenLength = roundCachedTokenLength + 1 + processIndex
+            let processToken = tokenBlockGPU.reshaped(
+              .C(1), offset: [processIndex], strides: [1]
+            ).copied()
+            let processHidden = hidden[
+              processIndex..<(processIndex + 1), 0..<configuration.hiddenSize
+            ].copied()
+            let processRotary = rotaryEmbedding!.reshaped(
+              .NHWC(1, 1, 1, configuration.attentionHeadDim),
+              offset: [
+                0, roundCachedTokenLength - promptTokenIds.count + 1 + processIndex, 0, 0,
+              ],
+              strides: [
+                (maxTokens + 2) * configuration.attentionHeadDim,
+                configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
+              ]
+            ).copied()
+            var processMTPOutputs = mtpStep(
+              (
+                cachedTokenLength: mtpCachedTokenLength, tokenLength: 1,
+                lastNumberOfTokens: 1
+              ),
+              inputs: processToken,
+              [
+                DynamicGraph.Tensor<BFloat16>(from: processHidden), processRotary,
+                mtpK.reshaped(
+                  .NHWC(
+                    1, mtpCachedTokenLength + 1, configuration.keyValueHeads,
+                    configuration.attentionHeadDim),
+                  offset: [0, 0, 0, 0],
+                  strides: [
+                    mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
+                    configuration.attentionHeadDim, 1,
+                  ]),
+                mtpV.reshaped(
+                  .NHWC(
+                    1, mtpCachedTokenLength + 1, configuration.keyValueHeads,
+                    configuration.attentionHeadDim),
+                  offset: [0, 0, 0, 0],
+                  strides: [
+                    mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
+                    configuration.attentionHeadDim, 1,
+                  ]),
+              ])
+            let processedMTPLogits = processMTPOutputs[1].as(of: Float16.self)
+            currentDraftTokenGPU = Functional.argmax(
+              DynamicGraph.Tensor<Float>(from: processedMTPLogits), axis: 1
+            ).reshaped(.C(1)).copied()
+            processMTPOutputs.removeAll(keepingCapacity: false)
+          }
 
           currentTokenGPU = tokenBlockGPU.reshaped(
             .C(1), offset: [advanceCount - 1], strides: [1]
@@ -912,16 +873,11 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           currentCacheBankIndex = outputCacheBankIndex
           outputs.removeAll(keepingCapacity: false)
 
-          let appendCount =
-            advanceCount == decodeTokenLength ? advanceCount - 1 : advanceCount
           var lastAppendedToken: Int32?
-          for appendIndex in 0..<appendCount where generated.count < maxTokens {
-            let token = appendIndex == 0 ? firstVerifiedToken : secondVerifiedToken
+          for appendIndex in 0..<advanceCount where generated.count < maxTokens {
+            let token = Int32(tokenBlockCPU[appendIndex])
             generated.append(token)
             lastAppendedToken = token
-          }
-          if advanceCount == decodeTokenLength, generated.count < maxTokens {
-            pendingGeneratedTokenGPU = currentTokenGPU
           }
           if let lastAppendedToken = lastAppendedToken {
             shouldContinue =
@@ -929,13 +885,6 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           } else {
             shouldContinue = generated.count < maxTokens
           }
-        }
-        if shouldContinue, let pendingTokenGPU = pendingGeneratedTokenGPU,
-          generated.count < maxTokens
-        {
-          let pendingGeneratedTokenCPU = pendingTokenGPU.toCPU()
-          let pendingGeneratedToken = Int32(pendingGeneratedTokenCPU[0])
-          generated.append(pendingGeneratedToken)
         }
         graph.joined()
         let decodeLoopMilliseconds =
@@ -951,7 +900,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             decodeLoopTokens: committedDecodeTokens),
           acceptedDrafts: acceptedDrafts, rejectedDrafts: rejectedDrafts,
           d1AcceptedDrafts: d1AcceptedDrafts, d1RejectedDrafts: d1RejectedDrafts,
-          d2AcceptedDrafts: d2AcceptedDrafts, d2RejectedDrafts: d2RejectedDrafts,
+          d2AcceptedDrafts: 0, d2RejectedDrafts: 0,
           replayRounds: replayRounds)
       }
     }

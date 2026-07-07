@@ -42,6 +42,12 @@ extension CompressionMethod: SQLiteValue {
   }
 }
 
+extension ColorCalibration: SQLiteValue {
+  public func bindSQLite(_ query: OpaquePointer, parameterId: Int32) {
+    self.rawValue.bindSQLite(query, parameterId: parameterId)
+  }
+}
+
 // MARK - Serializer
 
 extension Control: FlatBuffersEncodable {
@@ -120,6 +126,8 @@ extension GenerationConfiguration: FlatBuffersEncodable {
     let __t5Text = self.t5Text.map { flatBufferBuilder.create(string: $0) } ?? Offset()
     let __compressionArtifacts =
       zzz_DflatGen_CompressionMethod(rawValue: self.compressionArtifacts.rawValue) ?? .disabled
+    let __colorCalibration =
+      zzz_DflatGen_ColorCalibration(rawValue: self.colorCalibration.rawValue) ?? .disabled
     let start = zzz_DflatGen_GenerationConfiguration.startGenerationConfiguration(
       &flatBufferBuilder)
     zzz_DflatGen_GenerationConfiguration.add(id: self.id, &flatBufferBuilder)
@@ -245,6 +253,8 @@ extension GenerationConfiguration: FlatBuffersEncodable {
       compressionArtifacts: __compressionArtifacts, &flatBufferBuilder)
     zzz_DflatGen_GenerationConfiguration.add(
       compressionArtifactsQuality: self.compressionArtifactsQuality, &flatBufferBuilder)
+    zzz_DflatGen_GenerationConfiguration.add(
+      colorCalibration: __colorCalibration, &flatBufferBuilder)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(
       &flatBufferBuilder, start: start)
   }
@@ -356,6 +366,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
   public var cfgZeroInitSteps: Int32
   public var compressionArtifacts: CompressionMethod
   public var compressionArtifactsQuality: Float32
+  public var colorCalibration: ColorCalibration
   private init(type _type: ChangeRequestType) {
     _o = nil
     self._type = _type
@@ -444,6 +455,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     cfgZeroInitSteps = 0
     compressionArtifacts = .disabled
     compressionArtifactsQuality = 43.1
+    colorCalibration = .disabled
   }
   private init(type _type: ChangeRequestType, _ _o: GenerationConfiguration) {
     self._o = _o
@@ -533,6 +545,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     cfgZeroInitSteps = _o.cfgZeroInitSteps
     compressionArtifacts = _o.compressionArtifacts
     compressionArtifactsQuality = _o.compressionArtifactsQuality
+    colorCalibration = _o.colorCalibration
   }
   public static func changeRequest(_ o: GenerationConfiguration)
     -> GenerationConfigurationChangeRequest?
@@ -613,7 +626,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
       causalInferenceEnabled: causalInferenceEnabled, causalInference: causalInference,
       causalInferencePad: causalInferencePad, cfgZeroStar: cfgZeroStar,
       cfgZeroInitSteps: cfgZeroInitSteps, compressionArtifacts: compressionArtifacts,
-      compressionArtifactsQuality: compressionArtifactsQuality)
+      compressionArtifactsQuality: compressionArtifactsQuality, colorCalibration: colorCalibration)
     atom._rowid = _rowid
     return atom
   }

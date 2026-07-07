@@ -190,7 +190,8 @@ public struct Invocation {
       cfgZeroStar: parameters.cfgZeroStarParameter.value,
       cfgZeroInitSteps: parameters.cfgZeroInitStepsParameter.int32Value(),
       compressionArtifacts: parameters.compressionArtifactsParameter.value,
-      compressionArtifactsQuality: parameters.compressionArtifactsQualityParameter.float32Value()
+      compressionArtifactsQuality: parameters.compressionArtifactsQualityParameter.float32Value(),
+      colorCalibration: parameters.colorCalibrationParameter.value
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")
@@ -268,6 +269,7 @@ extension Invocation: CustomDebugStringConvertible {
       ("t5Text", configuration.t5Text as Any),
       ("compressionArtifacts", configuration.compressionArtifacts),
       ("compressionArtifactsQuality", configuration.compressionArtifactsQuality),
+      ("colorCalibration", configuration.colorCalibration),
     ]
     return pairs.map { (name, value) in
       "\(name): \(value)"

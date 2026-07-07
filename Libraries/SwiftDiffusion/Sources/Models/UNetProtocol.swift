@@ -128,7 +128,7 @@ extension UNetProtocol {
         .toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ideogram4, .ltx2, .ltx2_3:
+      .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3:
       return nil
     case .seedvr2_3b, .seedvr2_7b:
       return graph.variable(
@@ -173,6 +173,19 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
   case .ideogram4:
     return Array(conditions[0..<3])
       + conditions[3..<conditions.count].map {
+        let shape = $0.shape
+        if shape.count == 2 {
+          return DynamicGraph.Tensor<FloatType>($0)[
+            index..<(index + 1), 0..<shape[1]
+          ].copied()
+        }
+        return DynamicGraph.Tensor<FloatType>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
+  case .krea2:
+    return Array(conditions[0..<2])
+      + conditions[2..<conditions.count].map {
         let shape = $0.shape
         if shape.count == 2 {
           return DynamicGraph.Tensor<FloatType>($0)[
@@ -563,7 +576,7 @@ public func externalOnDemandPartially(
       return false
     case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .wan21_14b, .qwenImage, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
-      .seedvr2_7b, .ideogram4:
+      .seedvr2_7b, .ideogram4, .krea2:
       return true
     }
   }
@@ -659,7 +672,7 @@ extension UNetFromNNC {
           let textShape = $0[1].shape
           return Ideogram4(
             batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-            textLength: textShape[0], usesFlashAttention: valueOr(useFlashAttention, .scale1)
+            textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1)
           ).1
         })
     case .v1:
@@ -1514,6 +1527,23 @@ extension UNetFromNNC {
             ).1
           })
       }
+    case .krea2:
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
+      tileScaleFactor = 8
+      didRunLoRASeparately = false
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder {
+          let textShape = $0[1].shape
+          return Krea2(
+            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+            textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1)
+          ).1
+        })
     case .flux2, .flux2_9b, .flux2_4b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -1851,7 +1881,7 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
     }
@@ -1911,7 +1941,8 @@ extension UNetFromNNC {
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .ideogram4, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
+      .seedvr2_7b:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -2052,7 +2083,7 @@ extension UNetFromNNC {
                   return ($0, $0)
                 })
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-              .seedvr2_7b, .ideogram4:
+              .seedvr2_7b, .ideogram4, .krea2:
               fatalError()
             }
           }()
@@ -2202,7 +2233,8 @@ extension UNetFromNNC {
           version: version
         ) { controlModelLoader in
           store.read(
-            modelKey, model: unet.unwrapped, codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData]
+            modelKey, model: unet.unwrapped,
+            codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData]
           ) {
             name, _, _, _ in
             if let result = controlModelLoader.loadMergedWeight(name: name) {
@@ -2424,7 +2456,7 @@ extension UNetFromNNC {
         }
       case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b,
-        .ideogram4:
+        .ideogram4, .krea2:
         break
       case .wan21_1_3b, .wan21_14b, .wan22_5b:
         if $0.0 == 0 {
@@ -2736,16 +2768,35 @@ extension UNetFromNNC {
       }
       let text = DynamicGraph.Tensor<FloatType>(inputs[1])
       let textShape = text.shape
-      let textInput: DynamicGraph.Tensor<FloatType>
-      if textShape.count == 3 {
-        let textIndex = isCfgEnabled ? min(1, textShape[0] - 1) : 0
-        textInput = text[
-          textIndex..<(textIndex + 1), 0..<textShape[1], 0..<textShape[2]
-        ].copied().reshaped(.WC(textShape[1], textShape[2]))
-      } else {
-        textInput = text
-      }
+      precondition(textShape.count == 3)
+      let batchSize = xInput.shape[0]
+      let useConditional = isCfgEnabled && tokenLengthCond > tokenLengthUncond
+      let textOffset = isCfgEnabled && useConditional ? tokenLengthUncond : 0
+      let textLength = useConditional || !isCfgEnabled ? tokenLengthCond : tokenLengthUncond
+      let textInput = text[
+        0..<batchSize, textOffset..<(textOffset + textLength), 0..<textShape[2]
+      ].copied()
       unet.compile(inputs: [xInput, textInput, inputs[2], inputs[3]] + Array(inputs[4...]))
+      return
+    case .krea2:
+      let x = DynamicGraph.Tensor<FloatType>(inputs[0])
+      let xShape = x.shape
+      let xInput: DynamicGraph.Tensor<FloatType>
+      if isCfgEnabled {
+        xInput = x[0..<(xShape[0] / 2), 0..<xShape[1], 0..<xShape[2], 0..<xShape[3]].copied()
+      } else {
+        xInput = x
+      }
+      let text = DynamicGraph.Tensor<FloatType>(inputs[1])
+      let textShape = text.shape
+      let useConditional = isCfgEnabled && tokenLengthCond > tokenLengthUncond
+      let textOffset = isCfgEnabled && useConditional ? tokenLengthUncond : 0
+      let textLength = useConditional || !isCfgEnabled ? tokenLengthCond : tokenLengthUncond
+      let batchSize = xInput.shape[0]
+      let textInput = text[
+        0..<batchSize, textOffset..<(textOffset + textLength), 0..<textShape[2]
+      ].copied()
+      unet.compile(inputs: [xInput, textInput] + Array(inputs[2...]))
       return
     case .hiDreamO1:
       unet.compile(inputs: inputs)
@@ -3299,43 +3350,137 @@ extension UNetFromNNC {
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .ideogram4:
-      func textInput(_ row: Int) -> DynamicGraph.Tensor<FloatType> {
-        let text = DynamicGraph.Tensor<FloatType>(restInputs[0])
-        let shape = text.shape
-        if shape.count == 3 {
-          let textIndex = min(row, shape[0] - 1)
-          return text[
-            textIndex..<(textIndex + 1), 0..<shape[1], 0..<shape[2]
-          ].copied().reshaped(.WC(shape[1], shape[2]))
-        }
-        return text
-      }
-      func fixedInputs(_ row: Int) -> [DynamicGraph.AnyTensor] {
-        return [textInput(row), restInputs[1], restInputs[2]] + Array(restInputs[3...])
-      }
+      let text = DynamicGraph.Tensor<FloatType>(restInputs[0])
+      let textShape = text.shape
+      precondition(textShape.count == 3)
+      let imageIndicator = restInputs[1]
+      let fixedSuffix = Array(restInputs[2...])
+      let shape = firstInput.shape
       guard isCfgEnabled else {
-        let et = -unet(
-          inputs: firstInput, fixedInputs(0)
+        let textInput = text[
+          0..<shape[0], 0..<tokenLengthCond, 0..<textShape[2]
+        ].copied()
+        let et = unet(
+          inputs: firstInput, [textInput, imageIndicator] + fixedSuffix
         )[0].as(of: FloatType.self)
         return et
       }
-      let shape = firstInput.shape
-      let xUncond = firstInput[
-        0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
-      ].copied()
-      let etUncond = -unet(
-        inputs: xUncond, fixedInputs(0)
-      )[0].as(of: FloatType.self)
-      etUncond.graph.joined()
-      guard !isCancelled.load(ordering: .acquiring) else {
-        return Functional.concat(axis: 0, etUncond, etUncond)
+      let batchSize = shape[0] / 2
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond > tokenLengthUncond {
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textCond = text[
+          0..<batchSize, tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+          0..<textShape[2]
+        ].copied()
+        etCond = unet(
+          inputs: xCond, [textCond, imageIndicator] + fixedSuffix
+        )[0].as(of: FloatType.self)
+        etCond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[
+          0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textUncond = text[
+          0..<batchSize, 0..<tokenLengthUncond, 0..<textShape[2]
+        ].copied()
+        etUncond = unet(
+          inputs: xUncond, [textUncond, imageIndicator] + fixedSuffix
+        )[0].as(of: FloatType.self)
+      } else {
+        let xUncond = firstInput[
+          0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textUncond = text[
+          0..<batchSize, 0..<tokenLengthUncond, 0..<textShape[2]
+        ].copied()
+        etUncond = unet(
+          inputs: xUncond, [textUncond, imageIndicator] + fixedSuffix
+        )[0].as(of: FloatType.self)
+        etUncond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textCond = text[
+          0..<batchSize, tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+          0..<textShape[2]
+        ].copied()
+        etCond = unet(
+          inputs: xCond, [textCond, imageIndicator] + fixedSuffix
+        )[0].as(of: FloatType.self)
       }
-      let xCond = firstInput[
-        (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
-      ].copied()
-      let etCond = -unet(
-        inputs: xCond, fixedInputs(1)
-      )[0].as(of: FloatType.self)
+      return Functional.concat(axis: 0, etUncond, etCond)
+    case .krea2:
+      let text = DynamicGraph.Tensor<FloatType>(restInputs[0])
+      let textShape = text.shape
+      let fixedSuffix = Array(restInputs[1...])
+      let shape = firstInput.shape
+      guard isCfgEnabled else {
+        let textInput = text[
+          0..<shape[0], 0..<tokenLengthCond, 0..<textShape[2]
+        ].copied()
+        return unet(inputs: firstInput, [textInput] + fixedSuffix)[0].as(of: FloatType.self)
+      }
+      let batchSize = shape[0] / 2
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond > tokenLengthUncond {
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textCond = text[
+          0..<batchSize, tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+          0..<textShape[2]
+        ].copied()
+        etCond = unet(
+          inputs: xCond, [textCond] + fixedSuffix
+        )[0].as(of: FloatType.self)
+        etCond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[
+          0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textUncond = text[
+          0..<batchSize, 0..<tokenLengthUncond, 0..<textShape[2]
+        ].copied()
+        etUncond = unet(
+          inputs: xUncond, [textUncond] + fixedSuffix
+        )[0].as(of: FloatType.self)
+      } else {
+        let xUncond = firstInput[
+          0..<(shape[0] / 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textUncond = text[
+          0..<batchSize, 0..<tokenLengthUncond, 0..<textShape[2]
+        ].copied()
+        etUncond = unet(
+          inputs: xUncond, [textUncond] + fixedSuffix
+        )[0].as(of: FloatType.self)
+        etUncond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        let xCond = firstInput[
+          (shape[0] / 2)..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let textCond = text[
+          0..<batchSize, tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond),
+          0..<textShape[2]
+        ].copied()
+        etCond = unet(
+          inputs: xCond, [textCond] + fixedSuffix
+        )[0].as(of: FloatType.self)
+      }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .qwenImage:
       guard isCfgEnabled else {
@@ -4253,7 +4398,7 @@ extension UNetFromNNC {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
       .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (0, 0)
     case .ltx2, .ltx2_3:
       return LTX2ExtractAudioFramesAndHeight(shape)
@@ -4369,7 +4514,8 @@ extension UNetFromNNC {
     case .auraflow, .pixart, .flux1, .ernieImage, .flux2, .flux2_4b, .flux2_9b, .hunyuanVideo,
       .hiDreamI1,
       .kandinsky21, .qwenImage, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
-      .wan21_14b, .wan21_1_3b, .zImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .wan21_14b, .wan21_1_3b, .zImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .krea2:
       tileScaleFactor = 8
     case .hiDreamO1:
       tileScaleFactor = 32
@@ -4611,7 +4757,7 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
     }
@@ -4646,7 +4792,7 @@ extension UNetFromNNC {
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
       .cosmos2_5_2b,
-      .ideogram4, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       return x
     }
   }

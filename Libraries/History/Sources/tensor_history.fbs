@@ -100,6 +100,11 @@ enum CompressionMethod: byte {
   Jpeg,
 }
 
+enum ColorCalibration: byte {
+  Disabled,
+  Lab,
+}
+
 table TensorHistoryNode {
   lineage: long (primary);
   logical_time: long (primary);
@@ -213,6 +218,7 @@ table TensorHistoryNode {
   compression_artifacts: CompressionMethod = Disabled;
   compression_artifacts_quality: float = 43.1;
   audio: bool = false;
+  color_calibration: ColorCalibration = Disabled;
 }
 
 root_type TensorHistoryNode;

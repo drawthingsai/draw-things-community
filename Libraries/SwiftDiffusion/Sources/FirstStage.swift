@@ -231,8 +231,8 @@ extension FirstStage {
     case .hiDreamO1:
       scaleFactor = 32
       scaleFactorZ = 1
-    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .seedvr2_3b,
-      .seedvr2_7b:
+    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+      .seedvr2_3b, .seedvr2_7b:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wan22_5b:
@@ -512,8 +512,9 @@ extension FirstStage {
         }
       }
       outputChannels = 3
-    case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b:
-      let startDepth = version == .qwenImage || version == .cosmos2_5_2b ? 1 : shape[0]
+    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b:
+      let startDepth =
+        version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b ? 1 : shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let sizeLimit: Int
@@ -1314,8 +1315,8 @@ extension FirstStage {
     case .hiDreamO1:
       scaleFactor = 32
       scaleFactorZ = 1
-    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .seedvr2_3b,
-      .seedvr2_7b:
+    case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+      .seedvr2_3b, .seedvr2_7b:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wan22_5b:
@@ -1494,9 +1495,10 @@ extension FirstStage {
         }
       }
       outputChannels = 32
-    case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b:
+    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b:
       let startDepth =
-        version == .qwenImage || version == .cosmos2_5_2b ? 1 : (shape[0] - 1) / 4 + 1
+        version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
+        ? 1 : (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
       let sizeLimit: Int
@@ -1542,7 +1544,8 @@ extension FirstStage {
         ).1
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
-        let batchSize = version == .qwenImage || version == .cosmos2_5_2b ? 1 : batchSize
+        let batchSize =
+          version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b ? 1 : batchSize
         if highPrecision {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -1959,7 +1962,7 @@ extension FirstStage {
   ) -> DynamicGraph.Tensor<T> {
     var pixel = decoder(inputs: z, causalAttentionMask.map { [$0] } ?? [])[0].as(of: T.self)
     if alternativeDecoderVersion == .transparent,
-      version == .qwenImage || version == .cosmos2_5_2b
+      version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
     {
       // If this is the case, we need to switch alpha channel with rgb channel.
       let shape = pixel.shape

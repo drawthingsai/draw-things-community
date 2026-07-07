@@ -111,6 +111,17 @@ public enum zzz_DflatGen_CompressionMethod: Int8, Enum, Verifiable {
   public static var min: zzz_DflatGen_CompressionMethod { return .disabled }
 }
 
+public enum zzz_DflatGen_ColorCalibration: Int8, Enum, Verifiable {
+  public typealias T = Int8
+  public static var byteSize: Int { return MemoryLayout<Int8>.size }
+  public var value: Int8 { return self.rawValue }
+  case disabled = 0
+  case lab = 1
+
+  public static var max: zzz_DflatGen_ColorCalibration { return .lab }
+  public static var min: zzz_DflatGen_ColorCalibration { return .disabled }
+}
+
 public struct zzz_DflatGen_Control: FlatBufferObject, Verifiable {
 
   static func validateVersion() { FlatBuffersVersion_22_9_29() }
@@ -478,6 +489,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     case cfgZeroInitSteps = 170
     case compressionArtifacts = 172
     case compressionArtifactsQuality = 174
+    case colorCalibration = 176
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -863,8 +875,15 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     let o = _accessor.offset(VTOFFSET.compressionArtifactsQuality.v)
     return o == 0 ? 43.1 : _accessor.readBuffer(of: Float32.self, at: o)
   }
+  public var colorCalibration: zzz_DflatGen_ColorCalibration {
+    let o = _accessor.offset(VTOFFSET.colorCalibration.v)
+    return o == 0
+      ? .disabled
+      : zzz_DflatGen_ColorCalibration(rawValue: _accessor.readBuffer(of: Int8.self, at: o))
+        ?? .disabled
+  }
   public static func startGenerationConfiguration(_ fbb: inout FlatBufferBuilder) -> UOffset {
-    fbb.startTable(with: 86)
+    fbb.startTable(with: 87)
   }
   public static func add(id: Int64, _ fbb: inout FlatBufferBuilder) {
     fbb.add(element: id, def: 0, at: VTOFFSET.id.p)
@@ -1150,6 +1169,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     fbb.add(
       element: compressionArtifactsQuality, def: 43.1, at: VTOFFSET.compressionArtifactsQuality.p)
   }
+  public static func add(
+    colorCalibration: zzz_DflatGen_ColorCalibration, _ fbb: inout FlatBufferBuilder
+  ) { fbb.add(element: colorCalibration.rawValue, def: 0, at: VTOFFSET.colorCalibration.p) }
   public static func endGenerationConfiguration(_ fbb: inout FlatBufferBuilder, start: UOffset)
     -> Offset
   {
@@ -1241,7 +1263,8 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     cfgZeroStar: Bool = false,
     cfgZeroInitSteps: Int32 = 0,
     compressionArtifacts: zzz_DflatGen_CompressionMethod = .disabled,
-    compressionArtifactsQuality: Float32 = 43.1
+    compressionArtifactsQuality: Float32 = 43.1,
+    colorCalibration: zzz_DflatGen_ColorCalibration = .disabled
   ) -> Offset {
     let __start = zzz_DflatGen_GenerationConfiguration.startGenerationConfiguration(&fbb)
     zzz_DflatGen_GenerationConfiguration.add(id: id, &fbb)
@@ -1335,6 +1358,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     zzz_DflatGen_GenerationConfiguration.add(compressionArtifacts: compressionArtifacts, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(
       compressionArtifactsQuality: compressionArtifactsQuality, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(colorCalibration: colorCalibration, &fbb)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(&fbb, start: __start)
   }
 
@@ -1557,6 +1581,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     try _v.visit(
       field: VTOFFSET.compressionArtifactsQuality.p, fieldName: "compressionArtifactsQuality",
       required: false, type: Float32.self)
+    try _v.visit(
+      field: VTOFFSET.colorCalibration.p, fieldName: "colorCalibration", required: false,
+      type: zzz_DflatGen_ColorCalibration.self)
     _v.finish()
   }
 }

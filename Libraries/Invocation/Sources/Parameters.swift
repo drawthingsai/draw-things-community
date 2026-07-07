@@ -86,6 +86,17 @@ extension CompressionMethod: CommandLineAbbreviatable {
   }
 }
 
+extension ColorCalibration: CommandLineAbbreviatable {
+  public var commandLineAbbreviation: String {
+    switch self {
+    case .disabled:
+      return "none"
+    case .lab:
+      return "lab"
+    }
+  }
+}
+
 func fileList(model: ModelZoo.Specification) -> String {
   let lines: [String?] = [
     "model: \(model.file)",
@@ -130,6 +141,7 @@ public final class Parameters {
   let seedModeParameter: EnumParameter<SeedMode>
   let samplerParameter: EnumParameter<SamplerType>
   let compressionArtifactsParameter: EnumParameter<CompressionMethod>
+  let colorCalibrationParameter: EnumParameter<ColorCalibration>
   let negativePromptForImagePriorParameter, hiresFixParameter,
     zeroNegativePromptParameter, tiledDecodingParameter,
     preserveOriginalAfterInpaintParameter, tiledDiffusionParameter,
@@ -473,6 +485,10 @@ public final class Parameters {
       defaultValue: Double(defaultConfiguration.compressionArtifactsQuality), range: 0...100,
       commandLineFlag: "compression-artifacts-quality",
       additionalJsonKeys: ["compression_artifacts_quality"])
+    colorCalibrationParameter = EnumParameter<ColorCalibration>(
+      titleKey: "color_calibration", explanationKey: nil,
+      defaultValue: defaultConfiguration.colorCalibration,
+      commandLineFlag: "color-calibration", additionalJsonKeys: ["color_calibration"])
   }
 
   public func allParameters() -> [Parameter] {
@@ -558,6 +574,7 @@ public final class Parameters {
       cfgZeroInitStepsParameter,
       compressionArtifactsParameter,
       compressionArtifactsQualityParameter,
+      colorCalibrationParameter,
     ]
   }
 }

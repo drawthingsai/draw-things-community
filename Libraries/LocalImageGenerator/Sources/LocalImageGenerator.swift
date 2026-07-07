@@ -163,7 +163,7 @@ extension LocalImageGenerator {
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1633,6 +1633,17 @@ extension LocalImageGenerator {
         paddingToken: nil, addSpecialTokens: false, conditionalLength: 4096, modifier: .qwen3,
         potentials: potentials, startLength: 0, endLength: 0, maxLength: paddedTextEncodingLength,
         paddingLength: paddedTextEncodingLength)
+    case .krea2:
+      let promptWithTemplate =
+        "<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
+      let negativePromptWithTemplate =
+        "<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
+      return tokenize(
+        graph: graph, tokenizer: tokenizerQwen3, text: promptWithTemplate,
+        negativeText: negativePromptWithTemplate,
+        paddingToken: nil, addSpecialTokens: false, conditionalLength: 2560, modifier: .qwen3,
+        potentials: potentials, startLength: 0, endLength: 0, maxLength: paddedTextEncodingLength,
+        paddingLength: paddedTextEncodingLength)
     case .cosmos2_5_2b:
       var result = tokenize(
         graph: graph, tokenizer: tokenizerQwen3, text: text,
@@ -1872,10 +1883,18 @@ extension LocalImageGenerator {
   }
 
   private func upscaleImageAndToCPU(
-    _ image: DynamicGraph.Tensor<FloatType>, configuration: GenerationConfiguration
+    _ image: DynamicGraph.Tensor<FloatType>, configuration: GenerationConfiguration,
+    colorCalibrationReference: Tensor<FloatType>? = nil,
+    colorCalibrationMask: Tensor<UInt8>? = nil,
+    isTransparentDecoder: Bool = false
   ) -> (Tensor<FloatType>, Int) {
     guard let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) else {
-      return (image.rawValue.toCPU(), 1)
+      let result = image.rawValue.toCPU()
+      return (
+        applyColorCalibrationIfEnabled(
+          to: result, reference: colorCalibrationReference, mask: colorCalibrationMask,
+          configuration: configuration, isTransparentDecoder: isTransparentDecoder), 1
+      )
     }
     let upscalerFilePath = UpscalerZoo.filePathForModelDownloaded(upscaler)
     let nativeScaleFactor = UpscalerZoo.scaleFactorForModel(upscaler)
@@ -1897,15 +1916,15 @@ extension LocalImageGenerator {
     let shape = image.shape
     if shape[3] > 3 {
       let graph = image.graph
-      let result = realESRGANer.upscale(
+      let upscaled = realESRGANer.upscale(
         image[0..<shape[0], 0..<shape[1], 0..<shape[2], (shape[3] - 3)..<shape[3]].copied()
       ).0
-      let upscaledShape = result.shape
+      let upscaledShape = upscaled.shape
       var original = graph.variable(
         .GPU(0), .NHWC(shape[0], upscaledShape[1], upscaledShape[2], shape[3]), of: FloatType.self)
       original[
         0..<shape[0], 0..<upscaledShape[1], 0..<upscaledShape[2], (shape[3] - 3)..<shape[3]] =
-        result.toGPU(
+        upscaled.toGPU(
           0)
       // Retain the alpha channel.
       original[0..<shape[0], 0..<upscaledShape[1], 0..<upscaledShape[2], 0..<(shape[3] - 3)] =
@@ -1913,13 +1932,43 @@ extension LocalImageGenerator {
           .bilinear, widthScale: Float(upscaledShape[2]) / Float(shape[2]),
           heightScale: Float(upscaledShape[1]) / Float(shape[1]))(
           image[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<(shape[3] - 3)].copied())
-      return (original.rawValue.toCPU().copied(), forcedScaleFactor.rawValue)
-    } else {
+      let result = original.rawValue.toCPU().copied()
       return (
-        realESRGANer.upscale(image).0.rawValue.copied(),
+        applyColorCalibrationIfEnabled(
+          to: result, reference: colorCalibrationReference, mask: colorCalibrationMask,
+          configuration: configuration, isTransparentDecoder: isTransparentDecoder),
+        forcedScaleFactor.rawValue
+      )
+    } else {
+      let result = realESRGANer.upscale(image).0.rawValue.copied()
+      return (
+        applyColorCalibrationIfEnabled(
+          to: result, reference: colorCalibrationReference, mask: colorCalibrationMask,
+          configuration: configuration, isTransparentDecoder: isTransparentDecoder),
         forcedScaleFactor.rawValue
       )
     }
+  }
+
+  private func applyColorCalibrationIfEnabled(
+    to image: Tensor<FloatType>, reference: Tensor<FloatType>?, mask: Tensor<UInt8>?,
+    configuration: GenerationConfiguration, isTransparentDecoder: Bool
+  ) -> Tensor<FloatType> {
+    guard let reference, configuration.colorCalibration != .disabled else { return image }
+    return ColorCalibrator.calibrate(
+      to: [image], reference: reference, mask: mask,
+      colorCalibration: configuration.colorCalibration, isTransparentDecoder: isTransparentDecoder
+    ).first ?? image
+  }
+
+  private func applyColorCalibrationIfEnabled(
+    to images: [Tensor<FloatType>], reference: Tensor<FloatType>?, mask: Tensor<UInt8>?,
+    configuration: GenerationConfiguration, isTransparentDecoder: Bool
+  ) -> [Tensor<FloatType>] {
+    guard let reference, configuration.colorCalibration != .disabled else { return images }
+    return ColorCalibrator.calibrate(
+      to: images, reference: reference, mask: mask,
+      colorCalibration: configuration.colorCalibration, isTransparentDecoder: isTransparentDecoder)
   }
 
   private func downscaleImageAndToGPU(_ image: DynamicGraph.Tensor<FloatType>, scaleFactor: Int)
@@ -1936,11 +1985,20 @@ extension LocalImageGenerator {
     return RealESRGANer.downscale(graph.variable(image), scaleFactor: scaleFactor).rawValue.toCPU()
   }
 
-  private func upscaleImages(_ images: [Tensor<FloatType>], configuration: GenerationConfiguration)
+  private func upscaleImages(
+    _ images: [Tensor<FloatType>], configuration: GenerationConfiguration,
+    colorCalibrationReference: Tensor<FloatType>? = nil,
+    colorCalibrationMask: Tensor<UInt8>? = nil,
+    isTransparentDecoder: Bool = false
+  )
     -> ([Tensor<FloatType>], Int)
   {
     guard let upscaler = configuration.upscaler, UpscalerZoo.isModelDownloaded(upscaler) else {
-      return (images, 1)
+      return (
+        applyColorCalibrationIfEnabled(
+          to: images, reference: colorCalibrationReference, mask: colorCalibrationMask,
+          configuration: configuration, isTransparentDecoder: isTransparentDecoder), 1
+      )
     }
     let upscalerFilePath = UpscalerZoo.filePathForModelDownloaded(upscaler)
     let nativeScaleFactor = UpscalerZoo.scaleFactorForModel(upscaler)
@@ -1992,7 +2050,12 @@ extension LocalImageGenerator {
           results.append(result.rawValue.copied())
         }
       }
-      return (results, forcedScaleFactor.rawValue)
+      return (
+        applyColorCalibrationIfEnabled(
+          to: results, reference: colorCalibrationReference, mask: colorCalibrationMask,
+          configuration: configuration, isTransparentDecoder: isTransparentDecoder),
+        forcedScaleFactor.rawValue
+      )
     }
   }
 
@@ -3159,7 +3222,7 @@ extension LocalImageGenerator {
         break
       case .wan21_1_3b, .wan21_14b, .wan22_5b:
         fatalError()
-      case .qwenImage, .cosmos2_5_2b:
+      case .qwenImage, .cosmos2_5_2b, .krea2:
         fatalError()
       case .zImage, .ernieImage:
         fatalError()
@@ -3269,7 +3332,7 @@ extension LocalImageGenerator {
         fatalError()
       case .ltx2, .ltx2_3:
         fatalError()
-      case .qwenImage, .cosmos2_5_2b, .ideogram4:
+      case .qwenImage, .cosmos2_5_2b, .ideogram4, .krea2:
         fatalError()
       case .hunyuanVideo:
         fatalError()
@@ -3279,7 +3342,7 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         return (nil, [])
       case .flux1:
         guard
@@ -3304,7 +3367,7 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4:
+        .seedvr2_7b, .ideogram4, .krea2:
         return (nil, [])
       case .ltx2, .ltx2_3:
         guard let image = image else { return (nil, []) }
@@ -3376,7 +3439,7 @@ extension LocalImageGenerator {
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .flux1, .qwenImage, .cosmos2_5_2b,
         .flux2,
-        .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         return x
       case .ltx2, .ltx2_3:
         guard let firstFrame = imageCond.1.first else { return x }
@@ -3396,7 +3459,7 @@ extension LocalImageGenerator {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1, .hiDreamI1, .hiDreamO1, .qwenImage,
       .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b,
-      .seedvr2_7b, .ideogram4:
+      .seedvr2_7b, .ideogram4, .krea2:
       return false
     case .svdI2v:
       return true
@@ -3414,7 +3477,7 @@ extension LocalImageGenerator {
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
       .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
       .flux2_4b,
-      .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (1, image, nil)
     case .ltx2, .ltx2_3:
       guard forSample else {
@@ -3517,7 +3580,7 @@ extension LocalImageGenerator {
       .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB,
       .wurstchenStageC, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
-      .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (batchSize, 0)
     }
   }
@@ -3575,7 +3638,7 @@ extension LocalImageGenerator {
       return result
     case .hiDreamI1, .hiDreamO1:
       fatalError()
-    case .qwenImage, .cosmos2_5_2b:
+    case .qwenImage, .cosmos2_5_2b, .krea2:
       fatalError()
     case .zImage, .ernieImage, .ideogram4:
       fatalError()
@@ -3611,6 +3674,8 @@ extension LocalImageGenerator {
     shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
+    colorCalibrationReference: Tensor<FloatType>? = nil,
+    colorCalibrationMask: Tensor<UInt8>? = nil,
     cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
@@ -3633,6 +3698,7 @@ extension LocalImageGenerator {
       }) ?? ModelZoo.defaultSpecification.file
     let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
+    let colorCalibrationReference = colorCalibrationReference ?? image
     let modelVersion = ModelZoo.versionForModel(file)
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     // generateTextOnly cannot handle I2v model.
@@ -3952,7 +4018,7 @@ extension LocalImageGenerator {
           * 2
         firstPassAudioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
         firstPassChannels = 16
         firstPassScaleFactor = 8
         firstPassStartWidth =
@@ -4205,7 +4271,7 @@ extension LocalImageGenerator {
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
         .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4:
+        .seedvr2_7b, .ideogram4, .krea2:
         break
       }
       if modifier == .inpainting || modifier == .editing || modifier == .double {
@@ -4481,7 +4547,10 @@ extension LocalImageGenerator {
           guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
         }
         let (result, scaleFactor) = upscaleImageAndToCPU(
-          firstStageResult.0, configuration: configuration)
+          firstStageResult.0, configuration: configuration,
+          colorCalibrationReference: colorCalibrationReference,
+          colorCalibrationMask: colorCalibrationMask,
+          isTransparentDecoder: alternativeDecoderVersion == .transparent)
         if signposts.contains(.imageUpscaled) {
           let _ = feedback(.imageUpscaled, signposts, nil)
         }
@@ -4706,7 +4775,7 @@ extension LocalImageGenerator {
         let channels: Int
         switch modelVersion {
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
+          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
           channels = 16
         case .hiDreamO1:
           channels = 3 * 32 * 32
@@ -4855,7 +4924,10 @@ extension LocalImageGenerator {
         guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
       let (result, scaleFactor) = upscaleImageAndToCPU(
-        secondPassResult.0, configuration: configuration)
+        secondPassResult.0, configuration: configuration,
+        colorCalibrationReference: colorCalibrationReference,
+        colorCalibrationMask: colorCalibrationMask,
+        isTransparentDecoder: alternativeDecoderVersion == .transparent)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
@@ -4883,6 +4955,7 @@ extension LocalImageGenerator {
     text: String,
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
+    colorCalibrationMask: Tensor<UInt8>? = nil,
     cancellation: (@escaping () -> Void) -> Void,
     feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
@@ -4905,6 +4978,7 @@ extension LocalImageGenerator {
       }) ?? ModelZoo.defaultSpecification.file
     let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
+    let colorCalibrationReference = image
     let modelVersion = ModelZoo.versionForModel(file)
     let (
       qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
@@ -5181,6 +5255,8 @@ extension LocalImageGenerator {
         depth: depth, hints: hints, custom: custom, shuffles: shuffles, poses: poses,
         text: text, negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling,
+        colorCalibrationReference: colorCalibrationReference,
+        colorCalibrationMask: colorCalibrationMask,
         cancellation: cancellation, feedback: feedback)
     }
     let batchSize =
@@ -5213,7 +5289,7 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 32 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -5405,7 +5481,11 @@ extension LocalImageGenerator {
       guard initTimestep.roundedDownStartStep < sampling.steps && configuration.strength > 0 else {
         let image = faceRestoreImage(image, configuration: configuration)
         // Otherwise, just run upscaler if needed.
-        let (result, scaleFactor) = upscaleImageAndToCPU(image, configuration: configuration)
+        let (result, scaleFactor) = upscaleImageAndToCPU(
+          image, configuration: configuration,
+          colorCalibrationReference: colorCalibrationReference,
+          colorCalibrationMask: colorCalibrationMask,
+          isTransparentDecoder: alternativeDecoderVersion == .transparent)
         // Because we just run the upscaler, there is no more than 1 image generation, return directly.
         return ([result], nil, scaleFactor)
       }
@@ -5439,7 +5519,7 @@ extension LocalImageGenerator {
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
         .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4:
+        .seedvr2_7b, .ideogram4, .krea2:
         break
       }
       let imageSize: Int
@@ -5792,7 +5872,10 @@ extension LocalImageGenerator {
         guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
       let (result, scaleFactor) = upscaleImageAndToCPU(
-        firstStageResult.0, configuration: configuration)
+        firstStageResult.0, configuration: configuration,
+        colorCalibrationReference: colorCalibrationReference,
+        colorCalibrationMask: colorCalibrationMask,
+        isTransparentDecoder: alternativeDecoderVersion == .transparent)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
@@ -6187,6 +6270,7 @@ extension LocalImageGenerator {
         shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling,
+        colorCalibrationMask: mask,
         cancellation: cancellation, feedback: feedback)
     }
     // If no sophisticated mask, nothing to be done.
@@ -6200,6 +6284,7 @@ extension LocalImageGenerator {
         shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling,
+        colorCalibrationMask: mask,
         cancellation: cancellation, feedback: feedback)
     } else if !exists0 && exists1 && !exists2 && !exists3 {
       // If masked due to nothing only the whole page, run text generation only.
@@ -6208,6 +6293,7 @@ extension LocalImageGenerator {
         shuffles: shuffles, poses: poses, text: text,
         negativeText: negativeText, configuration: configuration,
         denoiserParameterization: denoiserParameterization, sampling: sampling,
+        colorCalibrationReference: image, colorCalibrationMask: mask,
         cancellation: cancellation, feedback: feedback)
     }
     var signposts = Set<ImageGeneratorSignpost>()
@@ -6246,7 +6332,9 @@ extension LocalImageGenerator {
       if signposts.contains(.faceRestored) {
         guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
-      let batch = upscaleImages(result.0, configuration: configuration)
+      let batch = upscaleImages(
+        result.0, configuration: configuration, colorCalibrationReference: image,
+        colorCalibrationMask: mask, isTransparentDecoder: alternativeDecoderVersion == .transparent)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
@@ -6278,7 +6366,9 @@ extension LocalImageGenerator {
       if signposts.contains(.faceRestored) {
         guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
       }
-      let batch = upscaleImages(result.0, configuration: configuration)
+      let batch = upscaleImages(
+        result.0, configuration: configuration, colorCalibrationReference: image,
+        colorCalibrationMask: mask, isTransparentDecoder: alternativeDecoderVersion == .transparent)
       if signposts.contains(.imageUpscaled) {
         let _ = feedback(.imageUpscaled, signposts, nil)
       }
@@ -6309,7 +6399,9 @@ extension LocalImageGenerator {
     if signposts.contains(.faceRestored) {
       guard feedback(.faceRestored, signposts, nil) else { return (nil, nil, 1) }
     }
-    let batch = upscaleImages(result.0, configuration: configuration)
+    let batch = upscaleImages(
+      result.0, configuration: configuration, colorCalibrationReference: image,
+      colorCalibrationMask: mask, isTransparentDecoder: alternativeDecoderVersion == .transparent)
     if signposts.contains(.imageUpscaled) {
       let _ = feedback(.imageUpscaled, signposts, nil)
     }
@@ -6549,7 +6641,7 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 32 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -6852,7 +6944,7 @@ extension LocalImageGenerator {
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
         .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4:
+        .seedvr2_7b, .ideogram4, .krea2:
         break
       }
       let imageSize: Int
@@ -7455,7 +7547,7 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 32 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -7757,7 +7849,7 @@ extension LocalImageGenerator {
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
         .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4:
+        .seedvr2_7b, .ideogram4, .krea2:
         break
       }
       let imageSize: Int

@@ -57,6 +57,11 @@ extension ScriptExecutor {
       TCD_TRAILING: 19
     }
 
+    const ColorCalibration = {
+      NONE: "none",
+      Lab: "lab"
+    }
+
     const BodyMaskType = {
       CLOTHING: "clothing",
       UPPER_BODY: "upper_body",

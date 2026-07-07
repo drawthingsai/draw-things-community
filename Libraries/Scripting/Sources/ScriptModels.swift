@@ -180,6 +180,7 @@ public final class JSGenerationConfiguration: Codable {
   public var cfgZeroInitSteps: Int32
   public var compressionArtifacts: String?
   public var compressionArtifactsQuality: Float32?
+  public var colorCalibration: String?
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -273,6 +274,12 @@ public final class JSGenerationConfiguration: Codable {
       compressionArtifacts = "jpeg"
     }
     compressionArtifactsQuality = min(max(configuration.compressionArtifactsQuality, 0), 100)
+    switch configuration.colorCalibration {
+    case .disabled:
+      colorCalibration = "none"
+    case .lab:
+      colorCalibration = "lab"
+    }
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -298,6 +305,14 @@ public final class JSGenerationConfiguration: Codable {
       }
     }()
     let compressionArtifactsQuality = min(max(compressionArtifactsQuality ?? 43.1, 0), 100)
+    let colorCalibrationSetting: DataModels.ColorCalibration = {
+      switch colorCalibration?.lowercased() {
+      case "lab":
+        return .lab
+      default:
+        return .disabled
+      }
+    }()
     return GenerationConfiguration(
       id: id, startWidth: UInt16(width / 64), startHeight: UInt16(height / 64),
       seed: seed >= 0 ? UInt32(seed) : UInt32.random(in: UInt32.min...UInt32.max), steps: steps,
@@ -352,7 +367,8 @@ public final class JSGenerationConfiguration: Codable {
       cfgZeroStar: cfgZeroStar,
       cfgZeroInitSteps: cfgZeroInitSteps,
       compressionArtifacts: compressionArtifactsSetting,
-      compressionArtifactsQuality: compressionArtifactsQuality
+      compressionArtifactsQuality: compressionArtifactsQuality,
+      colorCalibration: colorCalibrationSetting
     )
   }
 }

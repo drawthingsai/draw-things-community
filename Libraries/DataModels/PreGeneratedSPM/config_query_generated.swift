@@ -886,4 +886,16 @@ extension GenerationConfiguration {
     FieldExpr(
       name: "f174", primaryKey: false, hasIndex: false, tableReader: _tr__f174,
       objectReader: _or__f174)
+
+  private static func _tr__f176(_ table: ByteBuffer) -> ColorCalibration? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return ColorCalibration(rawValue: tr0.colorCalibration.rawValue)!
+  }
+  private static func _or__f176(_ or0: GenerationConfiguration) -> ColorCalibration? {
+    return or0.colorCalibration
+  }
+  public static let colorCalibration: FieldExpr<ColorCalibration, GenerationConfiguration> =
+    FieldExpr(
+      name: "f176", primaryKey: false, hasIndex: false, tableReader: _tr__f176,
+      objectReader: _or__f176)
 }

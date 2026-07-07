@@ -1,5 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_test")
 
 config_setting(
     name = "macos_build",
@@ -58,4 +58,17 @@ swift_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+swift_test(
+    name = "ColorCalibrationTests",
+    srcs = [
+        "Tests/ColorCalibrationTests.swift",
+    ],
+    deps = [
+        ":LocalImageGenerator",
+        "//Libraries/DataModels",
+        "//Libraries/SwiftDiffusion",
+        "@s4nnc//nnc",
+    ],
 )

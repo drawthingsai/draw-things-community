@@ -623,6 +623,9 @@ extension DPMPP2MSampler: Sampler {
             alpha: alpha, modifier: modifier, step: i, isBatchEnabled: isBatchEnabled,
             cfgZeroStar: cfgZeroStar)
         }
+        if isNaN(et.rawValue.toCPU()) {
+          return .failure(SamplerError.isNaN)
+        }
         var denoised: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
         case .u(_):
@@ -641,6 +644,9 @@ extension DPMPP2MSampler: Sampler {
           denoised = Functional.add(
             left: x, right: et, leftScalar: Float(sigmaData2 / (sigma * sigma + sigmaData2)),
             rightScalar: Float(sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()))
+        }
+        if isNaN(denoised.rawValue.toCPU()) {
+          return .failure(SamplerError.isNaN)
         }
         if let oldDenoised = oldDenoised, i < sampling.steps - 1 {
           if case .u(_) = discretization.objective {

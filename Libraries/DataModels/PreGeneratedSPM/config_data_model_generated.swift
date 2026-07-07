@@ -93,6 +93,14 @@ public enum CompressionMethod: Int8, DflatFriendlyValue, CaseIterable {
   }
 }
 
+public enum ColorCalibration: Int8, DflatFriendlyValue, CaseIterable {
+  case disabled = 0
+  case lab = 1
+  public static func < (lhs: ColorCalibration, rhs: ColorCalibration) -> Bool {
+    return lhs.rawValue < rhs.rawValue
+  }
+}
+
 public struct Control: Equatable, FlatBuffersDecodable {
   public var file: String?
   public var weight: Float32
@@ -283,6 +291,7 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     guard lhs.cfgZeroInitSteps == rhs.cfgZeroInitSteps else { return false }
     guard lhs.compressionArtifacts == rhs.compressionArtifacts else { return false }
     guard lhs.compressionArtifactsQuality == rhs.compressionArtifactsQuality else { return false }
+    guard lhs.colorCalibration == rhs.colorCalibration else { return false }
     return true
   }
   public var _rowid: Int64 = -1
@@ -371,6 +380,7 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
   public let cfgZeroInitSteps: Int32
   public let compressionArtifacts: CompressionMethod
   public let compressionArtifactsQuality: Float32
+  public let colorCalibration: ColorCalibration
   public init(
     id: Int64, startWidth: UInt16? = 0, startHeight: UInt16? = 0, seed: UInt32? = 0,
     steps: UInt32? = 0, guidanceScale: Float32? = 0.0, strength: Float32? = 0.0,
@@ -403,7 +413,7 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     t5Text: String? = nil, teaCacheMaxSkipSteps: Int32? = 3, causalInferenceEnabled: Bool? = false,
     causalInference: Int32? = 3, causalInferencePad: Int32? = 0, cfgZeroStar: Bool? = false,
     cfgZeroInitSteps: Int32? = 0, compressionArtifacts: CompressionMethod? = .disabled,
-    compressionArtifactsQuality: Float32? = 43.1
+    compressionArtifactsQuality: Float32? = 43.1, colorCalibration: ColorCalibration? = .disabled
   ) {
     self.id = id
     self.startWidth = startWidth ?? 0
@@ -489,6 +499,7 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     self.cfgZeroInitSteps = cfgZeroInitSteps ?? 0
     self.compressionArtifacts = compressionArtifacts ?? .disabled
     self.compressionArtifactsQuality = compressionArtifactsQuality ?? 43.1
+    self.colorCalibration = colorCalibration ?? .disabled
   }
   public init(_ obj: zzz_DflatGen_GenerationConfiguration) {
     self.id = obj.id
@@ -586,6 +597,7 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     self.compressionArtifacts =
       CompressionMethod(rawValue: obj.compressionArtifacts.rawValue) ?? .disabled
     self.compressionArtifactsQuality = obj.compressionArtifactsQuality
+    self.colorCalibration = ColorCalibration(rawValue: obj.colorCalibration.rawValue) ?? .disabled
   }
   public static func from(data: Data) -> Self {
     return data.withUnsafeBytes { buffer in
@@ -743,6 +755,7 @@ public struct GenerationConfigurationBuilder {
   public var cfgZeroInitSteps: Int32
   public var compressionArtifacts: CompressionMethod
   public var compressionArtifactsQuality: Float32
+  public var colorCalibration: ColorCalibration
   public init(from object: GenerationConfiguration) {
     id = object.id
     startWidth = object.startWidth
@@ -828,6 +841,7 @@ public struct GenerationConfigurationBuilder {
     cfgZeroInitSteps = object.cfgZeroInitSteps
     compressionArtifacts = object.compressionArtifacts
     compressionArtifactsQuality = object.compressionArtifactsQuality
+    colorCalibration = object.colorCalibration
   }
   public func build() -> GenerationConfiguration {
     GenerationConfiguration(
@@ -864,7 +878,7 @@ public struct GenerationConfigurationBuilder {
       causalInferenceEnabled: causalInferenceEnabled, causalInference: causalInference,
       causalInferencePad: causalInferencePad, cfgZeroStar: cfgZeroStar,
       cfgZeroInitSteps: cfgZeroInitSteps, compressionArtifacts: compressionArtifacts,
-      compressionArtifactsQuality: compressionArtifactsQuality)
+      compressionArtifactsQuality: compressionArtifactsQuality, colorCalibration: colorCalibration)
   }
 }
 

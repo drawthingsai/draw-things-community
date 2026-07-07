@@ -1,6 +1,23 @@
 import Foundation
 import NNC
 
+public func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
+) -> Tensor<FloatType> {
+  let headDim = 128
+  let half = headDim / 2
+  let theta: Double = 5_000_000
+  var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, headDim))
+  for i in 0..<sequenceLength {
+    for k in 0..<half {
+      let angle = Double(i) / pow(theta, Double(k * 2) / Double(headDim))
+      rotary[0, i, 0, k * 2] = FloatType(cos(angle))
+      rotary[0, i, 0, k * 2 + 1] = FloatType(sin(angle))
+    }
+  }
+  return rotary
+}
+
 public func Qwen3RotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {

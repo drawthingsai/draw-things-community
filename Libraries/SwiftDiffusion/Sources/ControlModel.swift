@@ -384,7 +384,7 @@ extension ControlModel {
     case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21, .sd3, .pixart, .auraflow,
       .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b,
-      .ideogram4:
+      .ideogram4, .krea2:
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
@@ -604,7 +604,7 @@ extension ControlModel {
           .sd3Large,
           .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC,
           .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-          .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+          .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           break
         }
       }
@@ -924,7 +924,7 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           fatalError()
         }
       }
@@ -957,7 +957,7 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           fatalError()
         }
       }
@@ -978,7 +978,7 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1032,7 +1032,7 @@ extension ControlModel {
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage,
               .flux2,
               .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-              .ideogram4:
+              .ideogram4, .krea2:
               fatalError()
             }
           }
@@ -1069,7 +1069,7 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       projModel.compile(inputs: imageEmbeds[0])
@@ -1100,7 +1100,7 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           fatalError()
         }
       }
@@ -1121,7 +1121,7 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1176,7 +1176,7 @@ extension ControlModel {
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage,
               .flux2,
               .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-              .ideogram4:
+              .ideogram4, .krea2:
               fatalError()
             }
           }
@@ -1298,7 +1298,7 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           fatalError()
         }
       }
@@ -1319,7 +1319,7 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1377,7 +1377,7 @@ extension ControlModel {
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage,
               .flux2,
               .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-              .ideogram4:
+              .ideogram4, .krea2:
               fatalError()
             }
           }
@@ -1481,7 +1481,7 @@ extension ControlModel {
           .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
           .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
           .flux2_9b,
-          .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+          .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           fatalError()
         }
       }
@@ -1498,7 +1498,7 @@ extension ControlModel {
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       pulidFixed.maxConcurrency = .limit(4)
@@ -1798,7 +1798,7 @@ extension ControlModel {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .qwenImage,
       .wan22_5b, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
-      .seedvr2_7b, .ideogram4:
+      .seedvr2_7b, .ideogram4, .krea2:
       fatalError()
     }
     for emptyControl in emptyControls {
@@ -1947,7 +1947,7 @@ extension ControlModel {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       fatalError()
     }
     for emptyAdapter in emptyAdapters {
@@ -2341,7 +2341,7 @@ extension ControlModel {
       .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       fatalError()
     }
   }
@@ -2495,7 +2495,7 @@ extension ControlModel {
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
         .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
     } else {
@@ -2579,7 +2579,7 @@ extension ControlModel {
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .qwenImage,
         .wan22_5b,
         .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-        .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
     }
@@ -2723,7 +2723,7 @@ extension ControlModel {
       .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
       .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       break
     }
     return result

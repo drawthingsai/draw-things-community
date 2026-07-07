@@ -82,6 +82,11 @@ enum CompressionMethod: byte {
   Jpeg,
 }
 
+enum ColorCalibration: byte {
+  Disabled,
+  Lab,
+}
+
 table LoRA {
   file: string;
   weight: float = 0.6;
@@ -175,6 +180,7 @@ table GenerationConfiguration {
   cfg_zero_init_steps: int = 0;
   compression_artifacts: CompressionMethod = Disabled;
   compression_artifacts_quality: float = 43.1;
+  color_calibration: ColorCalibration = Disabled;
 }
 
 root_type GenerationConfiguration;
