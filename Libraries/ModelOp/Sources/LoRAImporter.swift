@@ -235,10 +235,14 @@ public enum LoRAImporter {
         time: 16, textLength: 1024, audioFrames: 121, timesteps: 1, channels: (4096, 2048),
         layers: 48, contextProjection: false, textCrossAttentionAdaLN: true, KV: false,
         usesFlashAttention: .scale1)
+    case .ideogram4:
+      (unetMapper, unet) = Ideogram4(
+        batchSize: 1, height: 64, width: 64, textLength: 128, usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = Ideogram4Fixed(timesteps: 1)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-      .seedvr2_7b, .ideogram4, .krea2:
+      .seedvr2_7b, .krea2:
       fatalError()
     case .ssd1b:
       (unet, _, unetMapper) = UNetXL(
@@ -321,11 +325,14 @@ public enum LoRAImporter {
       case .ltx2_3:
         inputDim = 128
         conditionalLength = 6144
+      case .ideogram4:
+        inputDim = 32
+        conditionalLength = 4096
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b,
-        .ideogram4, .krea2:
+        .krea2:
         fatalError()
       }
-      let crossattn: [DynamicGraph.Tensor<FloatType>]
+      let crossattn: [DynamicGraph.AnyTensor]
       let tEmb: DynamicGraph.Tensor<FloatType>?
       let isCfgEnabled: Bool
       let isGuidanceEmbedEnabled: Bool
@@ -603,10 +610,22 @@ public enum LoRAImporter {
           textAudioAggregateEmbed.bias.name
         ]
         otherMappings.append(("text_feature_extractor", textFeatureExtractorMapping))
+      case .ideogram4:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        let textLength = 128
+        let imageLength = 32 * 32
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, textLength, 4096), of: FloatType.self),
+          graph.variable(Ideogram4IndicatorIDs(textLength: textLength, imageLength: 0)),
+          graph.variable(Ideogram4IndicatorIDs(textLength: 0, imageLength: imageLength)),
+          graph.variable(Ideogram4TimeEmbedding(timestep: 1, of: FloatType.self)),
+        ]
+        tEmb = nil
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4, .krea2:
+        .seedvr2_7b, .krea2:
         fatalError()
       }
       unetFixed.compile(inputs: crossattn)
@@ -888,7 +907,22 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      case .ideogram4:
+        let textLength = 128
+        let imageLength = 32 * 32
+        cArr =
+          [
+            graph.variable(.CPU, .HWC(1, textLength, 4_608), of: FloatType.self),
+            graph.variable(.CPU, .HWC(1, imageLength, 4_608), of: FloatType.self),
+            graph.variable(
+              Tensor<FloatType>(
+                from: Ideogram4RotaryPositionEmbedding(
+                  textLength: textLength, gridHeight: 32, gridWidth: 32, of: FloatType.self))),
+          ]
+          + (0..<(34 * 4 + 1)).map { _ in
+            graph.variable(.CPU, .HWC(1, 1, 4_608), of: FloatType.self)
+          }
+      case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b, .krea2:
         fatalError()
       }
       let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
