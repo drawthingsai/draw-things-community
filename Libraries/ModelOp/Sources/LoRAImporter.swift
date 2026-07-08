@@ -239,10 +239,14 @@ public enum LoRAImporter {
       (unetMapper, unet) = Ideogram4(
         batchSize: 1, height: 64, width: 64, textLength: 128, usesFlashAttention: .scale1)
       (unetFixedMapper, unetFixed) = Ideogram4Fixed(timesteps: 1)
+    case .krea2:
+      (unetMapper, unet) = Krea2(
+        batchSize: 1, height: 64, width: 64, textLength: 128, usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = Krea2Fixed(timesteps: 1)
     case .auraflow:
       fatalError()
     case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-      .seedvr2_7b, .krea2:
+      .seedvr2_7b:
       fatalError()
     case .ssd1b:
       (unet, _, unetMapper) = UNetXL(
@@ -328,8 +332,10 @@ public enum LoRAImporter {
       case .ideogram4:
         inputDim = 32
         conditionalLength = 4096
-      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b,
-        .krea2:
+      case .krea2:
+        inputDim = 16
+        conditionalLength = 6144
+      case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       let crossattn: [DynamicGraph.AnyTensor]
@@ -622,10 +628,31 @@ public enum LoRAImporter {
           graph.variable(Ideogram4TimeEmbedding(timestep: 1, of: FloatType.self)),
         ]
         tEmb = nil
+      case .krea2:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        let textLength = 128
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, textLength, 2560), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+        let (adapterMapper, adapter) = Krea2TextFusionAdapter(
+          batchSize: 1, textLength: (0, textLength), usesFlashAttention: .scale1)
+        let hiddenStates = graph.variable(.CPU, .HWC(1, textLength, 12 * 2560), of: FloatType.self)
+        adapter.compile(inputs: hiddenStates)
+        var adapterMapping = ModelWeightMapping()
+        if format.contains(.generativeModels) {
+          adapterMapping.merge(adapterMapper(.generativeModels)) { v, _ in v }
+        }
+        if format.contains(.diffusers) {
+          adapterMapping.merge(adapterMapper(.diffusers)) { v, _ in v }
+        }
+        otherMappings.append(("llm_adapter", adapterMapping))
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-        .seedvr2_7b, .krea2:
+        .seedvr2_7b:
         fatalError()
       }
       unetFixed.compile(inputs: crossattn)
@@ -922,7 +949,22 @@ public enum LoRAImporter {
           + (0..<(34 * 4 + 1)).map { _ in
             graph.variable(.CPU, .HWC(1, 1, 4_608), of: FloatType.self)
           }
-      case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b, .krea2:
+      case .krea2:
+        let textLength = 128
+        let imageLength = 32 * 32
+        cArr =
+          [
+            graph.variable(.CPU, .HWC(1, textLength, 6_144), of: FloatType.self),
+            graph.variable(
+              Tensor<FloatType>(
+                from: Krea2RotaryPositionEmbedding(
+                  textLength: textLength, gridHeight: 32, gridWidth: 32, of: FloatType.self))),
+          ]
+          + (0..<7).map { _ in
+            graph.variable(.CPU, .HWC(1, 1, 6_144), of: FloatType.self)
+          }
+        precondition(cArr[1].shape[1] == textLength + imageLength)
+      case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
