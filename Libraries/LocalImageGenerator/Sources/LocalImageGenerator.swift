@@ -1635,15 +1635,18 @@ extension LocalImageGenerator {
         paddingLength: paddedTextEncodingLength)
     case .krea2:
       let promptWithTemplate =
-        "<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
+        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
       let negativePromptWithTemplate =
-        "<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
-      return tokenize(
+        "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n\(negativeText)<|im_end|>\n<|im_start|>assistant\n"
+      var result = tokenize(
         graph: graph, tokenizer: tokenizerQwen3, text: promptWithTemplate,
         negativeText: negativePromptWithTemplate,
         paddingToken: nil, addSpecialTokens: false, conditionalLength: 2560, modifier: .qwen3,
         potentials: potentials, startLength: 0, endLength: 0, maxLength: paddedTextEncodingLength,
         paddingLength: paddedTextEncodingLength)
+      result.7 = result.7 - 34
+      result.8 = result.8 - 34
+      return result
     case .cosmos2_5_2b:
       var result = tokenize(
         graph: graph, tokenizer: tokenizerQwen3, text: text,

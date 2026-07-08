@@ -309,11 +309,17 @@ extension UNetFixedEncoder {
       let c0 = textEncoding[0]
       let featureLength = c0.shape[2]
       let textLength = (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond
-      var c = graph.variable(
-        .GPU(0), .HWC(batchSize, textLength, featureLength), of: FloatType.self)
-      for i in 0..<batchSize {
-        c[i..<(i + 1), 0..<textLength, 0..<featureLength] =
-          c0[0..<1, 0..<textLength, 0..<featureLength]
+      let c: DynamicGraph.Tensor<FloatType>
+      if batchSize == 1 {
+        c = c0
+      } else {
+        var expanded = graph.variable(
+          .GPU(0), .HWC(batchSize, textLength, featureLength), of: FloatType.self)
+        for i in 0..<batchSize {
+          expanded[i..<(i + 1), 0..<textLength, 0..<featureLength] =
+            c0[0..<1, 0..<textLength, 0..<featureLength]
+        }
+        c = expanded
       }
       let h = startHeight / 2
       let w = startWidth / 2

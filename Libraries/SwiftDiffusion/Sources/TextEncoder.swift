@@ -3057,7 +3057,11 @@ extension TextEncoder {
       Array(repeating: 0, count: batchSize * tokenLength * tokenLength), .CPU,
       .NHWC(batchSize, 1, tokenLength, tokenLength)
     )
-    let textLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
+    let promptPrefixLength = 34
+    let textLengths =
+      isCfgEnabled
+      ? [tokenLengthUncond + promptPrefixLength, tokenLengthCond + promptPrefixLength]
+      : [tokenLengthCond + promptPrefixLength]
     for batch in 0..<batchSize {
       let textLength = textLengths[batch]
       for i in 0..<tokenLength {
@@ -3103,13 +3107,16 @@ extension TextEncoder {
       .GPU(0), .HWC(1, packedTextLength, featureLength), of: FloatType.self)
     if isCfgEnabled {
       packedConditioning[0..<1, 0..<tokenLengthUncond, 0..<featureLength] =
-        conditioning[0..<1, 0..<tokenLengthUncond, 0..<featureLength]
+        conditioning[
+          0..<1, promptPrefixLength..<(promptPrefixLength + tokenLengthUncond), 0..<featureLength]
       packedConditioning[
         0..<1, tokenLengthUncond..<(tokenLengthUncond + tokenLengthCond), 0..<featureLength] =
-        conditioning[1..<2, 0..<tokenLengthCond, 0..<featureLength]
+        conditioning[
+          1..<2, promptPrefixLength..<(promptPrefixLength + tokenLengthCond), 0..<featureLength]
     } else {
       packedConditioning[0..<1, 0..<tokenLengthCond, 0..<featureLength] =
-        conditioning[0..<1, 0..<tokenLengthCond, 0..<featureLength]
+        conditioning[
+          0..<1, promptPrefixLength..<(promptPrefixLength + tokenLengthCond), 0..<featureLength]
     }
     let (_, textAdapter) = Krea2TextFusionAdapter(
       batchSize: 1, textLength: (isCfgEnabled ? tokenLengthUncond : 0, tokenLengthCond),
