@@ -126,11 +126,23 @@ private func Ideogram4Attention(
   }
   let o = Dense(count: 4_608, noBias: true, name: "o")
   out = o(out)
-  let mapper: ModelWeightMapper = { _ in
+  let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
-    mapping["\(prefix).attention.qkv.weight"] = ModelWeightElement(
-      [q.weight.name, k.weight.name, v.weight.name], offsets: [0, 4_608, 9_216])
-    mapping["\(prefix).attention.o.weight"] = [o.weight.name]
+    switch format {
+    case .generativeModels:
+      // TODO: The reference converter de-interleaves Q/K from this packed QKV tensor.
+      // Keep it as a plain QKV split until importer-side per-slice interleaving is supported.
+      mapping["\(prefix).attention.qkv.weight"] = ModelWeightElement(
+        [q.weight.name, k.weight.name, v.weight.name], offsets: [0, 4_608, 9_216])
+      mapping["\(prefix).attention.o.weight"] = [o.weight.name]
+    case .diffusers:
+      mapping["\(prefix).attention.to_q.weight"] = ModelWeightElement(
+        [q.weight.name], interleaved: true, numberOfHeads: 18, headDimension: 256)
+      mapping["\(prefix).attention.to_k.weight"] = ModelWeightElement(
+        [k.weight.name], interleaved: true, numberOfHeads: 18, headDimension: 256)
+      mapping["\(prefix).attention.to_v.weight"] = [v.weight.name]
+      mapping["\(prefix).attention.to_out.0.weight"] = [o.weight.name]
+    }
     mapping["\(prefix).attention.norm_q.weight"] = ModelWeightElement(
       [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: 256)
     mapping["\(prefix).attention.norm_k.weight"] = ModelWeightElement(
@@ -248,7 +260,7 @@ public func Ideogram4Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
     for blockMapper in blockMappers {
       mapping.merge(blockMapper(format)) { v, _ in v }
     }
-    mapping["indicator_embedding"] = [indicatorEmbedding.weight.name]
+    mapping["embed_image_indicator.weight"] = [indicatorEmbedding.weight.name]
     mapping["llm_cond_norm.weight"] = [llmNorm.weight.name]
     mapping["llm_cond_proj.weight"] = [llmProj.weight.name]
     mapping["llm_cond_proj.bias"] = [llmProj.bias.name]
