@@ -11,6 +11,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
   public let format: Format
   public let offsets: [Int]?
   public let scale: Float
+  public let shift: Float
   public let index: Int
   public let isBF16: Bool
   public let interleaved: Bool
@@ -32,6 +33,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
 
   public init(
     _ array: [Element], format: Format = .O, offsets: [Int]? = nil, scale: Float = 1,
+    shift: Float = 0,
     index: Int = 0, isBF16: Bool = false, interleaved: Bool = false, numberOfHeads: Int = 0,
     headDimension: Int = 0
   ) {
@@ -39,6 +41,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
     self.format = format
     self.offsets = offsets
     self.scale = scale
+    self.shift = shift
     self.index = index
     self.isBF16 = isBF16
     self.interleaved = interleaved
@@ -51,6 +54,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
     self.format = .O
     self.offsets = nil
     self.scale = 1
+    self.shift = 0
     self.index = 0
     self.isBF16 = false
     self.interleaved = false

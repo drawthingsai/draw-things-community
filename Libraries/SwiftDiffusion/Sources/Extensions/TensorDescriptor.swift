@@ -56,11 +56,11 @@ extension ModelWeightElement {
     isDiagonalUp: Bool, isDiagonalDown: Bool, renamer: (String) -> String
   ) {
     var tensor = tensor
-    if scale != 1 {
-      // Scale the tensor if needed.
+    if scale != 1 || shift != 0 {
+      // Apply simple affine transforms if needed.
       tensor = graph.withNoGrad {
         Tensor<FloatType>(
-          from: (scale * graph.variable(Tensor<Float>(from: tensor).toCPU())).rawValue)
+          from: (scale * graph.variable(Tensor<Float>(from: tensor).toCPU()) + shift).rawValue)
       }
     }
     switch format {

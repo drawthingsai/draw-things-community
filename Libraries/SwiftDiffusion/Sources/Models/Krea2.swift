@@ -65,13 +65,22 @@ public func Krea2RotaryPositionEmbedding<FloatType: TensorNumeric & BinaryFloati
   return rotary
 }
 
-private func Krea2SwiGLU(hiddenSize: Int, intermediateSize: Int, name: String = "") -> Model {
+private func Krea2SwiGLU(
+  prefix: String, hiddenSize: Int, intermediateSize: Int, name: String = ""
+) -> (ModelWeightMapper, Model) {
   let x = Input()
   let gate = Dense(count: intermediateSize, noBias: true, name: "\(name)gate")
   let up = Dense(count: intermediateSize, noBias: true, name: "\(name)up")
   let down = Dense(count: hiddenSize, noBias: true, name: "\(name)down")
   let out = down(gate(x).swish() .* up(x))
-  return Model([x], [out])
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).gate.weight"] = [gate.weight.name]
+    mapping["\(prefix).up.weight"] = [up.weight.name]
+    mapping["\(prefix).down.weight"] = [down.weight.name]
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
 }
 
 private func Krea2RepeatKeyValueHeads(
@@ -117,10 +126,10 @@ private func Krea2ExplicitAttention(
 }
 
 private func Krea2Attention(
-  hiddenSize: Int, heads: Int, keyValueHeads: Int, batchSize: Int, tokenLength: Int, rotary: Bool,
-  queryLength: Int? = nil, segments: [Int] = [], usesFlashAttention: FlashAttentionLevel,
-  namePrefix: String = ""
-) -> Model {
+  prefix: String, hiddenSize: Int, heads: Int, keyValueHeads: Int, batchSize: Int,
+  tokenLength: Int, rotary: Bool, queryLength: Int? = nil, segments: [Int] = [],
+  usesFlashAttention: FlashAttentionLevel, name: String = ""
+) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = rotary ? Input() : nil
   let queryLength = queryLength ?? tokenLength
@@ -128,12 +137,12 @@ private func Krea2Attention(
   precondition(
     segments.isEmpty || (queryLength == tokenLength && segments.reduce(0, +) == tokenLength))
   let headDim = hiddenSize / heads
-  let toQ = Dense(count: headDim * heads, noBias: true, name: "\(namePrefix)to_q")
+  let toQ = Dense(count: headDim * heads, noBias: true, name: "\(name)to_q")
   let toK = Dense(
-    count: headDim * keyValueHeads, noBias: true, name: "\(namePrefix)to_k")
+    count: headDim * keyValueHeads, noBias: true, name: "\(name)to_k")
   let toV = Dense(
-    count: headDim * keyValueHeads, noBias: true, name: "\(namePrefix)to_v")
-  let toGate = Dense(count: hiddenSize, noBias: true, name: "\(namePrefix)to_gate")
+    count: headDim * keyValueHeads, noBias: true, name: "\(name)to_v")
+  let toGate = Dense(count: hiddenSize, noBias: true, name: "\(name)to_gate")
   let queryIn: Model.IO =
     queryLength < tokenLength
     ? x.reshaped(
@@ -141,10 +150,10 @@ private func Krea2Attention(
       strides: [tokenLength * hiddenSize, hiddenSize, 1]
     ).contiguous() : x
   var queries = toQ(queryIn).reshaped([batchSize, queryLength, heads, headDim])
-  let normQ = RMSNorm(epsilon: 1e-5, axis: [3], name: "\(namePrefix)norm_q")
+  let normQ = RMSNorm(epsilon: 1e-5, axis: [3], name: "\(name)norm_q")
   queries = normQ(queries)
   var keys = toK(x).reshaped([batchSize, tokenLength, keyValueHeads, headDim])
-  let normK = RMSNorm(epsilon: 1e-5, axis: [3], name: "\(namePrefix)norm_k")
+  let normK = RMSNorm(epsilon: 1e-5, axis: [3], name: "\(name)norm_k")
   keys = normK(keys)
   let values = toV(x).reshaped([batchSize, tokenLength, keyValueHeads, headDim])
   if let rot = rot {
@@ -257,84 +266,126 @@ private func Krea2Attention(
     }
   }
   let gate = toGate(queryIn).sigmoid()
-  let toOut = Dense(count: hiddenSize, noBias: true, name: "\(namePrefix)to_out")
+  let toOut = Dense(count: hiddenSize, noBias: true, name: "\(name)to_out")
   let out = toOut(attention .* gate)
-  if let rot = rot {
-    return Model([x, rot], [out])
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["\(prefix).to_q.weight"] = [toQ.weight.name]
+    mapping["\(prefix).to_k.weight"] = [toK.weight.name]
+    mapping["\(prefix).to_v.weight"] = [toV.weight.name]
+    mapping["\(prefix).to_gate.weight"] = [toGate.weight.name]
+    mapping["\(prefix).to_out.0.weight"] = [toOut.weight.name]
+    mapping["\(prefix).norm_q.weight"] = ModelWeightElement([normQ.weight.name], shift: 1)
+    mapping["\(prefix).norm_k.weight"] = ModelWeightElement([normK.weight.name], shift: 1)
+    return mapping
   }
-  return Model([x], [out])
+  if let rot = rot {
+    return (mapper, Model([x, rot], [out]))
+  }
+  return (mapper, Model([x], [out]))
 }
 
 private func Krea2TextFusionBlock(
   batchSize: Int, tokenLength: Int, segments: [Int] = [],
-  usesFlashAttention: FlashAttentionLevel, namePrefix: String
+  usesFlashAttention: FlashAttentionLevel, prefix: String, name: String
 )
-  -> Model
+  -> (ModelWeightMapper, Model)
 {
   let x = Input()
-  let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "\(namePrefix)norm1")
-  let attention = Krea2Attention(
-    hiddenSize: 2_560, heads: 20, keyValueHeads: 20, batchSize: batchSize,
+  let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "\(name)norm1")
+  let (attentionMapper, attention) = Krea2Attention(
+    prefix: "\(prefix).attn", hiddenSize: 2_560, heads: 20, keyValueHeads: 20,
+    batchSize: batchSize,
     tokenLength: tokenLength, rotary: false, segments: segments,
     usesFlashAttention: usesFlashAttention,
-    namePrefix: "\(namePrefix)attn_")
+    name: "\(name)attn_")
   var out = x + attention(norm1(x).to(.Float16)).to(of: x)
-  let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "\(namePrefix)norm2")
-  let ff = Krea2SwiGLU(hiddenSize: 2_560, intermediateSize: 6_912, name: "\(namePrefix)ff_")
+  let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "\(name)norm2")
+  let (ffMapper, ff) = Krea2SwiGLU(
+    prefix: "\(prefix).ff", hiddenSize: 2_560, intermediateSize: 6_912,
+    name: "\(name)ff_")
   out = out + ff(norm2(out).to(.Float16)).to(of: out)
-  return Model([x], [out])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping.merge(attentionMapper(format)) { v, _ in v }
+    mapping.merge(ffMapper(format)) { v, _ in v }
+    mapping["\(prefix).norm1.weight"] = ModelWeightElement([norm1.weight.name], shift: 1)
+    mapping["\(prefix).norm2.weight"] = ModelWeightElement([norm2.weight.name], shift: 1)
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
 }
 
 private func Krea2TextFusion(
   batchSize: Int, textLength: (Int, Int), usesFlashAttention: FlashAttentionLevel
-) -> Model {
+) -> (ModelWeightMapper, Model) {
   let x = Input()
   let totalTextLength = textLength.0 + textLength.1
   let segments = textLength.0 > 0 ? [textLength.0, textLength.1] : []
   var out = x.reshaped([batchSize * totalTextLength, 12, 2_560])
-  for _ in 0..<2 {
-    let block = Krea2TextFusionBlock(
+  var mappers = [ModelWeightMapper]()
+  for i in 0..<2 {
+    let (mapper, block) = Krea2TextFusionBlock(
       batchSize: batchSize * totalTextLength, tokenLength: 12,
-      usesFlashAttention: usesFlashAttention,
-      namePrefix: "text_fusion_layerwise_")
+      usesFlashAttention: usesFlashAttention, prefix: "text_fusion.layerwise_blocks.\(i)",
+      name: "text_fusion_layerwise_")
     out = block(out)
+    mappers.append(mapper)
   }
   out = out.reshaped([batchSize, totalTextLength, 12, 2_560]).permuted(0, 1, 3, 2)
   let projector = Dense(count: 1, noBias: true, name: "text_fusion_projector")
   out = out.reshaped([batchSize * totalTextLength * 2_560, 12])
   out = projector(out).reshaped([batchSize, totalTextLength, 2_560])
-  for _ in 0..<2 {
-    let block = Krea2TextFusionBlock(
+  for i in 0..<2 {
+    let (mapper, block) = Krea2TextFusionBlock(
       batchSize: batchSize, tokenLength: totalTextLength, segments: segments,
-      usesFlashAttention: usesFlashAttention, namePrefix: "text_fusion_refiner_")
+      usesFlashAttention: usesFlashAttention, prefix: "text_fusion.refiner_blocks.\(i)",
+      name: "text_fusion_refiner_")
     out = block(out)
+    mappers.append(mapper)
   }
-  return Model([x], [out])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["text_fusion.projector.weight"] = [projector.weight.name]
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
 }
 
-private func Krea2TextProjection() -> Model {
+private func Krea2TextProjection() -> (ModelWeightMapper, Model) {
   let x = Input()
   let norm = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm")
   let linear1 = Dense(count: 6_144, name: "linear_1")
   let linear2 = Dense(count: 6_144, name: "linear_2")
   let out = linear2(linear1(norm(x).to(.Float16)).GELU(approximate: .tanh))
-  return Model([x], [out])
+  let mapper: ModelWeightMapper = { _ in
+    var mapping = ModelWeightMapping()
+    mapping["txt_in.norm.weight"] = ModelWeightElement([norm.weight.name], shift: 1)
+    mapping["txt_in.linear_1.weight"] = [linear1.weight.name]
+    mapping["txt_in.linear_1.bias"] = [linear1.bias.name]
+    mapping["txt_in.linear_2.weight"] = [linear2.weight.name]
+    mapping["txt_in.linear_2.bias"] = [linear2.bias.name]
+    return mapping
+  }
+  return (mapper, Model([x], [out]))
 }
 
 public func Krea2TextFusionAdapter(
   batchSize: Int, textLength: (Int, Int), usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
   let text = Input()
-  let textFusion = Krea2TextFusion(
+  let (textFusionMapper, textFusion) = Krea2TextFusion(
     batchSize: batchSize, textLength: textLength, usesFlashAttention: usesFlashAttention)
-  let mapper: ModelWeightMapper = { _ in ModelWeightMapping() }
-  return (mapper, Model([text], [textFusion(text)]))
+  return (textFusionMapper, Model([text], [textFusion(text)]))
 }
 
 private func Krea2TransformerBlock(
   batchSize: Int, tokenLength: Int, imageLength: Int, contextBlockPreOnly: Bool,
-  usesFlashAttention: FlashAttentionLevel
-) -> Model {
+  usesFlashAttention: FlashAttentionLevel, prefix: String
+) -> (ModelWeightMapper, Model) {
   precondition(!contextBlockPreOnly || imageLength <= tokenLength)
   let x = Input()
   let prescaleMod = Input()
@@ -357,8 +408,9 @@ private func Krea2TransformerBlock(
   let postshift = postshiftMod + postshiftTable
   let postgate = postgateMod + postgateTable
   let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm1")
-  let attention = Krea2Attention(
-    hiddenSize: 6_144, heads: 48, keyValueHeads: 12, batchSize: batchSize,
+  let (attentionMapper, attention) = Krea2Attention(
+    prefix: "\(prefix).attn", hiddenSize: 6_144, heads: 48, keyValueHeads: 12,
+    batchSize: batchSize,
     tokenLength: tokenLength, rotary: true,
     queryLength: contextBlockPreOnly ? imageLength : tokenLength,
     usesFlashAttention: usesFlashAttention)
@@ -373,12 +425,28 @@ private func Krea2TransformerBlock(
     + (pregate .* attention(((1 + prescale) .* norm1(x).to(.Float16) + preshift), rot)).to(
       of: xIn)
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm2")
-  let ff = Krea2SwiGLU(hiddenSize: 6_144, intermediateSize: 16_384)
+  let (ffMapper, ff) = Krea2SwiGLU(
+    prefix: "\(prefix).ff", hiddenSize: 6_144, intermediateSize: 16_384)
   out =
     out + (postgate .* ff((1 + postscale) .* norm2(out).to(.Float16) + postshift)).to(of: out)
-  return Model(
-    [x, prescaleMod, preshiftMod, pregateMod, postscaleMod, postshiftMod, postgateMod, rot],
-    [out])
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping.merge(attentionMapper(format)) { v, _ in v }
+    mapping.merge(ffMapper(format)) { v, _ in v }
+    mapping["\(prefix).norm1.weight"] = ModelWeightElement([norm1.weight.name], shift: 1)
+    mapping["\(prefix).norm2.weight"] = ModelWeightElement([norm2.weight.name], shift: 1)
+    mapping["\(prefix).scale_shift_table"] = [
+      prescaleTable.weight.name, preshiftTable.weight.name, pregateTable.weight.name,
+      postscaleTable.weight.name, postshiftTable.weight.name, postgateTable.weight.name,
+    ]
+    return mapping
+  }
+  return (
+    mapper,
+    Model(
+      [x, prescaleMod, preshiftMod, pregateMod, postscaleMod, postshiftMod, postgateMod, rot],
+      [out])
+  )
 }
 
 public func Krea2Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
@@ -401,12 +469,28 @@ public func Krea2Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
   let postscaleMod = timeModProj3(tembMod)
   let postshiftMod = timeModProj4(tembMod)
   let postgateMod = timeModProj5(tembMod)
-  let txtIn = Krea2TextProjection()
+  let (txtInMapper, txtIn) = Krea2TextProjection()
   var outs = [txtIn(text)]
   outs.append(contentsOf: [
     prescaleMod, preshiftMod, pregateMod, postscaleMod, postshiftMod, postgateMod, temb,
   ])
-  let mapper: ModelWeightMapper = { _ in ModelWeightMapping() }
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    mapping.merge(txtInMapper(format)) { v, _ in v }
+    mapping["time_embed.linear_1.weight"] = [timeLinear1.weight.name]
+    mapping["time_embed.linear_1.bias"] = [timeLinear1.bias.name]
+    mapping["time_embed.linear_2.weight"] = [timeLinear2.weight.name]
+    mapping["time_embed.linear_2.bias"] = [timeLinear2.bias.name]
+    mapping["time_mod_proj.weight"] = ModelWeightElement([
+      timeModProj0.weight.name, timeModProj1.weight.name, timeModProj2.weight.name,
+      timeModProj3.weight.name, timeModProj4.weight.name, timeModProj5.weight.name,
+    ])
+    mapping["time_mod_proj.bias"] = ModelWeightElement([
+      timeModProj0.bias.name, timeModProj1.bias.name, timeModProj2.bias.name,
+      timeModProj3.bias.name, timeModProj4.bias.name, timeModProj5.bias.name,
+    ])
+    return mapping
+  }
   return (mapper, Model([text, tEmbed], outs))
 }
 
@@ -438,13 +522,16 @@ public func Krea2(
   inputs.append(contentsOf: [
     prescaleMod, preshiftMod, pregateMod, postscaleMod, postshiftMod, postgateMod,
   ])
+  var mappers = [ModelWeightMapper]()
   for i in 0..<28 {
-    let block = Krea2TransformerBlock(
+    let (mapper, block) = Krea2TransformerBlock(
       batchSize: batchSize, tokenLength: tokenLength, imageLength: imageLength,
-      contextBlockPreOnly: i == 27, usesFlashAttention: usesFlashAttention)
+      contextBlockPreOnly: i == 27, usesFlashAttention: usesFlashAttention,
+      prefix: "transformer_blocks.\(i)")
     out = block(
       out, prescaleMod, preshiftMod, pregateMod, postscaleMod, postshiftMod, postgateMod,
       rotResized)
+    mappers.append(mapper)
   }
   out = out.reshaped([batchSize, imageLength, 6_144]).contiguous()
   let temb = Input()
@@ -460,6 +547,20 @@ public func Krea2(
   out = finalLinear((1 + finalScale) .* finalNorm(out).to(.Float16) + finalShift)
   out = out.reshaped([batchSize, h, w, 16, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous()
     .reshaped([batchSize, height, width, 16])
-  let mapper: ModelWeightMapper = { _ in ModelWeightMapping() }
+  let mapper: ModelWeightMapper = { format in
+    var mapping = ModelWeightMapping()
+    for mapper in mappers {
+      mapping.merge(mapper(format)) { v, _ in v }
+    }
+    mapping["img_in.weight"] = [imgIn.weight.name]
+    mapping["img_in.bias"] = [imgIn.bias.name]
+    mapping["final_layer.scale_shift_table"] = [
+      finalScaleTable.weight.name, finalShiftTable.weight.name,
+    ]
+    mapping["final_layer.norm.weight"] = ModelWeightElement([finalNorm.weight.name], shift: 1)
+    mapping["final_layer.linear.weight"] = [finalLinear.weight.name]
+    mapping["final_layer.linear.bias"] = [finalLinear.bias.name]
+    return mapping
+  }
   return (mapper, Model(inputs, [out.to(of: x)]))
 }
