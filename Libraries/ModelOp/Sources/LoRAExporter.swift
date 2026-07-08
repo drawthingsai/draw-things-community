@@ -789,15 +789,15 @@ public enum LoRAExporter {
           break
         }
       }
-      func exportUpTensor<T: TensorNumeric>(_ tensor: Tensor<T>, for names: ModelWeightElement)
-        -> Tensor<T>
-      {
+      func exportUpTensor<T: TensorNumeric>(
+        _ tensor: Tensor<T>, for names: ModelWeightElement, at index: Int = 0
+      ) -> Tensor<T> {
         var tensor = tensor.toCPU()
         switch names.format {
         case .O:
           let numberOfHeads = names.numberOfHeads
           let headDimension = names.headDimension
-          if names.interleaved, numberOfHeads > 0, headDimension > 0 {
+          if names.interleavedIndices.contains(index), numberOfHeads > 0, headDimension > 0 {
             // Inverse of TensorDescriptor's interleaved .O write transform.
             tensor = graph.withNoGrad {
               Tensor<T>(
@@ -960,21 +960,21 @@ public enum LoRAExporter {
                   }
                   var shapeStart0 = 0
                   var shapeStart1 = 0
-                  for upTensor in upTensors {
+                  for (j, upTensor) in upTensors.enumerated() {
                     let shape = upTensor.shape
                     tensor[
                       shapeStart0..<(shapeStart0 + shape[0]), shapeStart1..<(shapeStart1 + shape[1])
                     ] =
-                      exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
+                      exportUpTensor(Tensor<Float16>(from: upTensor), for: names, at: j)
                     shapeStart0 = shapeStart0 + shape[0]
                     shapeStart1 = shapeStart1 + shape[1]
                   }
                 case .I:
                   var shapeStart1 = 0
-                  for upTensor in upTensors {
+                  for (j, upTensor) in upTensors.enumerated() {
                     let shape = upTensor.shape
                     tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                      exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
+                      exportUpTensor(Tensor<Float16>(from: upTensor), for: names, at: j)
                     shapeStart1 = shapeStart1 + shape[1]
                   }
                 }
@@ -991,20 +991,20 @@ public enum LoRAExporter {
                 }
                 var shapeStart0 = 0
                 var shapeStart1 = 0
-                for upTensor in upTensors {
+                for (j, upTensor) in upTensors.enumerated() {
                   let shape = upTensor.shape
                   tensor[
                     shapeStart0..<(shapeStart0 + shape[0]), shapeStart1..<(shapeStart1 + shape[1])] =
-                    exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
+                    exportUpTensor(Tensor<Float32>(from: upTensor), for: names, at: j)
                   shapeStart0 = shapeStart0 + shape[0]
                   shapeStart1 = shapeStart1 + shape[1]
                 }
               case .I:
                 var shapeStart1 = 0
-                for upTensor in upTensors {
+                for (j, upTensor) in upTensors.enumerated() {
                   let shape = upTensor.shape
                   tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                    exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
+                    exportUpTensor(Tensor<Float32>(from: upTensor), for: names, at: j)
                   shapeStart1 = shapeStart1 + shape[1]
                 }
               }
@@ -1213,22 +1213,22 @@ public enum LoRAExporter {
                     }
                     var shapeStart0 = 0
                     var shapeStart1 = 0
-                    for upTensor in upTensors {
+                    for (j, upTensor) in upTensors.enumerated() {
                       let shape = upTensor.shape
                       tensor[
                         shapeStart0..<(shapeStart0 + shape[0]),
                         shapeStart1..<(shapeStart1 + shape[1])
                       ] =
-                        exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
+                        exportUpTensor(Tensor<Float16>(from: upTensor), for: names, at: j)
                       shapeStart0 = shapeStart0 + shape[0]
                       shapeStart1 = shapeStart1 + shape[1]
                     }
                   case .I:
                     var shapeStart1 = 0
-                    for upTensor in upTensors {
+                    for (j, upTensor) in upTensors.enumerated() {
                       let shape = upTensor.shape
                       tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                        exportUpTensor(Tensor<Float16>(from: upTensor), for: names)
+                        exportUpTensor(Tensor<Float16>(from: upTensor), for: names, at: j)
                       shapeStart1 = shapeStart1 + shape[1]
                     }
                   }
@@ -1245,21 +1245,21 @@ public enum LoRAExporter {
                   }
                   var shapeStart0 = 0
                   var shapeStart1 = 0
-                  for upTensor in upTensors {
+                  for (j, upTensor) in upTensors.enumerated() {
                     let shape = upTensor.shape
                     tensor[
                       shapeStart0..<(shapeStart0 + shape[0]), shapeStart1..<(shapeStart1 + shape[1])
                     ] =
-                      exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
+                      exportUpTensor(Tensor<Float32>(from: upTensor), for: names, at: j)
                     shapeStart0 = shapeStart0 + shape[0]
                     shapeStart1 = shapeStart1 + shape[1]
                   }
                 case .I:
                   var shapeStart1 = 0
-                  for upTensor in upTensors {
+                  for (j, upTensor) in upTensors.enumerated() {
                     let shape = upTensor.shape
                     tensor[0..<shape[0], shapeStart1..<(shapeStart1 + shape[1])] =
-                      exportUpTensor(Tensor<Float32>(from: upTensor), for: names)
+                      exportUpTensor(Tensor<Float32>(from: upTensor), for: names, at: j)
                     shapeStart1 = shapeStart1 + shape[1]
                   }
                 }
