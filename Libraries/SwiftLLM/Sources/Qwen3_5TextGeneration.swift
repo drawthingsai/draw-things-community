@@ -490,7 +490,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           ).toGPU(0))
         let mtpPrefillRotary = graph.variable(
           Qwen3_5RotaryEmbedding(
-            sequenceLength: promptTokenIds.count, configuration: configuration, of: Float16.self
+            sequenceLength: promptTokenIds.count, configuration: configuration, of: FloatType.self
           ).toGPU(0))
         mtpStep.compile(
           (cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1),
@@ -656,7 +656,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 configuration.attentionHeadDim, 1,
               ]),
           ])
-        let firstDraftLogits = firstDraftOutputs[1].as(of: Float16.self)
+        let firstDraftLogits = firstDraftOutputs[1].as(of: FloatType.self)
         var currentDraftTokenGPU = Functional.argmax(firstDraftLogits, axis: 1).reshaped(.C(1))
           .copied()
         firstDraftOutputs.removeAll(keepingCapacity: false)
@@ -859,7 +859,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                     configuration.attentionHeadDim, 1,
                   ]),
               ])
-            let processedMTPLogits = processMTPOutputs[1].as(of: Float16.self)
+            let processedMTPLogits = processMTPOutputs[1].as(of: FloatType.self)
             currentDraftTokenGPU = Functional.argmax(
               DynamicGraph.Tensor<Float>(from: processedMTPLogits), axis: 1
             ).reshaped(.C(1)).copied()
@@ -1051,7 +1051,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let promptPrefixAttentionInputs: [DynamicGraph.AnyTensor]
           if hasFullAttentionLayer {
             let rotary = Qwen3_5RotaryEmbedding(
-              sequenceLength: promptPrefixCount, configuration: configuration, of: Float16.self)
+              sequenceLength: promptPrefixCount, configuration: configuration, of: FloatType.self)
             promptPrefixAttentionInputs = [graph.variable(rotary.toGPU(0))]
           } else {
             promptPrefixAttentionInputs = []
@@ -1065,7 +1065,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           if hasFullAttentionLayer {
             let rotary = Qwen3_5RotaryEmbedding(
               sequenceLength: 1, cachedTokenLength: promptPrefixCount, configuration: configuration,
-              of: Float16.self)
+              of: FloatType.self)
             promptLastAttentionInputs = [graph.variable(rotary.toGPU(0))]
           } else {
             promptLastAttentionInputs = []
@@ -1093,7 +1093,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let promptPrefixAttentionInputs: [DynamicGraph.AnyTensor]
           if hasFullAttentionLayer {
             let rotary = Qwen3_5RotaryEmbedding(
-              sequenceLength: promptPrefixCount, configuration: configuration, of: Float16.self)
+              sequenceLength: promptPrefixCount, configuration: configuration, of: FloatType.self)
             promptPrefixAttentionInputs = [graph.variable(rotary.toGPU(0))]
           } else {
             promptPrefixAttentionInputs = []
@@ -1112,7 +1112,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         if hasFullAttentionLayer {
           let rotary = Qwen3_5RotaryEmbedding(
             sequenceLength: 1, cachedTokenLength: promptPrefixCount, configuration: configuration,
-            of: Float16.self)
+            of: FloatType.self)
           promptLastAttentionInputs = [graph.variable(rotary.toGPU(0))]
         } else {
           promptLastAttentionInputs = []
@@ -1143,7 +1143,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               graph.variable(
                 Qwen3_5RotaryEmbedding(
                   sequenceLength: 1, cachedTokenLength: maxDecodeCachedTokenLength,
-                  configuration: configuration, of: Float16.self
+                  configuration: configuration, of: FloatType.self
                 ).toGPU(0))
             ] : [])
           + Self.cacheInputs(
@@ -1155,12 +1155,12 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         prefillOutputs.removeAll(keepingCapacity: false)
 
         let traceTokenCount = startCount + maxDraftTokens
-        let traceRotaryGPU: DynamicGraph.Tensor<Float16>?
+        let traceRotaryGPU: DynamicGraph.Tensor<FloatType>?
         if hasFullAttentionLayer {
           traceRotaryGPU = graph.variable(
             Qwen3_5RotaryEmbedding(
               sequenceLength: traceTokenCount, cachedTokenLength: promptTokenIds.count,
-              configuration: configuration, of: Float16.self
+              configuration: configuration, of: FloatType.self
             ).toGPU(0))
         } else {
           traceRotaryGPU = nil
@@ -1262,7 +1262,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         let mtpStepRotary = graph.variable(
           Qwen3_5RotaryEmbedding(
             sequenceLength: mtpRotaryLength, cachedTokenLength: promptTokenIds.count,
-            configuration: configuration, of: Float16.self
+            configuration: configuration, of: FloatType.self
           ).toGPU(0))
         let compileRotary = mtpStepRotary.reshaped(
           .NHWC(1, 1, 1, configuration.attentionHeadDim),
@@ -1311,7 +1311,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               [mtpStepHidden, mtpStepRotarySlice]
                 + mtpCacheInputs(currentTokenLength: mtpCachedTokenLength + 1))
             mtpStepHidden = DynamicGraph.Tensor<BFloat16>(from: mtpOutputs[0]).copied()
-            let draftLogits = mtpOutputs[1].as(of: Float16.self)
+            let draftLogits = mtpOutputs[1].as(of: FloatType.self)
             mtpStepToken = Functional.argmax(
               DynamicGraph.Tensor<Float>(from: draftLogits), axis: 1
             ).reshaped(.C(1)).copied()
