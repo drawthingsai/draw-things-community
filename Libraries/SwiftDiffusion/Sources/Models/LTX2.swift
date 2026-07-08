@@ -33,7 +33,9 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
   rotVideoTensor.withUnsafeMutableBytes {
     guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
     DispatchQueue.concurrentPerform(iterations: time) { i in
-      let fractionFrame: Double = Double(max(0, i * 8 - 7) + i * 8 + 1) / 500 - 1
+      let frameStart = max(0, i * 8 - 7)
+      let frameEnd = i * 8 + 1
+      let fractionFrame = Double(frameStart + frameEnd) / 500 - 1
       for y in 0..<height {
         let fractionY: Double = (Double(y) + 0.5) / 32 - 1
         for x in 0..<width {
@@ -65,7 +67,9 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
   rotAudioTensor.withUnsafeMutableBytes {
     guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
     DispatchQueue.concurrentPerform(iterations: audioTime) { i in
-      let fractionPosition: Double = Double(max(i * 4 - 3, 0) + i * 4 + 1) / 2000 - 1
+      let positionStart = max(i * 4 - 3, 0)
+      let positionEnd = i * 4 + 1
+      let fractionPosition = Double(positionStart + positionEnd) / 2000 - 1
       let fp = fp32 + i * channels.1
       for j in 0..<dim1 {
         let theta = thetas1[j] * fractionPosition
@@ -78,7 +82,9 @@ public func LTX2VideoAudioRotaryPositionEmbedding(
   rotVideoToAudioTensor.withUnsafeMutableBytes {
     guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
     DispatchQueue.concurrentPerform(iterations: time) { i in
-      let fractionFrame: Double = Double(max(0, i * 8 - 7) + i * 8 + 1) / 500 - 1
+      let frameStart = max(0, i * 8 - 7)
+      let frameEnd = i * 8 + 1
+      let fractionFrame = Double(frameStart + frameEnd) / 500 - 1
       for y in 0..<height {
         for x in 0..<width {
           let idx = i * height * width + y * width + x
