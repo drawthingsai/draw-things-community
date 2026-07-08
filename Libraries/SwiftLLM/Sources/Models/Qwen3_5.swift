@@ -417,9 +417,9 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
   return Model(inputs, outputs)
 }
 
-public func Qwen3_5MTP<T: TensorNumeric>(
-  _ dataType: T.Type, configuration: Qwen3_5ModelConfiguration, batchSize: Int,
-  tokenLength: Int, cachedTokenLength: Int, lastNumberOfTokens: Int,
+public func Qwen3_5MTP<T: TensorNumeric, FloatType: TensorNumeric>(
+  _ dataType: T.Type, _ embeddingDataType: FloatType.Type, configuration: Qwen3_5ModelConfiguration,
+  batchSize: Int, tokenLength: Int, cachedTokenLength: Int, lastNumberOfTokens: Int,
   tieEmbedding: Bool
 ) -> Model {
   precondition(lastNumberOfTokens >= 0)
@@ -430,7 +430,7 @@ public func Qwen3_5MTP<T: TensorNumeric>(
   let kIn = Input()
   let vIn = Input()
   let tokenEmbed = Embedding(
-    Float16.self, vocabularySize: configuration.vocabularySize,
+    FloatType.self, vocabularySize: configuration.vocabularySize,
     embeddingSize: configuration.hiddenSize,
     name: "model.language_model.embed_tokens")
   let embeddingNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.pre_fc_norm_embedding")

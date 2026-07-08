@@ -475,7 +475,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           ModelBuilder<(cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int)> =
             ModelBuilder { tokenLengths, _ in
               Qwen3_5MTP(
-                BFloat16.self, configuration: configuration, batchSize: 1,
+                BFloat16.self, FloatType.self, configuration: configuration, batchSize: 1,
                 tokenLength: tokenLengths.tokenLength,
                 cachedTokenLength: tokenLengths.cachedTokenLength,
                 lastNumberOfTokens: tokenLengths.lastNumberOfTokens,
@@ -1252,7 +1252,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         let mtpStep: ModelBuilder<(cachedTokenLength: Int, tokenLength: Int)> = ModelBuilder {
           tokenLengths, _ in
           return Qwen3_5MTP(
-            BFloat16.self, configuration: configuration, batchSize: 1,
+            BFloat16.self, FloatType.self, configuration: configuration, batchSize: 1,
             tokenLength: tokenLengths.tokenLength,
             cachedTokenLength: tokenLengths.cachedTokenLength, lastNumberOfTokens: 1,
             tieEmbedding: tieEmbedding)
