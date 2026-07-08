@@ -130,23 +130,23 @@ private func Ideogram4Attention(
     var mapping = ModelWeightMapping()
     switch format {
     case .generativeModels:
-      // TODO: The reference converter de-interleaves Q/K from this packed QKV tensor.
-      // Keep it as a plain QKV split until importer-side per-slice interleaving is supported.
+      // The packed official QKV tensor stores interleaved Q/K slices and a plain V slice.
       mapping["\(prefix).attention.qkv.weight"] = ModelWeightElement(
-        [q.weight.name, k.weight.name, v.weight.name], offsets: [0, 4_608, 9_216])
+        [q.weight.name, k.weight.name, v.weight.name], offsets: [0, 4_608, 9_216],
+        interleavedIndices: [0, 1], numberOfHeads: 18, headDimension: 256)
       mapping["\(prefix).attention.o.weight"] = [o.weight.name]
     case .diffusers:
       mapping["\(prefix).attention.to_q.weight"] = ModelWeightElement(
-        [q.weight.name], interleaved: true, numberOfHeads: 18, headDimension: 256)
+        [q.weight.name], interleavedIndices: [0], numberOfHeads: 18, headDimension: 256)
       mapping["\(prefix).attention.to_k.weight"] = ModelWeightElement(
-        [k.weight.name], interleaved: true, numberOfHeads: 18, headDimension: 256)
+        [k.weight.name], interleavedIndices: [0], numberOfHeads: 18, headDimension: 256)
       mapping["\(prefix).attention.to_v.weight"] = [v.weight.name]
       mapping["\(prefix).attention.to_out.0.weight"] = [o.weight.name]
     }
     mapping["\(prefix).attention.norm_q.weight"] = ModelWeightElement(
-      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: 256)
+      [normQ.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: 256)
     mapping["\(prefix).attention.norm_k.weight"] = ModelWeightElement(
-      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: 256)
+      [normK.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: 256)
     return mapping
   }
   return (mapper, Model([x, rot], [out]))

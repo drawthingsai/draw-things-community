@@ -159,13 +159,13 @@ private func BasicTransformerBlock1D(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn1.to_q.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_q.bias"] = ModelWeightElement(
-      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_k.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_k.bias"] = ModelWeightElement(
-      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).attn1.to_v.bias"] = [toValues.bias.name]
     if let toGate = toGate {
@@ -294,13 +294,13 @@ private func LTX2SelfAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).to_q.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_q.bias"] = ModelWeightElement(
-      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_k.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_k.bias"] = ModelWeightElement(
-      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
     if let toGate = toGate {
@@ -406,14 +406,14 @@ private func LTX2CrossAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).to_q.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     mapping["\(prefix).to_q.bias"] = ModelWeightElement(
-      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toQueries.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     if let toKeys = toKeys {
       mapping["\(prefix).to_k.weight"] = ModelWeightElement(
-        [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+        [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
       mapping["\(prefix).to_k.bias"] = ModelWeightElement(
-        [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+        [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     }
     if let toValues = toValues {
       mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
@@ -812,9 +812,9 @@ private func LTX2CrossAttentionFixed(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).to_k.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     mapping["\(prefix).to_k.bias"] = ModelWeightElement(
-      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
     mapping["\(prefix).k_norm.weight"] = [normK.weight.name]
@@ -1310,13 +1310,13 @@ private func LoRABasicTransformerBlock1D(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).attn1.to_q.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_q.bias"] = ModelWeightElement(
-      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_k.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_k.bias"] = ModelWeightElement(
-      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).attn1.to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).attn1.to_v.bias"] = [toValues.bias.name]
     if let toGate = toGate {
@@ -1454,13 +1454,13 @@ private func LoRALTX2SelfAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).to_q.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_q.bias"] = ModelWeightElement(
-      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toQueries.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_k.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_k.bias"] = ModelWeightElement(
-      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k)
+      [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
     if let toGate = toGate {
@@ -1574,14 +1574,14 @@ private func LoRALTX2CrossAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).to_q.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     mapping["\(prefix).to_q.bias"] = ModelWeightElement(
-      [toQueries.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toQueries.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     if let toKeys = toKeys {
       mapping["\(prefix).to_k.weight"] = ModelWeightElement(
-        [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+        [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
       mapping["\(prefix).to_k.bias"] = ModelWeightElement(
-        [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+        [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     }
     if let toValues = toValues {
       mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
@@ -1998,9 +1998,9 @@ private func LoRALTX2CrossAttentionFixed(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).to_k.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     mapping["\(prefix).to_k.bias"] = ModelWeightElement(
-      [toKeys.bias.name], interleaved: true, numberOfHeads: h, headDimension: k.1)
+      [toKeys.bias.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k.1)
     mapping["\(prefix).to_v.weight"] = [toValues.weight.name]
     mapping["\(prefix).to_v.bias"] = [toValues.bias.name]
     mapping["\(prefix).k_norm.weight"] = [normK.weight.name]

@@ -204,15 +204,15 @@ private func AnimaSelfAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     let normQElement = ModelWeightElement(
-      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normQ.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     let normKElement = ModelWeightElement(
-      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normK.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     mapping["\(prefix).q_proj.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).q_norm.weight"] = normQElement
     mapping["\(prefix).k_proj.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).k_norm.weight"] = normKElement
     mapping["\(prefix).v_proj.weight"] = [toValues.weight.name]
@@ -254,15 +254,15 @@ private func AnimaCrossAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     let normQElement = ModelWeightElement(
-      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normQ.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     let normKElement = ModelWeightElement(
-      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normK.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     mapping["\(prefix).q_proj.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).q_norm.weight"] = normQElement
     mapping["\(prefix).k_proj.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).k_norm.weight"] = normKElement
     mapping["\(prefix).v_proj.weight"] = [toValues.weight.name]
@@ -392,15 +392,15 @@ private func LoRAAnimaSelfAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     let normQElement = ModelWeightElement(
-      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normQ.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     let normKElement = ModelWeightElement(
-      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normK.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     mapping["\(prefix).q_proj.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).q_norm.weight"] = normQElement
     mapping["\(prefix).k_proj.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).k_norm.weight"] = normKElement
     mapping["\(prefix).v_proj.weight"] = [toValues.weight.name]
@@ -451,15 +451,15 @@ private func LoRAAnimaCrossAttention(
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     let normQElement = ModelWeightElement(
-      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normQ.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     let normKElement = ModelWeightElement(
-      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normK.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     mapping["\(prefix).q_proj.weight"] = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).q_norm.weight"] = normQElement
     mapping["\(prefix).k_proj.weight"] = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     mapping["\(prefix).k_norm.weight"] = normKElement
     mapping["\(prefix).v_proj.weight"] = [toValues.weight.name]
@@ -611,15 +611,15 @@ private func CosmosSelfAttention(
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     let toQ = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     let toK = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     let normQElement = ModelWeightElement(
-      [normQ.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normQ.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     let normKElement = ModelWeightElement(
-      [normK.weight.name], interleaved: true, numberOfHeads: 1, headDimension: headDimension)
+      [normK.weight.name], interleavedIndices: [0], numberOfHeads: 1, headDimension: headDimension)
     switch format {
     case .generativeModels:
       mapping["\(prefix.0).q_proj.weight"] = toQ
@@ -1151,10 +1151,10 @@ private func LoRACosmosSelfAttention(
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     let toQ = ModelWeightElement(
-      [toQueries.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toQueries.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     let toK = ModelWeightElement(
-      [toKeys.weight.name], interleaved: true, numberOfHeads: numberOfHeads,
+      [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: numberOfHeads,
       headDimension: headDimension)
     switch format {
     case .generativeModels:

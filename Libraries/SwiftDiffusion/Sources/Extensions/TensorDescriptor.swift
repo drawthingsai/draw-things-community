@@ -63,20 +63,23 @@ extension ModelWeightElement {
           from: (scale * graph.variable(Tensor<Float>(from: tensor).toCPU()) + shift).rawValue)
       }
     }
+    func interleavedOutput(_ output: Tensor<FloatType>, index: Int) -> Tensor<FloatType> {
+      guard interleavedIndices.contains(index), numberOfHeads > 0, headDimension > 0 else {
+        return output
+      }
+      return graph.withNoGrad {
+        Tensor<FloatType>(
+          from: graph.variable(
+            output.reshaped(
+              format: output.format, shape: [numberOfHeads, 2, headDimension / 2, -1]
+            ).toGPU()
+          ).transposed(1, 2).reshaped(
+            format: output.format, shape: [numberOfHeads * headDimension, -1]
+          ).toCPU().rawValue)
+      }
+    }
     switch format {
     case .O:
-      if interleaved, numberOfHeads > 0, headDimension > 0 {
-        tensor = graph.withNoGrad {
-          Tensor<FloatType>(
-            from: graph.variable(
-              tensor.reshaped(
-                format: tensor.format, shape: [numberOfHeads, 2, headDimension / 2, -1]
-              ).toGPU()
-            ).transposed(1, 2).reshaped(
-              format: tensor.format, shape: [numberOfHeads * headDimension, -1]
-            ).toCPU().rawValue)
-        }
-      }
       if self.count > 1 {
         let squeezedDim = tensor.shape.compactMap { $0 == 1 ? nil : $0 }
         tensor = tensor.reshaped(format: tensor.format, shape: TensorShape(squeezedDim))
@@ -90,18 +93,20 @@ extension ModelWeightElement {
               for (i, name) in self.enumerated() {
                 store.write(
                   renamer(name),
-                  tensor: tensor[
-                    (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0]),
-                    (i * jCount)..<((i + 1) * jCount)
-                  ].copied())
+                  tensor: interleavedOutput(
+                    tensor[
+                      (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0]),
+                      (i * jCount)..<((i + 1) * jCount)
+                    ].copied(), index: i))
               }
             } else {
               for (i, name) in self.enumerated() {
                 store.write(
                   renamer(name),
-                  tensor: tensor[
-                    (i * count)..<((i + 1) * count), (i * jCount)..<((i + 1) * jCount)
-                  ].copied())
+                  tensor: interleavedOutput(
+                    tensor[
+                      (i * count)..<((i + 1) * count), (i * jCount)..<((i + 1) * jCount)
+                    ].copied(), index: i))
               }
             }
           } else {
@@ -110,16 +115,18 @@ extension ModelWeightElement {
                 if shape.count > 1 {
                   store.write(
                     renamer(name),
-                    tensor: tensor[
-                      (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0]),
-                      0..<shape[1]
-                    ].copied())
+                    tensor: interleavedOutput(
+                      tensor[
+                        (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0]),
+                        0..<shape[1]
+                      ].copied(), index: i))
                 } else {
                   store.write(
                     renamer(name),
-                    tensor: tensor[
-                      (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0])
-                    ].copied())
+                    tensor: interleavedOutput(
+                      tensor[
+                        (offsets[i])..<(i < offsets.count - 1 ? offsets[i + 1] : shape[0])
+                      ].copied(), index: i))
                 }
               }
             } else {
@@ -127,13 +134,14 @@ extension ModelWeightElement {
                 if shape.count > 1 {
                   store.write(
                     renamer(name),
-                    tensor: tensor[(i * count)..<((i + 1) * count), 0..<shape[1]]
-                      .copied())
+                    tensor: interleavedOutput(
+                      tensor[(i * count)..<((i + 1) * count), 0..<shape[1]].copied(),
+                      index: i))
                 } else {
                   store.write(
                     renamer(name),
-                    tensor: tensor[(i * count)..<((i + 1) * count)]
-                      .copied())
+                    tensor: interleavedOutput(
+                      tensor[(i * count)..<((i + 1) * count)].copied(), index: i))
                 }
               }
             }
@@ -144,17 +152,18 @@ extension ModelWeightElement {
             for (i, name) in self.enumerated() {
               store.write(
                 renamer(name),
-                tensor: tensor[0..<shape[0], (i * jCount)..<((i + 1) * jCount)].copied())
+                tensor: interleavedOutput(
+                  tensor[0..<shape[0], (i * jCount)..<((i + 1) * jCount)].copied(), index: i))
             }
           } else {
-            for name in self {
-              store.write(renamer(name), tensor: tensor)
+            for (i, name) in self.enumerated() {
+              store.write(renamer(name), tensor: interleavedOutput(tensor, index: i))
             }
           }
         }
       } else {
-        for name in self {
-          store.write(renamer(name), tensor: tensor)
+        for (i, name) in self.enumerated() {
+          store.write(renamer(name), tensor: interleavedOutput(tensor, index: i))
         }
       }
     case .I:
