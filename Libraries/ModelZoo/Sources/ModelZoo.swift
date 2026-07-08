@@ -837,6 +837,16 @@ public struct ModelZoo: DownloadZoo {
       "92d193e4da2b2bea6e7877ca6c011d693da6dbc9bc9b735aee8c102905fa446f",
     "hidream_o1_dev_2604_i8x.ckpt":
       "d8588595c6177ed451d7843af999577f424376c4d2ef77f9408883a13ec0b231",
+    "krea_2_turbo_i8x.ckpt":
+      "e808501ada16a6dedc5b6d8b6426243d4b89d3be1ac9a02706e855684120e87f",
+    "krea_2_raw_i8x.ckpt":
+      "e8ab2f70261904efbff9fc04f10dcd64043194db1cf5a7e2c5ff48f7cc2ba80f",
+    "qwen_3_vl_4b_q8p.ckpt":
+      "be71703dbe695d2aee038539ac0a4dcba02a3ffdc4df4e5fe0b2c3f70a47c151",
+    "ideogram_4_i8x.ckpt":
+      "c82dd45d6fba7ad038e8f148760ed5cf65fe4e53c56b57b778fee26275e73503",
+    "qwen_3_vl_8b_instruct_q8p.ckpt":
+      "54d29b3e951c233ae800604848b83422a48629857c70fb83c4620eb31d900b9a",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
