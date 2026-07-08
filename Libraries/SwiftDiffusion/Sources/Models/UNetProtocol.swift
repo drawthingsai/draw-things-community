@@ -2458,8 +2458,7 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
-        .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b,
-        .krea2:
+        .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
         break
       case .ideogram4:
         let imageLength = (originalShape[1] / 2) * (originalShape[2] / 2)
@@ -2475,6 +2474,35 @@ extension UNetFromNNC {
             (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[1]
           ].copied().reshaped(.WC(h * w, shape[1]))
         } else if $0.0 == 2 {
+          let shape = $0.1.shape
+          guard shape.count == 4, shape[0] == 1, shape[1] > imageLength else { break }
+          let tokenLength = shape[1] - imageLength
+          let graph = $0.1.graph
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], 0..<imageLength, 0..<shape[2], 0..<shape[3]
+          ].copied().reshaped(
+            .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[2] * shape[3]))
+          let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], imageLength..<shape[1], 0..<shape[2], 0..<shape[3]
+          ].copied()
+          let h = inputEndYPad / 2 - inputStartYPad / 2
+          let w = inputEndXPad / 2 - inputStartXPad / 2
+          let sliceEncoding = imageEncoding[
+            0..<shape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
+            (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<(shape[2] * shape[3])
+          ].copied().reshaped(.NHWC(shape[0], h * w, shape[2], shape[3]))
+          var finalEncoding = graph.variable(
+            $0.1.kind, .NHWC(shape[0], h * w + tokenLength, shape[2], shape[3]),
+            of: FloatType.self)
+          finalEncoding[0..<shape[0], 0..<(h * w), 0..<shape[2], 0..<shape[3]] = sliceEncoding
+          finalEncoding[
+            0..<shape[0], (h * w)..<(h * w + tokenLength), 0..<shape[2], 0..<shape[3]] =
+            tokenEncoding
+          return finalEncoding
+        }
+      case .krea2:
+        if $0.0 == 1 {
+          let imageLength = (originalShape[1] / 2) * (originalShape[2] / 2)
           let shape = $0.1.shape
           guard shape.count == 4, shape[0] == 1, shape[1] > imageLength else { break }
           let tokenLength = shape[1] - imageLength
