@@ -6,13 +6,16 @@ import Dflat
 import Diffusion
 import Dispatch
 import Downloader
+import CLICloudAuth
 import Foundation
+import GRPCServer
 import ImageGenerator
 import LocalImageGenerator
 import ModelOp
 import ModelZoo
 import NNC
 import PNG
+import RemoteImageGenerator
 import SQLiteDflat
 import ScriptDataModels
 import Tokenizer
@@ -149,6 +152,62 @@ private enum CLIIdentity {
   }
 }
 
+private let defaultCloudAPIBaseURL = CLICloudDefaultAPIBaseURL
+
+private enum DrawThingsCLICredentialsStore {
+  private static let store = CLICloudCredentialsStore(applicationName: "DrawThingsCLI")
+
+  static func load() -> CLICloudCredentials? {
+    store.load()
+  }
+
+  static func save(_ credentials: CLICloudCredentials) throws {
+    try store.save(credentials)
+  }
+
+  static func remove() throws {
+    try store.remove()
+  }
+
+  static func description() -> String {
+    store.credentialsPath
+  }
+}
+
+private struct AuthCommandOutput: Encodable {
+  enum Action: String, Encodable {
+    case login
+    case logout
+  }
+
+  let action: Action
+  let provider: String?
+  let credentialsPath: String
+  let cloudAPIBaseURL: String?
+
+  static func login(
+    credentials: CLICloudCredentials,
+    credentialsPath: String,
+    apiBaseURL: URL
+  ) -> AuthCommandOutput {
+    AuthCommandOutput(
+      action: .login,
+      provider: credentials.provider,
+      credentialsPath: credentialsPath,
+      cloudAPIBaseURL: apiBaseURL.absoluteString
+    )
+  }
+
+  static func logout(credentialsPath: String) -> AuthCommandOutput {
+    AuthCommandOutput(
+      action: .logout,
+      provider: nil,
+      credentialsPath: credentialsPath,
+      cloudAPIBaseURL: nil
+    )
+  }
+}
+
 private enum CLIHelpText {
   static let root = """
     DESCRIPTION:
@@ -156,8 +215,10 @@ private enum CLIHelpText {
 
     COMMON COMMANDS:
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\""))
+      \(CLIIdentity.command("generate --cloud-compute --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\""))
       \(CLIIdentity.command("models list --downloaded-only"))
       \(CLIIdentity.command("models ensure --model flux_2_dev_q8p.ckpt"))
+      \(CLIIdentity.command("auth login"))
       \(CLIIdentity.command("train lora --model flux_2_klein_4b_q6p.ckpt --dataset ./dataset"))
       \(CLIIdentity.command("completion zsh"))
 
@@ -172,7 +233,9 @@ private enum CLIHelpText {
   static let generate = """
     DESCRIPTION:
       Resolve a local inference model, load recommended settings, apply JSON overrides,
-      then apply explicit command-line overrides before generation.
+      then apply explicit command-line overrides before generation. By default generation
+      runs locally; use --remote for a Draw Things server or --cloud-compute for Draw
+      Things cloud compute.
 
     MODEL REFERENCES:
       --model accepts a model file id, a human-readable model name, an hf://owner/repo
@@ -189,6 +252,8 @@ private enum CLIHelpText {
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\""))
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt-file prompt.txt"))
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"studio portrait\" --image input.png --strength 0.35"))
+      \(CLIIdentity.command("generate --cloud-compute --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\" --output cube.png"))
+      \(CLIIdentity.command("generate --remote --remote-url 127.0.0.1 --no-remote-tls --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube\""))
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\" --terminal-image"))
       \(CLIIdentity.command("generate --model ltx_2.3_22b_distilled_q6p.ckpt --prompt \"ocean waves at sunset\" --frames 49 --output clip.mov"))
     """
@@ -385,6 +450,45 @@ private enum NetworkCacheResolver {
   }
 }
 
+private func resolvedCloudAPIBaseURL(
+  explicit: String?,
+  storedCredentials: CLICloudCredentials?
+) throws -> URL {
+  do {
+    return try CLICloudAuthClient.resolvedAPIBaseURL(
+      explicit: explicit,
+      storedCredentials: storedCredentials
+    )
+  } catch let error as CLICloudAuthError {
+    throw ValidationError(error.localizedDescription)
+  }
+}
+
+private func effectiveCloudAPIKey(
+  explicit: String?,
+  storedCredentials: CLICloudCredentials?
+) -> String? {
+  CLICloudAuthClient.effectiveAPIKey(
+    explicit: explicit,
+    storedCredentials: storedCredentials
+  )
+}
+
+private func fetchShortTermToken(
+  apiKey: String,
+  baseURL: URL,
+  emitStates: Bool
+) throws -> String {
+  let client = CLICloudAuthClient(baseURL: baseURL)
+  return try client.fetchShortTermToken(
+    apiKey: apiKey,
+    emitStates: emitStates,
+    stateHandler: { state in
+      print("  [AuthState] \(describeCLICloudAuthState(state))")
+    }
+  ).value
+}
+
 struct ModelsDirectoryOptions: ParsableArguments {
   @Option(name: .long, help: modelsDirectoryHelp)
   var modelsDir: String?
@@ -494,6 +598,51 @@ struct GenerateExecutionOptions: ParsableArguments {
       "Disable network access. Uses cached community catalogs and recommended settings only, and never downloads models."
   )
   var offline: Bool = false
+}
+
+struct GenerateBackendOptions: ParsableArguments {
+  @Flag(name: .long, help: "Generate on a remote Draw Things server instead of local models.")
+  var remote: Bool = false
+
+  @Option(name: .customLong("remote-url"), help: "Remote server host or URL.")
+  var remoteURL: String?
+
+  @Option(name: .customLong("remote-port"), help: "Remote server port.")
+  var remotePort: Int = 7859
+
+  @Flag(
+    name: .customLong("remote-tls"),
+    inversion: .prefixedNo,
+    help: "Use TLS for remote generation.")
+  var remoteTLS: Bool = true
+
+  @Option(name: .customLong("remote-shared-secret"), help: "Shared secret for password-protected remote servers.")
+  var remoteSharedSecret: String?
+
+  @Flag(name: .customLong("cloud-compute"), help: "Generate on Draw Things cloud compute.")
+  var cloudCompute: Bool = false
+
+  @Option(name: .long, help: "Draw Things API key for cloud compute. Uses saved credentials or DRAWTHINGS_API_KEY if omitted.")
+  var apiKey: String?
+
+  @Option(name: .customLong("cloud-api-base-url"), help: "Cloud API base URL.")
+  var cloudAPIBaseURL: String?
+
+  var isRemoteOrCloud: Bool {
+    remote || cloudCompute
+  }
+
+  func validate() throws {
+    if remote && cloudCompute {
+      throw ValidationError("--remote and --cloud-compute cannot be combined.")
+    }
+    if !remote && (remoteURL != nil || remotePort != 7859 || remoteTLS != true || remoteSharedSecret != nil) {
+      throw ValidationError("Remote endpoint flags require --remote.")
+    }
+    if !cloudCompute && (apiKey != nil || cloudAPIBaseURL != nil) {
+      throw ValidationError("Cloud compute flags require --cloud-compute.")
+    }
+  }
 }
 
 struct LoRATrainModelAndDatasetOptions: ParsableArguments {
@@ -1649,6 +1798,78 @@ private func createLocalImageGenerator(queue: DispatchQueue) throws -> (String, 
   return (tempDir, generator)
 }
 
+private struct ImageTensorShape {
+  let width: Int
+  let height: Int
+  let channels: Int
+}
+
+private func savePNGOutputs(_ tensors: [Tensor<FloatType>], outputURL: URL) throws -> [String] {
+  try FileManager.default.createDirectory(
+    at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+  let outputPaths = imageOutputPaths(baseOutputURL: outputURL, count: tensors.count)
+  for (tensor, outputPath) in zip(tensors, outputPaths) {
+    try writePNG(tensor: tensor, to: outputPath)
+  }
+  return outputPaths
+}
+
+private func imageOutputPaths(baseOutputURL: URL, count: Int) -> [String] {
+  if count == 1 {
+    return [baseOutputURL.path]
+  }
+  let basename = baseOutputURL.deletingPathExtension().path
+  let ext = baseOutputURL.pathExtension
+  let digits = max(4, String(count - 1).count)
+  return (0..<count).map { index in
+    "\(basename)-\(String(format: "%0\(digits)d", index)).\(ext)"
+  }
+}
+
+private func imageTensorShape(_ tensor: Tensor<FloatType>) throws -> ImageTensorShape {
+  let shape = tensor.shape
+  switch shape.count {
+  case 4:
+    return ImageTensorShape(width: shape[2], height: shape[1], channels: shape[3])
+  case 3:
+    return ImageTensorShape(width: shape[1], height: shape[0], channels: shape[2])
+  default:
+    throw DrawThingsCLIError.unsupportedTensorShape("\(shape)")
+  }
+}
+
+private func pixelByte(_ value: FloatType) -> UInt8 {
+  UInt8(min(max(Int((value + 1) * 127.5), 0), 255))
+}
+
+private func writePNG(tensor: Tensor<FloatType>, to outputPath: String) throws {
+  let shape = try imageTensorShape(tensor)
+  guard shape.channels >= 3 else {
+    throw DrawThingsCLIError.unsupportedTensorShape("\(tensor.shape)")
+  }
+  let pixelCount = shape.width * shape.height
+  var rgba = [PNG.RGBA<UInt8>](repeating: .init(0), count: pixelCount)
+  tensor.withUnsafeBytes {
+    guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
+    for i in 0..<pixelCount {
+      let base = i * shape.channels
+      rgba[i].r = pixelByte(fp16[base])
+      rgba[i].g = pixelByte(fp16[base + 1])
+      rgba[i].b = pixelByte(fp16[base + 2])
+      rgba[i].a = 255
+    }
+  }
+  let image = PNG.Data.Rectangular(
+    packing: rgba,
+    size: (x: shape.width, y: shape.height),
+    layout: PNG.Layout(format: .rgb8(palette: [], fill: nil, key: nil)))
+  do {
+    try image.compress(path: outputPath, level: 4)
+  } catch {
+    throw DrawThingsCLIError.pngEncodeFailed(outputPath)
+  }
+}
+
 private final class LocalGenerationRunner {
   struct GenerationTimingSummary {
     let totalGenerationDuration: TimeInterval
@@ -1663,12 +1884,6 @@ private final class LocalGenerationRunner {
   private enum OutputDestination {
     case png(URL)
     case video(URL, containerExtension: String)
-  }
-
-  private struct ImageTensorShape {
-    let width: Int
-    let height: Int
-    let channels: Int
   }
 
   private final class GenerationTimingTracker {
@@ -1818,11 +2033,7 @@ private final class LocalGenerationRunner {
       if videoFormat != nil {
         throw ValidationError("--video-format can only be used with .mov or .mp4 output")
       }
-      let outputPaths = imageOutputPaths(baseOutputURL: outputURL, count: tensors.count)
-      for (tensor, path) in zip(tensors, outputPaths) {
-        try writePNG(tensor: tensor, to: path)
-      }
-      return outputPaths
+      return try savePNGOutputs(tensors, outputURL: outputURL)
     case .video(let outputURL, let containerExtension):
       let framesPerSecond = ModelZoo.framesPerSecondForModel(configuration.model ?? "")
       let audioSampleRate = audio.map { _ in
@@ -1854,64 +2065,6 @@ private final class LocalGenerationRunner {
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     return destination
-  }
-
-  private func imageOutputPaths(baseOutputURL: URL, count: Int) -> [String] {
-    if count == 1 {
-      return [baseOutputURL.path]
-    }
-    let basename = baseOutputURL.deletingPathExtension().path
-    let ext = baseOutputURL.pathExtension
-    let digits = max(4, String(count - 1).count)
-    return (0..<count).map { index in
-      "\(basename)-\(String(format: "%0\(digits)d", index)).\(ext)"
-    }
-  }
-
-  private func imageTensorShape(_ tensor: Tensor<FloatType>) throws -> ImageTensorShape {
-    let shape = tensor.shape
-    switch shape.count {
-    case 4:
-      return ImageTensorShape(width: shape[2], height: shape[1], channels: shape[3])
-    case 3:
-      return ImageTensorShape(width: shape[1], height: shape[0], channels: shape[2])
-    default:
-      throw DrawThingsCLIError.unsupportedTensorShape("\(shape)")
-    }
-  }
-
-  private func pixelByte(_ value: FloatType) -> UInt8 {
-    UInt8(min(max(Int((value + 1) * 127.5), 0), 255))
-  }
-
-  private func writePNG(tensor: Tensor<FloatType>, to outputPath: String) throws {
-    let shape = try imageTensorShape(tensor)
-    let height = shape.height
-    let width = shape.width
-    let channels = shape.channels
-    guard channels >= 3 else {
-      throw DrawThingsCLIError.unsupportedTensorShape("\(tensor.shape)")
-    }
-    let pixelCount = width * height
-    var rgba = [PNG.RGBA<UInt8>](repeating: .init(0), count: pixelCount)
-    tensor.withUnsafeBytes {
-      guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
-      for i in 0..<pixelCount {
-        let base = i * channels
-        rgba[i].r = pixelByte(fp16[base])
-        rgba[i].g = pixelByte(fp16[base + 1])
-        rgba[i].b = pixelByte(fp16[base + 2])
-        rgba[i].a = 255
-      }
-    }
-    let image = PNG.Data.Rectangular(
-      packing: rgba, size: (x: width, y: height),
-      layout: PNG.Layout(format: .rgb8(palette: [], fill: nil, key: nil)))
-    do {
-      try image.compress(path: outputPath, level: 4)
-    } catch {
-      throw DrawThingsCLIError.pngEncodeFailed(outputPath)
-    }
   }
 
   private func writeVideo(
@@ -2289,6 +2442,279 @@ private final class LocalGenerationRunner {
       }
     }
   #endif
+}
+
+private final class RemoteGenerationRunner {
+  private struct RemoteTimingTracker {
+    private let startTime = Date()
+    private var lastSamplingStepTime: Date?
+    private(set) var samplingStepDurations: [TimeInterval] = []
+
+    mutating func record(signpost: ImageGeneratorSignpost) {
+      guard case .sampling = signpost else { return }
+      let now = Date()
+      if let lastSamplingStepTime {
+        samplingStepDurations.append(now.timeIntervalSince(lastSamplingStepTime))
+      }
+      lastSamplingStepTime = now
+    }
+
+    func summary() -> LocalGenerationRunner.GenerationTimingSummary {
+      LocalGenerationRunner.GenerationTimingSummary(
+        totalGenerationDuration: Date().timeIntervalSince(startTime),
+        samplingStepDurations: samplingStepDurations
+      )
+    }
+  }
+
+  private let backendOptions: GenerateBackendOptions
+
+  init(backendOptions: GenerateBackendOptions) {
+    self.backendOptions = backendOptions
+  }
+
+  func generate(
+    prompt: String,
+    negativePrompt: String,
+    configuration: GenerationConfiguration,
+    outputPath: String,
+    inputImage: Tensor<FloatType>?,
+    videoFormat: VideoExportFormat?
+  ) throws -> LocalGenerationRunner.GenerationRunResult {
+    if videoFormat != nil || isVideoOutputPath(outputPath) {
+      throw ValidationError("Remote and cloud generation currently support .png output only.")
+    }
+    let remote = try configuredRemoteGenerator()
+    defer {
+      try? remote.client.disconnect()
+    }
+    let progressPrinter = ProgressBarPrinter()
+    var timingTracker = RemoteTimingTracker()
+    progressPrinter.update(progress: 0, label: "Connecting...", detail: nil)
+
+    let result = try remote.generator.generate(
+      trace: ImageGeneratorTrace(fromBridge: true),
+      image: inputImage,
+      scaleFactor: 1,
+      mask: nil as Tensor<UInt8>?,
+      hints: [],
+      text: prompt,
+      negativeText: negativePrompt,
+      configuration: configuration,
+      fileMapping: [:],
+      keywords: [],
+      cancellation: { _ in },
+      feedback: { signpost, signposts, _ in
+        timingTracker.record(signpost: signpost)
+        self.updateProgress(progressPrinter, signpost: signpost, signposts: signposts)
+        return true
+      })
+
+    guard let tensors = result.0, !tensors.isEmpty else {
+      throw DrawThingsCLIError.generationFailed
+    }
+    var outputURL = URL(fileURLWithPath: outputPath)
+    if outputURL.pathExtension.isEmpty {
+      outputURL = outputURL.appendingPathExtension("png")
+    }
+    guard outputURL.pathExtension.lowercased() == "png" else {
+      throw ValidationError("Remote and cloud generation currently support .png output only.")
+    }
+    let outputPaths = try savePNGOutputs(tensors, outputURL: outputURL)
+    progressPrinter.update(progress: 1, label: "Generated", detail: nil)
+    return LocalGenerationRunner.GenerationRunResult(
+      outputPaths: outputPaths,
+      timing: timingTracker.summary()
+    )
+  }
+
+  private func configuredRemoteGenerator() throws -> (
+    generator: RemoteImageGenerator, client: ImageGenerationClientWrapper
+  ) {
+    let endpoint = try resolvedEndpoint()
+    let client = ImageGenerationClientWrapper(
+      deviceName: backendOptions.cloudCompute ? "" : CLIIdentity.commandName)
+    try client.connect(
+      host: endpoint.host,
+      port: endpoint.port,
+      TLS: endpoint.useTLS,
+      hostnameVerification: endpoint.useTLS,
+      sharedSecret: endpoint.sharedSecret
+    )
+    let serverIdentifier = try performHandshake(client: client)
+    let generator = RemoteImageGenerator(
+      name: CLIIdentity.commandName,
+      deviceType: .laptop,
+      client: client,
+      serverIdentifier: serverIdentifier,
+      authenticationHandler: try cloudAuthenticationHandlerIfNeeded(),
+      requestExceedLimitHandler: nil
+    )
+    return (generator, client)
+  }
+
+  private func resolvedEndpoint() throws -> (
+    host: String, port: Int, useTLS: Bool, sharedSecret: String?
+  ) {
+    if backendOptions.cloudCompute {
+      return (host: "compute.drawthings.ai", port: 443, useTLS: true, sharedSecret: nil)
+    }
+    guard backendOptions.remote else {
+      throw ValidationError("RemoteGenerationRunner requires --remote or --cloud-compute.")
+    }
+    let remote = try resolvedRemoteEndpoint()
+    return (
+      host: remote.host,
+      port: remote.port,
+      useTLS: remote.useTLS,
+      sharedSecret: backendOptions.remoteSharedSecret
+    )
+  }
+
+  private func resolvedRemoteEndpoint() throws -> (host: String, port: Int, useTLS: Bool) {
+    guard let remoteURL = backendOptions.remoteURL, !remoteURL.isEmpty else {
+      throw ValidationError("--remote-url is required with --remote.")
+    }
+    let trimmed = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    let candidate = trimmed.contains("://") ? trimmed : "\(backendOptions.remoteTLS ? "https" : "http")://\(trimmed)"
+    guard
+      let components = URLComponents(string: candidate),
+      let host = components.host,
+      !host.isEmpty
+    else {
+      throw ValidationError("Failed to parse --remote-url '\(remoteURL)'.")
+    }
+    let scheme = components.scheme?.lowercased()
+    let useTLS =
+      if scheme == "https" {
+        true
+      } else if scheme == "http" {
+        false
+      } else {
+        backendOptions.remoteTLS
+      }
+    return (host: host, port: components.port ?? backendOptions.remotePort, useTLS: useTLS)
+  }
+
+  private func performHandshake(client: ImageGenerationClientWrapper) throws -> UInt64 {
+    let semaphore = DispatchSemaphore(value: 0)
+    var success = false
+    var authenticated = false
+    var serverIdentifier: UInt64 = 0
+    client.echo { echoSuccess, echoAuthenticated, _, _, echoServerIdentifier in
+      success = echoSuccess
+      authenticated = echoAuthenticated
+      serverIdentifier = echoServerIdentifier
+      semaphore.signal()
+    }
+    guard semaphore.wait(timeout: .now() + 10) == .success else {
+      throw ValidationError("Remote echo timed out.")
+    }
+    guard success else {
+      throw ValidationError("Remote echo failed.")
+    }
+    guard authenticated else {
+      throw ValidationError("Remote shared secret was rejected.")
+    }
+    return serverIdentifier
+  }
+
+  private func cloudAuthenticationHandlerIfNeeded() throws
+    -> (
+      (Bool, Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?
+    )?
+  {
+    guard backendOptions.cloudCompute else { return nil }
+    let storedCredentials = DrawThingsCLICredentialsStore.load()
+    guard
+      let apiKey = effectiveCloudAPIKey(
+        explicit: backendOptions.apiKey,
+        storedCredentials: storedCredentials
+      )
+    else {
+      throw ValidationError(
+        "--cloud-compute requires --api-key, DRAWTHINGS_API_KEY, or saved credentials from `auth login`."
+      )
+    }
+    let baseURL = try resolvedCloudAPIBaseURL(
+      explicit: backendOptions.cloudAPIBaseURL,
+      storedCredentials: storedCredentials
+    )
+    return { fromBridge, encodedBlob, configuration, hasImage, shuffleCount, cancellation in
+      do {
+        let shortTermToken = try fetchShortTermToken(
+          apiKey: apiKey,
+          baseURL: baseURL,
+          emitStates: false
+        )
+        let estimatedComputeUnits = ComputeUnits.from(
+          configuration,
+          hasImage: hasImage,
+          shuffleCount: shuffleCount
+        ).map(Double.init)
+        return try authenticateCloudRequest(
+          shortTermToken: shortTermToken,
+          encodedBlob: encodedBlob,
+          fromBridge: fromBridge,
+          estimatedComputeUnits: estimatedComputeUnits,
+          baseURL: baseURL,
+          cancellation: cancellation
+        )
+      } catch {
+        print("[CloudAuth] \(error.localizedDescription)")
+        return nil
+      }
+    }
+  }
+
+  private func updateProgress(
+    _ progressPrinter: ProgressBarPrinter,
+    signpost: ImageGeneratorSignpost,
+    signposts: Set<ImageGeneratorSignpost>
+  ) {
+    let progressText = cliProgressText(signpost: signpost, signposts: signposts)
+    let progress: Float
+    switch signpost {
+    case .sampling(let step):
+      let steps = max(1, cliSamplingSteps(signposts: signposts, isSecondPassSampling: false))
+      progress = Float(step + 1) / Float(steps)
+    case .secondPassSampling(let step):
+      let steps = max(1, cliSamplingSteps(signposts: signposts, isSecondPassSampling: true))
+      progress = Float(step + 1) / Float(steps)
+    case .textEncoded, .imageEncoded, .controlsGenerated:
+      progress = 0.1
+    case .imageDecoded, .secondPassImageDecoded, .faceRestored, .imageUpscaled,
+      .secondPassImageEncoded:
+      progress = 0.9
+    }
+    progressPrinter.update(
+      progress: min(0.95, max(0, progress)),
+      label: progressText.label,
+      detail: progressText.detail
+    )
+  }
+
+  private func isVideoOutputPath(_ outputPath: String) -> Bool {
+    let ext = URL(fileURLWithPath: outputPath).pathExtension.lowercased()
+    return ext == "mov" || ext == "mp4"
+  }
+}
+
+private func authenticateCloudRequest(
+  shortTermToken: String,
+  encodedBlob: Data,
+  fromBridge: Bool,
+  estimatedComputeUnits: Double?,
+  baseURL: URL,
+  cancellation: (@escaping () -> Void) -> Void
+) throws -> String? {
+  try CLICloudAuthClient(baseURL: baseURL).authenticateGenerationRequest(
+    shortTermToken: shortTermToken,
+    encodedBlob: encodedBlob,
+    fromBridge: fromBridge,
+    estimatedComputeUnits: estimatedComputeUnits,
+    cancellation: cancellation
+  )
 }
 
 private func formatDurationForCLI(_ duration: TimeInterval) -> String {
@@ -3351,7 +3777,7 @@ struct DrawThingsCLI: ParsableCommand {
     abstract: "Local inference and training CLI for Draw Things models.",
     discussion: CLIHelpText.root,
     version: CLIIdentity.version,
-    subcommands: [Generate.self, Models.self, Train.self, Completion.self]
+    subcommands: [Generate.self, Auth.self, Models.self, Train.self, Completion.self]
   )
 }
 
@@ -3369,9 +3795,14 @@ extension DrawThingsCLI {
     @OptionGroup(title: "Image Input") var imageInput: GenerateImageInputOptions
     @OptionGroup(title: "Output") var output: GenerateOutputOptions
     @OptionGroup(title: "Execution") var execution: GenerateExecutionOptions
+    @OptionGroup(title: "Backend") var backend: GenerateBackendOptions
 
     mutating func run() throws {
       NetworkAccessPolicy.offline = execution.offline
+      try backend.validate()
+      if execution.offline && backend.isRemoteOrCloud {
+        throw ValidationError("--offline cannot be combined with --remote or --cloud-compute.")
+      }
       let modelsDirectory = try ModelsDirectoryResolver.resolve(
         path: modelResolution.modelsDirectoryOptions.modelsDir)
       ModelZoo.isExternalUrlsPreferred = true
@@ -3382,7 +3813,7 @@ extension DrawThingsCLI {
         ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
           "draw-things-cli-preview-\(UUID().uuidString).png"
         ).path
-      let livePreviewEnabled = !writesOutputFile && !execution.disablePreview
+      let livePreviewEnabled = !backend.isRemoteOrCloud && !writesOutputFile && !execution.disablePreview
       let terminalImageMode: TerminalImageRenderMode =
         if output.terminalImage {
           .explicit
@@ -3424,14 +3855,56 @@ extension DrawThingsCLI {
       }
 
       let files = requiredFiles(for: configuration)
-      try ModelDownloader.ensureFiles(
-        files, modelsDirectory: modelsDirectory, downloadMissing: execution.downloadMissing)
 
       let imagePath = try mergedAlias(
         primary: try mergedAlias(
           primary: imageInput.image, alias: imageInput.initImage, primaryFlag: "--image",
           aliasFlag: "--init-image"),
         alias: imageInput.inputImage, primaryFlag: "--image", aliasFlag: "--input-image")
+
+      if backend.isRemoteOrCloud {
+        let inputImageTensor: Tensor<FloatType>? =
+          if let imagePath {
+            try loadInputImageTensor(
+              path: imagePath, imageWidth: Int(configuration.startWidth) * 64,
+              imageHeight: Int(configuration.startHeight) * 64)
+          } else {
+            nil
+          }
+        let runner = RemoteGenerationRunner(backendOptions: backend)
+        print(backend.cloudCompute ? "Backend: cloud-compute" : "Backend: remote")
+        let result = try runner.generate(
+          prompt: promptValues.prompt,
+          negativePrompt: resolvedNegativePrompt,
+          configuration: configuration,
+          outputPath: outputPath,
+          inputImage: inputImageTensor,
+          videoFormat: output.videoFormat
+        )
+        defer {
+          if !writesOutputFile {
+            for path in result.outputPaths {
+              try? FileManager.default.removeItem(atPath: path)
+            }
+          }
+        }
+        if writesOutputFile {
+          for path in result.outputPaths {
+            print("Wrote: \(path)")
+          }
+        }
+        TerminalImageRenderer.renderGeneratedOutputsIfRequested(
+          result.outputPaths,
+          mode: terminalImageMode,
+          protocolChoice: output.terminalImageProtocol
+        )
+        printGenerationTimingSummary(result.timing)
+        return
+      }
+
+      try ModelDownloader.ensureFiles(
+        files, modelsDirectory: modelsDirectory, downloadMissing: execution.downloadMissing)
+
       let inputImageTensor: Tensor<FloatType>? =
         if let imagePath {
           try loadInputImageTensor(
@@ -3481,6 +3954,153 @@ extension DrawThingsCLI {
           protocolChoice: output.terminalImageProtocol)
       }
       printGenerationTimingSummary(result.timing)
+    }
+  }
+
+  struct Auth: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Authentication helpers.",
+      subcommands: [Login.self, Logout.self, Token.self, State.self]
+    )
+
+    struct CloudAuthOptions: ParsableArguments {
+      @Option(name: .long, help: "Draw Things API key. Uses saved credentials or DRAWTHINGS_API_KEY if omitted.")
+      var apiKey: String?
+
+      @Option(name: .customLong("cloud-api-base-url"), help: "Cloud API base URL.")
+      var cloudAPIBaseURL: String?
+    }
+
+    struct Login: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Sign in with Google in your browser and save the returned Draw Things API key."
+      )
+
+      @Option(name: .customLong("cloud-api-base-url"), help: "Cloud API base URL.")
+      var cloudAPIBaseURL: String?
+
+      @Flag(name: .long, help: "Emit login result as JSON.")
+      var json: Bool = false
+
+      mutating func run() throws {
+        let baseURL: URL
+        if let cloudAPIBaseURL {
+          guard let parsedURL = URL(string: cloudAPIBaseURL) else {
+            throw ValidationError("Invalid --cloud-api-base-url: \(cloudAPIBaseURL)")
+          }
+          baseURL = parsedURL
+        } else {
+          baseURL = defaultCloudAPIBaseURL
+        }
+
+        if !json {
+          print("Starting Google sign-in in your browser...")
+          print("Credentials will be saved to: \(DrawThingsCLICredentialsStore.description())")
+        }
+        let credentials = try CLICloudGoogleOAuthDesktopFlow.signIn(
+          apiBaseURL: baseURL,
+          callbackApplicationName: CLIIdentity.commandName,
+          listenerQueueLabel: "ai.drawthings.cli.google-oauth"
+        )
+        try DrawThingsCLICredentialsStore.save(credentials)
+        let output = AuthCommandOutput.login(
+          credentials: credentials,
+          credentialsPath: DrawThingsCLICredentialsStore.description(),
+          apiBaseURL: baseURL
+        )
+        if json {
+          let encoder = JSONEncoder()
+          encoder.outputFormatting = [.sortedKeys]
+          let data = try encoder.encode(output)
+          print(String(decoding: data, as: UTF8.self))
+        } else {
+          print("Google sign-in complete.")
+          print("Saved API key to: \(DrawThingsCLICredentialsStore.description())")
+        }
+      }
+    }
+
+    struct Logout: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Remove saved cloud credentials."
+      )
+
+      @Flag(name: .long, help: "Emit logout result as JSON.")
+      var json: Bool = false
+
+      mutating func run() throws {
+        try DrawThingsCLICredentialsStore.remove()
+        let output = AuthCommandOutput.logout(
+          credentialsPath: DrawThingsCLICredentialsStore.description())
+        if json {
+          let encoder = JSONEncoder()
+          encoder.outputFormatting = [.sortedKeys]
+          let data = try encoder.encode(output)
+          print(String(decoding: data, as: UTF8.self))
+        } else {
+          print("Removed saved cloud credentials from: \(DrawThingsCLICredentialsStore.description())")
+        }
+      }
+    }
+
+    struct Token: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Fetch a short-term cloud token to validate credentials."
+      )
+
+      @OptionGroup var auth: CloudAuthOptions
+
+      mutating func run() throws {
+        let storedCredentials = DrawThingsCLICredentialsStore.load()
+        guard
+          let apiKey = effectiveCloudAPIKey(
+            explicit: auth.apiKey,
+            storedCredentials: storedCredentials
+          )
+        else {
+          throw ValidationError(
+            "--api-key, DRAWTHINGS_API_KEY, or saved credentials from `auth login` are required."
+          )
+        }
+        let baseURL = try resolvedCloudAPIBaseURL(
+          explicit: auth.cloudAPIBaseURL,
+          storedCredentials: storedCredentials
+        )
+        _ = try fetchShortTermToken(apiKey: apiKey, baseURL: baseURL, emitStates: false)
+        print("Short-term token fetched successfully.")
+        print("Authentication test complete.")
+      }
+    }
+
+    struct State: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Validate auth-state progression."
+      )
+
+      @OptionGroup var auth: CloudAuthOptions
+
+      mutating func run() throws {
+        let storedCredentials = DrawThingsCLICredentialsStore.load()
+        guard
+          let apiKey = effectiveCloudAPIKey(
+            explicit: auth.apiKey,
+            storedCredentials: storedCredentials
+          )
+        else {
+          throw ValidationError(
+            "--api-key, DRAWTHINGS_API_KEY, or saved credentials from `auth login` are required."
+          )
+        }
+        let baseURL = try resolvedCloudAPIBaseURL(
+          explicit: auth.cloudAPIBaseURL,
+          storedCredentials: storedCredentials
+        )
+        print("Cloud authentication configured")
+        print("  API base URL: \(baseURL)")
+        print("  Testing authentication...")
+        _ = try fetchShortTermToken(apiKey: apiKey, baseURL: baseURL, emitStates: true)
+        print("Auth state validation complete.")
+      }
     }
   }
 

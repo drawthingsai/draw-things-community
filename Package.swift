@@ -361,6 +361,10 @@ let package = Package(
       path: "Libraries/RemoteImageGenerator/Sources"
     ),
     .target(
+      name: "CLICloudAuth",
+      path: "Libraries/CLICloudAuth/Sources"
+    ),
+    .target(
       name: "GRPCImageServiceModels",
       dependencies: [
         .product(name: "GRPC", package: "grpc-swift")
@@ -468,10 +472,13 @@ let package = Package(
         "ConfigurationZoo",
         "DataModels",
         "Downloader",
+        "CLICloudAuth",
+        "GRPCServer",
         "ImageGenerator",
         "LocalImageGenerator",
         "ModelOp",
         "ModelZoo",
+        "RemoteImageGenerator",
         "ScriptDataModels",
         "Diffusion",
         "Trainer",
