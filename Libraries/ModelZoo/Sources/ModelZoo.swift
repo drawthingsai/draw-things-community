@@ -3581,9 +3581,9 @@ public struct ModelZoo: DownloadZoo {
       case .seedvr2_7b:
         return fileSize < 8 * 1_024 * 1_024 * 1_024
       case .ideogram4:
-        return fileSize < 16 * 1_024 * 1_024 * 1_024
+        return fileSize < 18 * 1_024 * 1_024 * 1_024
       case .krea2:
-        return fileSize < 16 * 1_024 * 1_024 * 1_024
+        return fileSize < 13 * 1_024 * 1_024 * 1_024
       }
     }
     return false
