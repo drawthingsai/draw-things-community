@@ -157,7 +157,7 @@ private func Ideogram4MLP(prefix: String) -> (ModelWeightMapper, Model) {
   let w1 = Dense(count: 12_288, noBias: true, name: "w1")
   let w3 = Dense(count: 12_288, noBias: true, name: "w3")
   let w2 = Dense(count: 4_608, noBias: true, name: "w2")
-  let out = w2(w1(x).swish() .* w3(x))
+  let out = w2(Functional.swishMul(value: w3(x), gate: w1(x)))
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]
@@ -434,7 +434,7 @@ private func LoRAIdeogram4MLP(
     count: 12_288, configuration: configuration, noBias: true, index: layerIndex, name: "w3")
   let w2 = LoRADense(
     count: 4_608, configuration: configuration, noBias: true, index: layerIndex, name: "w2")
-  let out = w2(w1(x).swish() .* w3(x))
+  let out = w2(Functional.swishMul(value: w3(x), gate: w1(x)))
   let mapper: ModelWeightMapper = { _ in
     var mapping = ModelWeightMapping()
     mapping["\(prefix).feed_forward.w1.weight"] = [w1.weight.name]

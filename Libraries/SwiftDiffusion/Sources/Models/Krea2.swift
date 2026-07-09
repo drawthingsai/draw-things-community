@@ -72,7 +72,7 @@ private func Krea2SwiGLU(
   let gate = Dense(count: intermediateSize, noBias: true, name: "\(name)gate")
   let up = Dense(count: intermediateSize, noBias: true, name: "\(name)up")
   let down = Dense(count: hiddenSize, noBias: true, name: "\(name)down")
-  let out = down(gate(x).swish() .* up(x))
+  let out = down(Functional.swishMul(value: up(x), gate: gate(x)))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     let prefix = format == .generativeModels ? prefix.0 : prefix.1
@@ -661,7 +661,7 @@ private func LoRAKrea2SwiGLU(
   let down = LoRADense(
     count: hiddenSize, configuration: configuration, noBias: true, index: layerIndex,
     name: "\(name)down")
-  let out = down(gate(x).swish() .* up(x))
+  let out = down(Functional.swishMul(value: up(x), gate: gate(x)))
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     let prefix = format == .generativeModels ? prefix.0 : prefix.1
