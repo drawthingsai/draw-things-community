@@ -23,6 +23,11 @@ done
 # The initialization commands to run on the remote server
 INIT_COMMANDS='
 set -e
+export DEBIAN_FRONTEND=noninteractive
+
+apt_get() {
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@"
+}
 
 echo "=================================================="
 echo "  GPU Server Initialization"
@@ -33,8 +38,8 @@ echo ""
 echo "➡️ Step 1: Updating system and installing Docker..."
 
 # Update package index and install prerequisites
-sudo apt-get update
-sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common wget
+apt_get update
+apt_get install -y apt-transport-https ca-certificates curl software-properties-common wget
 
 # Add Docker official GPG key
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -48,8 +53,8 @@ echo \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 # Update package index again and install Docker
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+apt_get update
+apt_get install -y docker-ce docker-ce-cli containerd.io
 
 echo "✅ Docker installed successfully."
 
@@ -58,19 +63,20 @@ echo "✅ Docker installed successfully."
 ## Section 1: System Preparation
 echo ""
 echo "➡️ Step 2: Installing NVIDIA CUDA and Container Toolkit..."
-sudo apt-get upgrade -y
+apt_get upgrade -y
 
 ## Section 2: Install CUDA Toolkit
 echo "Adding NVIDIA CUDA repository..."
 
 # Install the repository keyring
-wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-sudo dpkg -i cuda-keyring_1.1-1_all.deb
-sudo apt-get update
+CUDA_REPO_ID=$( . /etc/os-release && echo "ubuntu$(echo "$VERSION_ID" | tr -d ".")" )
+wget -q "https://developer.download.nvidia.com/compute/cuda/repos/${CUDA_REPO_ID}/x86_64/cuda-keyring_1.1-1_all.deb"
+sudo DEBIAN_FRONTEND=noninteractive dpkg --force-confdef --force-confold -i cuda-keyring_1.1-1_all.deb
+apt_get update
 rm cuda-keyring_1.1-1_all.deb
 
 echo "Installing CUDA Toolkit..."
-sudo apt-get -y install cuda-toolkit
+apt_get -y install cuda-toolkit
 
 # Add CUDA to the system PATH for all users
 echo "export PATH=/usr/local/cuda/bin\${PATH:+:\${PATH}}" | sudo tee /etc/profile.d/cuda.sh
@@ -85,11 +91,11 @@ curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-contai
   sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" | \
   sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
 
-sudo apt-get update
+apt_get update
 
 echo "Installing NVIDIA Container Toolkit..."
-sudo apt-get install -y nvidia-container-toolkit
-sudo apt-get install -y mergerfs
+apt_get install -y nvidia-container-toolkit
+apt_get install -y mergerfs
 
 ## Section 4: Configure Docker
 echo "Configuring Docker to use the NVIDIA runtime..."
@@ -112,8 +118,8 @@ echo "✅ Root password locked."
 echo ""
 echo "➡️ Step 5: Installing Python and dependencies..."
 
-sudo apt-get update
-sudo apt-get install -y python3-pip python3-venv nvtop htop
+apt_get update
+apt_get install -y python3-pip python3-venv nvtop htop
 
 # Create a virtual environment for Python packages
 python3 -m venv /opt/draw-things-venv
@@ -179,10 +185,10 @@ echo ""
 echo "Please enter the mount points to unmount and disk partitions to mount."
 echo "(Press Enter on first prompt to skip disk mounting setup)"
 echo ""
-read -p "Enter current mount point to unmount for models disk (e.g., /mnt/disk1): " UNMOUNT1
-read -p "Enter current mount point to unmount for loraModels disk (e.g., /mnt/disk2): " UNMOUNT2
-read -p "Enter disk partition for /mnt/models (e.g., /dev/nvme2n1p1): " DISK1
-read -p "Enter disk partition for /mnt/loraModels (e.g., /dev/nvme3n1p1): " DISK2
+read -p "Enter current mount point to unmount for models disk (e.g., /mnt/disk1): " UNMOUNT1 || UNMOUNT1=""
+read -p "Enter current mount point to unmount for loraModels disk (e.g., /mnt/disk2): " UNMOUNT2 || UNMOUNT2=""
+read -p "Enter disk partition for /mnt/models (e.g., /dev/nvme2n1p1): " DISK1 || DISK1=""
+read -p "Enter disk partition for /mnt/loraModels (e.g., /dev/nvme3n1p1): " DISK2 || DISK2=""
 
 if [ -n "$UNMOUNT1" ] && [ -n "$UNMOUNT2" ] && [ -n "$DISK1" ] && [ -n "$DISK2" ]; then
     echo ""
@@ -229,9 +235,9 @@ if [ -n "$UNMOUNT1" ] && [ -n "$UNMOUNT2" ] && [ -n "$DISK1" ] && [ -n "$DISK2" 
     # Remove any existing entries for old and new mount points
     sed -i "\|$UNMOUNT1|d" /etc/fstab
     sed -i "\|$UNMOUNT2|d" /etc/fstab
-    sed -i '\|/mnt/models|d' /etc/fstab
-    sed -i '\|/mnt/loraModels|d' /etc/fstab
-    sed -i '\|/mnt/official-models|d' /etc/fstab
+    sed -i "\|/mnt/models|d" /etc/fstab
+    sed -i "\|/mnt/loraModels|d" /etc/fstab
+    sed -i "\|/mnt/official-models|d" /etc/fstab
 
     # Detect filesystem types
     FSTYPE1=$(blkid -s TYPE -o value "$DISK1" 2>/dev/null || echo "auto")
@@ -349,9 +355,7 @@ init_server() {
     # Execute initialization commands on remote server
     echo "Starting initialization on $HOST..."
     echo ""
-    ssh -t "$HOST" "$INIT_COMMANDS" < /dev/null
-
-    return 0
+    ssh "$HOST" "$INIT_COMMANDS" < /dev/null
 }
 
 # Validate arguments
