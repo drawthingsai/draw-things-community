@@ -42,6 +42,7 @@ final class ComputeUnitsTests: XCTestCase {
     .init(version: .flux2_4b, width: 8, height: 8, frames: 1),
     .init(version: .cosmos2_5_2b, width: 8, height: 8, frames: 1),
     .init(version: .ideogram4, width: 8, height: 8, frames: 1),
+    .init(version: .krea2, width: 8, height: 8, frames: 1),
     .init(version: .ltx2, width: 8, height: 8, frames: 121),
     .init(version: .ltx2_3, width: 8, height: 8, frames: 121),
     .init(version: .seedvr2_3b, width: 8, height: 8, frames: 1),
@@ -152,6 +153,8 @@ final class ComputeUnitsTests: XCTestCase {
       return 1.176470588 * 0.8
     case .ideogram4:
       return 2.588235294
+    case .krea2:
+      return 2.588235294
     case .ltx2, .ltx2_3:
       return 1.176470588 * 0.8
     case .seedvr2_3b:
@@ -184,7 +187,8 @@ final class ComputeUnitsTests: XCTestCase {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large,
       .flux1, .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .hiDreamI1, .hiDreamO1, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      .cosmos2_5_2b, .hiDreamI1, .hiDreamO1, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .krea2:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
     case .svdI2v:
@@ -250,6 +254,8 @@ final class ComputeUnitsTests: XCTestCase {
       return 256
     case .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
       return 512
+    case .krea2:
+      return 256
     case .ltx2, .ltx2_3:
       return 128
     case .hiDreamI1:

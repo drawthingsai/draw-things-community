@@ -425,10 +425,19 @@ public enum ComputeUnits {
         timesteps: 1, batchSize: 1, textLength: baseTokenLength, channels: 4_608, layers: 34)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .krea2:
-      let mainCount = ErnieImageInstructionCount(
+      let fixedTextLength: (Int, Int) =
+        cfgChannels > 1
+        ? (baseTokenLength, baseTokenLength)
+        : (0, baseTokenLength)
+      let totalFixedTextLength = fixedTextLength.0 + fixedTextLength.1
+      let mainCount = Krea2InstructionCount(
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
-        channels: 6_144, layers: 28, intermediateSize: 16_384)
-      return (main: mainCount * batchSize, fixed: 0)
+        hiddenSize: 6_144, layers: 28, intermediateSize: 16_384)
+      let textFusionCount = Krea2TextFusionAdapterInstructionCount(
+        batchSize: 1, textLength: fixedTextLength)
+      let fixedCount = Krea2FixedInstructionCount(
+        batchSize: 1, timesteps: 1, textLength: totalFixedTextLength)
+      return (main: mainCount * batchSize, fixed: textFusionCount + fixedCount * batchSize)
     case .seedvr2_3b, .seedvr2_7b:
       let configuration: SeedVR2DiTConfiguration =
         context.modelVersion == .seedvr2_7b ? ._7B : ._3B
