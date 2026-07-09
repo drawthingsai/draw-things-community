@@ -846,7 +846,7 @@ public struct ModelZoo: DownloadZoo {
     "ideogram_4_i8x.ckpt":
       "c82dd45d6fba7ad038e8f148760ed5cf65fe4e53c56b57b778fee26275e73503",
     "qwen_3_vl_8b_instruct_q8p.ckpt":
-      "813a47bbfefbf5115f27c7df50995c38f62616cc8a9287218f6338eea25f7615",
+      "54d29b3e951c233ae800604848b83422a48629857c70fb83c4620eb31d900b9a",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
