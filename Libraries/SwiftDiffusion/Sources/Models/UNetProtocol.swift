@@ -1554,15 +1554,31 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tiledAudioHeight = 0
       tileScaleFactor = 8
-      didRunLoRASeparately = false
-      unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
-          let textShape = $0[1].shape
-          return Krea2(
-            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-            textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1)
-          ).1
-        })
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textShape = $0[1].shape
+            return LoRAKrea2(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              LoRAConfiguration: configuration
+            ).1
+          })
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textShape = $0[1].shape
+            return Krea2(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1)
+            ).1
+          })
+      }
     case .flux2, .flux2_9b, .flux2_4b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -2106,8 +2122,13 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<34).map {
                   return ($0, $0)
                 })
+            case .krea2:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<28).map {
+                  return ($0, $0)
+                })
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-              .seedvr2_7b, .krea2:
+              .seedvr2_7b:
               fatalError()
             }
           }()

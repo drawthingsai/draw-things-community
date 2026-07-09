@@ -389,7 +389,23 @@ extension UNetFixedEncoder {
           ).toGPU(0))
         timeEmbeds[i..<(i + 1), 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
       }
-      let (_, unetFixed) = Krea2Fixed(timesteps: timesteps.count)
+      let unetFixed: Model
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        (_, unetFixed) = LoRAKrea2Fixed(
+          timesteps: timesteps.count, LoRAConfiguration: configuration)
+      } else {
+        (_, unetFixed) = Krea2Fixed(timesteps: timesteps.count)
+      }
       unetFixed.maxConcurrency = .limit(4)
       let fixedInputs: [DynamicGraph.AnyTensor] = [c, timeEmbeds]
       unetFixed.compile(inputs: fixedInputs)
@@ -398,7 +414,44 @@ extension UNetFixedEncoder {
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
-        if !loadedFromWeightsCache {
+        if !lora.isEmpty {
+          if shouldRunLoRASeparately {
+            let mapping: [Int: Int] = [0: 0]
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+              ) {
+                name, dataType, format, shape in
+                let result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                  store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
+                )
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+              ) {
+                name, dataType, _, shape in
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
