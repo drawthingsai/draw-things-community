@@ -2003,7 +2003,17 @@ extension UNetFromNNC {
       {
         return true
       }
-      if version == .wan21_14b {  // For 14B Wan 2.1, we will be more aggressive and also offload out projection.
+      if version == .ideogram4 {
+        if name.contains("-w3-") {
+          return true
+        }
+      } else if version == .krea2 {
+        if name.contains("to_q-") || name.contains("to_k-") || name.contains("to_v-")
+          || name.contains("to_out-") || name.contains("-up-")
+        {
+          return true
+        }
+      } else if version == .wan21_14b {  // For 14B Wan 2.1, we will be more aggressive and also offload out projection.
         if name.contains("c_o-") || name.contains("x_o-") {
           return true
         }
