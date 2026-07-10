@@ -16,7 +16,7 @@
 #   lora_models_path: /mnt/loraModels
 #
 # Environment variables:
-#   PROXY_HOST - Proxy server host (default: 100.80.251.87)
+#   PROXY_HOST - Proxy server host (default: 100.71.37.12)
 #   PROXY_PORT - Proxy server port (default: 50002)
 #   DRAW_THINGS_DIR - Path to draw-things repo for bazel commands (default: auto-detect)
 
@@ -24,7 +24,7 @@
 set -e
 
 # Proxy server configuration (can be overridden via environment variables)
-PROXY_HOST="${PROXY_HOST:-100.80.251.87}"
+PROXY_HOST="${PROXY_HOST:-100.71.37.12}"
 PROXY_PORT="${PROXY_PORT:-50002}"
 
 # Auto-detect draw-things directory (4 levels up from script location)
@@ -92,7 +92,7 @@ if [ $# -lt 4 ]; then
     echo "                          If omitted, tmpfs overlay is skipped and models path is used directly."
     echo ""
     echo "Environment variables:"
-    echo "  PROXY_HOST       Proxy server host (default: 100.80.251.87)"
+    echo "  PROXY_HOST       Proxy server host (default: 100.71.37.12)"
     echo "  PROXY_PORT       Proxy server port (default: 50002)"
     echo "  DRAW_THINGS_DIR  Path to draw-things repo (default: auto-detect)"
     echo ""

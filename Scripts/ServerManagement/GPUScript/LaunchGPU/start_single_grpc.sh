@@ -20,7 +20,7 @@ exec gRPCServerCLI /models \
     --max-crashes-within-time-window 10 \
     --cpu-offload \
     --echo-on-queue \
-    --join "{\"host\":\"100.80.251.87\", \"port\":50002, \"servers\": [{\"address\":\"$ADDRESS\", \"port\":$PORT, \"priority\":1}]}" \
+    --join "{\"host\":\"100.71.37.12\", \"port\":50002, \"servers\": [{\"address\":\"$ADDRESS\", \"port\":$PORT, \"priority\":1}]}" \
     --secondary-models-directory "/loraModels/" \
     --blob-store-access-key 7a2a1994c95022455bf8afc6a61a5e9f \
     --blob-store-secret 03dd45eb16a615636b32827778462b5584d4a1e0fa03a0e450e8b56c5ef006ea \
