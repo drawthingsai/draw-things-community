@@ -63,7 +63,6 @@ echo "✅ Docker installed successfully."
 ## Section 1: System Preparation
 echo ""
 echo "➡️ Step 2: Installing NVIDIA CUDA and Container Toolkit..."
-apt_get upgrade -y
 
 ## Section 2: Install CUDA Toolkit
 echo "Adding NVIDIA CUDA repository..."
@@ -110,9 +109,9 @@ echo "✅ NVIDIA Container Toolkit installed and configured."
 echo ""
 echo "➡️ Step 4: Applying security settings..."
 
-# Lock the root user password for enhanced security
-sudo passwd -l root
-echo "✅ Root password locked."
+# Lock the root user password for enhanced security, should do this manually in case we need metal provider login
+# sudo passwd -l root
+# echo "✅ Root password locked."
 
 # --- 4. Install Python dependencies ---
 echo ""
@@ -225,7 +224,7 @@ if [ -n "$UNMOUNT1" ] && [ -n "$UNMOUNT2" ] && [ -n "$DISK1" ] && [ -n "$DISK2" 
     # Set up mergerfs to merge both paths
     echo "Setting up MergerFS overlay at /mnt/official-models..."
     mergerfs -o allow_other,use_ino,ro \
-      /mnt/loraModels/models_extra:/mnt/models \
+      /mnt/models:/mnt/loraModels/models_extra \
       /mnt/official-models
 
     # Add to fstab for persistence
@@ -242,11 +241,21 @@ if [ -n "$UNMOUNT1" ] && [ -n "$UNMOUNT2" ] && [ -n "$DISK1" ] && [ -n "$DISK2" 
     # Detect filesystem types
     FSTYPE1=$(blkid -s TYPE -o value "$DISK1" 2>/dev/null || echo "auto")
     FSTYPE2=$(blkid -s TYPE -o value "$DISK2" 2>/dev/null || echo "auto")
+    UUID1=$(blkid -s UUID -o value "$DISK1" 2>/dev/null || true)
+    UUID2=$(blkid -s UUID -o value "$DISK2" 2>/dev/null || true)
+    FSTAB_DISK1="$DISK1"
+    FSTAB_DISK2="$DISK2"
+    if [ -n "$UUID1" ]; then
+        FSTAB_DISK1="UUID=$UUID1"
+    fi
+    if [ -n "$UUID2" ]; then
+        FSTAB_DISK2="UUID=$UUID2"
+    fi
 
     # Add new entries
-    echo "$DISK1 /mnt/models $FSTYPE1 defaults 0 2" >> /etc/fstab
-    echo "$DISK2 /mnt/loraModels $FSTYPE2 defaults 0 2" >> /etc/fstab
-    echo "/mnt/loraModels/models_extra:/mnt/models /mnt/official-models fuse.mergerfs allow_other,use_ino,ro 0 0" >> /etc/fstab
+    echo "$FSTAB_DISK1 /mnt/models $FSTYPE1 defaults,nofail 0 2" >> /etc/fstab
+    echo "$FSTAB_DISK2 /mnt/loraModels $FSTYPE2 defaults,nofail 0 2" >> /etc/fstab
+    echo "/mnt/models:/mnt/loraModels/models_extra /mnt/official-models fuse.mergerfs allow_other,use_ino,ro,nofail 0 0" >> /etc/fstab
 
     echo "✅ Disk mounts and MergerFS configured successfully."
     echo ""
@@ -265,9 +274,13 @@ echo "=================================================="
 echo "🎉 GPU Server Initialization Complete!"
 echo "=================================================="
 echo ""
-echo "A system **reboot** is highly recommended."
+if [ -f /var/run/reboot-required ]; then
+    echo "A system reboot is required by installed packages."
+else
+    echo "No package-required reboot marker found."
+fi
 echo ""
-echo "Post-reboot verification commands:"
+echo "Verification commands:"
 echo "  1. nvidia-smi                    # Check GPU status"
 echo "  2. nvcc --version                # Check CUDA version"
 echo "  3. sudo docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi"
@@ -406,7 +419,7 @@ else
         echo "=================================================="
         echo "✅ Initialization complete!"
         echo ""
-        echo "Remember to reboot the server."
+        echo "Check /var/run/reboot-required before rebooting the server."
         exit 0
     else
         echo ""
