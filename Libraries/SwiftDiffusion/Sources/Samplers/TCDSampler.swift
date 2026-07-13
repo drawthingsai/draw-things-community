@@ -172,6 +172,7 @@ extension TCDSampler: Sampler {
       for i in 0..<c.count {
         let shape = c[i].shape
         let batchSize = shape[0] / 2
+        guard batchSize > 0 else { continue }
         if shape.count == 3 {
           let conditionalLength = version == .kandinsky21 ? shape[1] : tokenLengthCond
           // Only tokenLengthCond is used.
