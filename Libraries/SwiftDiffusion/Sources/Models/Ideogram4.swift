@@ -2,6 +2,19 @@ import DiffusionMappings
 import Foundation
 import NNC
 
+let Ideogram4ConditionCount = 3 + 34 * 4 + 1
+
+func Ideogram4HasUnconditionalDiT(graph: DynamicGraph, filePath: String) -> Bool {
+  var hasUnconditionalDiT = false
+  graph.openStore(
+    filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+  ) { store in
+    hasUnconditionalDiT =
+      store.read(like: "__unconditional_dit__[t-input_proj-0-0]") != nil
+  }
+  return hasUnconditionalDiT
+}
+
 public func Ideogram4TimeEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   timestep: Float, dim: Int = 4_608, of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
@@ -225,10 +238,10 @@ private func Ideogram4BlockFixed(prefix: String) -> (ModelWeightMapper, Model) {
   return (mapper, Model([adaln], [scaleMSA, gateMSA, scaleMLP, gateMLP]))
 }
 
-public func Ideogram4Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
+public func Ideogram4Fixed(timesteps: Int, hasTextConditioning: Bool = true) -> (
+  ModelWeightMapper, Model
+) {
   precondition(timesteps > 0)
-  let textFeatures = Input()
-  let textIndicatorIDs = Input()
   let imageIndicatorIDs = Input()
   let tEmbed = Input()
 
@@ -236,9 +249,21 @@ public func Ideogram4Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
     FloatType.self, vocabularySize: 2, embeddingSize: 4_608, name: "indicator_embedding")
   let llmNorm = RMSNorm(epsilon: 1e-6, axis: [2], name: "llm_cond_norm")
   let llmProj = Dense(count: 4_608, name: "llm_cond_proj")
-  let textIndicator = indicatorEmbedding(textIndicatorIDs).reshaped([1, -1, 4_608])
-  let textOut = llmProj(llmNorm(textFeatures)) + textIndicator
   let imageIndicator = indicatorEmbedding(imageIndicatorIDs)
+
+  let inputs: [Model.IO]
+  var outs: [Model.IO]
+  if hasTextConditioning {
+    let textFeatures = Input()
+    let textIndicatorIDs = Input()
+    let textIndicator = indicatorEmbedding(textIndicatorIDs).reshaped([1, -1, 4_608])
+    let textOut = llmProj(llmNorm(textFeatures)) + textIndicator
+    inputs = [textFeatures, textIndicatorIDs, imageIndicatorIDs, tEmbed]
+    outs = [textOut, imageIndicator]
+  } else {
+    inputs = [imageIndicatorIDs, tEmbed]
+    outs = [imageIndicator]
+  }
 
   let tMlpIn = Dense(count: 4_608, name: "t_embedding_mlp_in")
   let tMlpOut = Dense(count: 4_608, name: "t_embedding_mlp_out")
@@ -246,7 +271,6 @@ public func Ideogram4Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
   let adaln = adalnProj(tMlpOut(tMlpIn(tEmbed).swish())).swish()
 
   var blockMappers = [ModelWeightMapper]()
-  var outs: [Model.IO] = [textOut, imageIndicator]
   for i in 0..<34 {
     let (mapper, block) = Ideogram4BlockFixed(prefix: "layers.\(i)")
     outs.append(block(adaln))
@@ -261,9 +285,11 @@ public func Ideogram4Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
       mapping.merge(blockMapper(format)) { v, _ in v }
     }
     mapping["embed_image_indicator.weight"] = [indicatorEmbedding.weight.name]
-    mapping["llm_cond_norm.weight"] = [llmNorm.weight.name]
-    mapping["llm_cond_proj.weight"] = [llmProj.weight.name]
-    mapping["llm_cond_proj.bias"] = [llmProj.bias.name]
+    if hasTextConditioning {
+      mapping["llm_cond_norm.weight"] = [llmNorm.weight.name]
+      mapping["llm_cond_proj.weight"] = [llmProj.weight.name]
+      mapping["llm_cond_proj.bias"] = [llmProj.bias.name]
+    }
     mapping["t_embedding.mlp_in.weight"] = [tMlpIn.weight.name]
     mapping["t_embedding.mlp_in.bias"] = [tMlpIn.bias.name]
     mapping["t_embedding.mlp_out.weight"] = [tMlpOut.weight.name]
@@ -274,27 +300,29 @@ public func Ideogram4Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
     mapping["final_layer.adaln_modulation.bias"] = [finalAdaln.bias.name]
     return mapping
   }
-  return (mapper, Model([textFeatures, textIndicatorIDs, imageIndicatorIDs, tEmbed], outs))
+  return (mapper, Model(inputs, outs))
 }
 
 public func Ideogram4(
   batchSize: Int, height: Int, width: Int, textLength: Int,
   usesFlashAttention: FlashAttentionLevel
 ) -> (ModelWeightMapper, Model) {
-  precondition(height % 2 == 0 && width % 2 == 0)
+  precondition(height % 2 == 0 && width % 2 == 0 && textLength >= 0)
   let h = height / 2
   let w = width / 2
   let imageLength = h * w
   let tokenLength = textLength + imageLength
   let x = Input()
-  let textOut = Input()
   let imageIndicator = Input()
   let rot = Input()
   let xImage = x.reshaped([batchSize, h, 2, w, 2, 32]).permuted(0, 1, 3, 2, 4, 5)
     .contiguous().reshaped([batchSize, imageLength, 128])
   let inputProj = Dense(count: 4_608, name: "input_proj")
   let imageOut = inputProj(xImage) + imageIndicator.reshaped([1, imageLength, 4_608])
-  var out = Functional.concat(axis: 1, imageOut, textOut).to(.Float32)
+  let textOut: Model.IO? = textLength > 0 ? Input() : nil
+  var out =
+    textOut.map { Functional.concat(axis: 1, imageOut, $0).to(.Float32) }
+    ?? imageOut.to(.Float32)
   let rotResized = rot.reshaped(.NHWC(1, tokenLength, 1, 256))
 
   var blockMappers = [ModelWeightMapper]()
@@ -331,7 +359,11 @@ public func Ideogram4(
     mapping["final_layer.linear.bias"] = [finalLinear.bias.name]
     return mapping
   }
-  return (mapper, Model([x, textOut, imageIndicator, rot] + adalns + [finalScale], [out]))
+  return (
+    mapper,
+    Model(
+      [x] + (textOut.map { [$0] } ?? []) + [imageIndicator, rot] + adalns + [finalScale], [out])
+  )
 }
 
 private func LoRAIdeogram4Attention(

@@ -171,8 +171,9 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
     .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
     return conditions
   case .ideogram4:
-    return Array(conditions[0..<3])
-      + conditions[3..<conditions.count].map {
+    var extracted =
+      Array(conditions[0..<3])
+      + conditions[3..<Ideogram4ConditionCount].map {
         let shape = $0.shape
         if shape.count == 2 {
           return DynamicGraph.Tensor<FloatType>($0)[
@@ -183,6 +184,23 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
           index..<(index + 1), 0..<shape[1], 0..<shape[2]
         ].copied()
       }
+    if conditions.count > Ideogram4ConditionCount {
+      extracted += Array(
+        conditions[
+          Ideogram4ConditionCount..<(Ideogram4ConditionCount + 2)])
+      extracted += conditions[(Ideogram4ConditionCount + 2)..<conditions.count].map {
+        let shape = $0.shape
+        if shape.count == 2 {
+          return DynamicGraph.Tensor<FloatType>($0)[
+            index..<(index + 1), 0..<shape[1]
+          ].copied()
+        }
+        return DynamicGraph.Tensor<FloatType>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
+    }
+    return extracted
   case .krea2:
     return Array(conditions[0..<2])
       + conditions[2..<conditions.count].map {
@@ -546,6 +564,7 @@ enum ModelBuilderOrModel {
 public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetProtocol {
   var teaCache: TeaCache<FloatType>? = nil
   var unet: ModelBuilderOrModel? = nil
+  var unconditionalUNet: ModelBuilderOrModel? = nil
   var previewer: Model? = nil
   var unetWeightMapper: ModelWeightMapper? = nil
   var timeEmbed: Model? = nil
@@ -591,6 +610,7 @@ extension UNetFromNNC {
 
   public mutating func unloadModel() {
     unet = nil
+    unconditionalUNet = nil
   }
 
   public mutating func compileModel(
@@ -660,8 +680,10 @@ extension UNetFromNNC {
     let runLoRASeparatelyIsPreferred =
       isQuantizedModel || externalOnDemand || externalOnDemandPartially || isBF16
     let isTeaCacheEnabled = teaCacheConfiguration.threshold > 0
+    var unconditionalUNet: ModelBuilderOrModel? = nil
     switch version {
     case .ideogram4:
+      precondition(c.count >= Ideogram4ConditionCount)
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
       tiledHeight =
@@ -691,6 +713,15 @@ extension UNetFromNNC {
             return Ideogram4(
               batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1)
+            ).1
+          })
+      }
+      if c.count > Ideogram4ConditionCount {
+        unconditionalUNet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            return Ideogram4(
+              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth, textLength: 0,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).1
           })
       }
@@ -1937,6 +1968,7 @@ extension UNetFromNNC {
       inputs.append(contentsOf: injectedAttentionKVs)
     }
     unet.maxConcurrency = .limit(4)
+    unconditionalUNet?.maxConcurrency = .limit(4)
     let tileOverlap = min(
       min(
         tiledDiffusion.tileOverlap * tileScaleFactor / 2,
@@ -1954,14 +1986,16 @@ extension UNetFromNNC {
         inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth, modifier: modifier,
         referenceImageCount: referenceImageCount)
       compile(
-        unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        isCfgEnabled: isCfgEnabled, referenceImageCount: referenceImageCount,
+        unet, unconditionalUNet: unconditionalUNet, tokenLengthUncond: tokenLengthUncond,
+        tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
+        referenceImageCount: referenceImageCount,
         inputs: [xT.reshaped(.NHWC(shape[0], tiledHeight + tiledAudioHeight, tiledWidth, shape[3]))]
           + inputs)
     } else {
       compile(
-        unet, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-        isCfgEnabled: isCfgEnabled, referenceImageCount: referenceImageCount, inputs: [xT] + inputs)
+        unet, unconditionalUNet: unconditionalUNet, tokenLengthUncond: tokenLengthUncond,
+        tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
+        referenceImageCount: referenceImageCount, inputs: [xT] + inputs)
     }
     if let timeEmbed = timeEmbed, let timestep = timestep {
       timeEmbed.compile(inputs: timestep)
@@ -2328,6 +2362,17 @@ extension UNetFromNNC {
           }
         }
       }
+      if let unconditionalUNet = unconditionalUNet {
+        store.read(
+          "unconditional_dit", model: unconditionalUNet.unwrapped,
+          codec: [.jit, .q6p, .q8p, .ezm7, .i8x, externalData]
+        ) { name, _, _, _ in
+          if shouldOffload(name: name) {
+            return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
+          }
+          return .continue(name)
+        }
+      }
       if let timeEmbed = timeEmbed {
         store.read(
           "time_embed", model: timeEmbed,
@@ -2348,6 +2393,7 @@ extension UNetFromNNC {
       }
     }
     self.unet = unet
+    self.unconditionalUNet = unconditionalUNet
     if startWidth > tiledWidth || startHeight > tiledHeight {
       (xTileWeightsAndIndexes, yTileWeightsAndIndexes) = xyTileWeightsAndIndexes(
         width: startWidth, height: startHeight, xTiles: xTiles, yTiles: yTiles,
@@ -2514,7 +2560,8 @@ extension UNetFromNNC {
         break
       case .ideogram4:
         let imageLength = (originalShape[1] / 2) * (originalShape[2] / 2)
-        if $0.0 == 1 {
+        let hasUnconditionalConditions = count > Ideogram4ConditionCount
+        if $0.0 == 1 || (hasUnconditionalConditions && $0.0 == Ideogram4ConditionCount) {
           let shape = $0.1.shape
           guard shape.count == 2, shape[0] == imageLength else { break }
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1).reshaped(
@@ -2525,18 +2572,17 @@ extension UNetFromNNC {
             (inputStartYPad / 2)..<(inputEndYPad / 2),
             (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[1]
           ].copied().reshaped(.WC(h * w, shape[1]))
-        } else if $0.0 == 2 {
+        } else if $0.0 == 2
+          || (hasUnconditionalConditions && $0.0 == Ideogram4ConditionCount + 1)
+        {
           let shape = $0.1.shape
-          guard shape.count == 4, shape[0] == 1, shape[1] > imageLength else { break }
+          guard shape.count == 4, shape[0] == 1, shape[1] >= imageLength else { break }
           let tokenLength = shape[1] - imageLength
           let graph = $0.1.graph
           let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
             0..<shape[0], 0..<imageLength, 0..<shape[2], 0..<shape[3]
           ].copied().reshaped(
             .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[2] * shape[3]))
-          let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
-            0..<shape[0], imageLength..<shape[1], 0..<shape[2], 0..<shape[3]
-          ].copied()
           let h = inputEndYPad / 2 - inputStartYPad / 2
           let w = inputEndXPad / 2 - inputStartXPad / 2
           let sliceEncoding = imageEncoding[
@@ -2547,9 +2593,13 @@ extension UNetFromNNC {
             $0.1.kind, .NHWC(shape[0], h * w + tokenLength, shape[2], shape[3]),
             of: FloatType.self)
           finalEncoding[0..<shape[0], 0..<(h * w), 0..<shape[2], 0..<shape[3]] = sliceEncoding
-          finalEncoding[
-            0..<shape[0], (h * w)..<(h * w + tokenLength), 0..<shape[2], 0..<shape[3]] =
-            tokenEncoding
+          if tokenLength > 0 {
+            finalEncoding[
+              0..<shape[0], (h * w)..<(h * w + tokenLength), 0..<shape[2], 0..<shape[3]] =
+              DynamicGraph.Tensor<FloatType>($0.1)[
+                0..<shape[0], imageLength..<shape[1], 0..<shape[2], 0..<shape[3]
+              ].copied()
+          }
           return finalEncoding
         }
       case .krea2:
@@ -2760,8 +2810,9 @@ extension UNetFromNNC {
   }
 
   private func compile(
-    _ unet: ModelBuilderOrModel, tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
-    referenceImageCount: Int, inputs: [DynamicGraph.AnyTensor]
+    _ unet: ModelBuilderOrModel, unconditionalUNet: ModelBuilderOrModel?, tokenLengthUncond: Int,
+    tokenLengthCond: Int, isCfgEnabled: Bool, referenceImageCount: Int,
+    inputs: [DynamicGraph.AnyTensor]
   ) {
     switch version {
     case .hunyuanVideo:
@@ -2893,13 +2944,23 @@ extension UNetFromNNC {
       let textShape = text.shape
       precondition(textShape.count == 3)
       let batchSize = xInput.shape[0]
-      let useConditional = isCfgEnabled && tokenLengthCond > tokenLengthUncond
-      let textOffset = isCfgEnabled && useConditional ? tokenLengthUncond : 0
+      let useUnconditionalDiT = unconditionalUNet != nil
+      let useConditional =
+        useUnconditionalDiT || (isCfgEnabled && tokenLengthCond > tokenLengthUncond)
+      let textOffset =
+        useUnconditionalDiT ? 0 : (isCfgEnabled && useConditional ? tokenLengthUncond : 0)
       let textLength = useConditional || !isCfgEnabled ? tokenLengthCond : tokenLengthUncond
       let textInput = text[
         0..<batchSize, textOffset..<(textOffset + textLength), 0..<textShape[2]
       ].copied()
-      unet.compile(inputs: [xInput, textInput, inputs[2], inputs[3]] + Array(inputs[4...]))
+      let conditionEnd =
+        useUnconditionalDiT ? 1 + Ideogram4ConditionCount : inputs.count
+      unet.compile(
+        inputs: [xInput, textInput, inputs[2], inputs[3]] + Array(inputs[4..<conditionEnd]))
+      if let unconditionalUNet = unconditionalUNet {
+        precondition(inputs.count > conditionEnd)
+        unconditionalUNet.compile(inputs: [xInput] + Array(inputs[conditionEnd..<inputs.count]))
+      }
       return
     case .krea2:
       let x = DynamicGraph.Tensor<FloatType>(inputs[0])
@@ -3473,6 +3534,36 @@ extension UNetFromNNC {
       }
       return Functional.concat(axis: 0, etUncond, etCond)
     case .ideogram4:
+      if let unconditionalUNet = unconditionalUNet {
+        precondition(restInputs.count > Ideogram4ConditionCount)
+        let shape = firstInput.shape
+        let batchSize = shape[0] / 2
+        let xCond = firstInput[
+          batchSize..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let text = DynamicGraph.Tensor<FloatType>(restInputs[0])
+        let textShape = text.shape
+        precondition(textShape.count == 3 && textShape[0] == batchSize)
+        let textCond = text[
+          0..<batchSize, 0..<tokenLengthCond, 0..<textShape[2]
+        ].copied()
+        let etCond = unet(
+          inputs: xCond,
+          [textCond] + Array(restInputs[1..<Ideogram4ConditionCount])
+        )[0].as(of: FloatType.self)
+        etCond.graph.joined()
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        let xUncond = firstInput[
+          0..<batchSize, 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ].copied()
+        let etUncond = unconditionalUNet(
+          inputs: xUncond,
+          Array(restInputs[Ideogram4ConditionCount..<restInputs.count])
+        )[0].as(of: FloatType.self)
+        return Functional.concat(axis: 0, etUncond, etCond)
+      }
       let text = DynamicGraph.Tensor<FloatType>(restInputs[0])
       let textShape = text.shape
       precondition(textShape.count == 3)
@@ -4923,6 +5014,8 @@ extension UNetFromNNC {
   public mutating func cancel() {
     isCancelled.store(true, ordering: .releasing)
     unet?.cancel()
+    unconditionalUNet?.cancel()
     unet = nil
+    unconditionalUNet = nil
   }
 }

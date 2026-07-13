@@ -1371,8 +1371,7 @@ public struct ModelZoo: DownloadZoo {
     Specification(
       name: "Ideogram 4 (8-bit S)", file: "ideogram_4_i8x.ckpt", prefix: "",
       version: .ideogram4, defaultScale: 16, textEncoder: "qwen_3_vl_8b_instruct_q8p.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000),
-      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
+      autoencoder: "flux_2_vae_f16.ckpt",
       paddedTextEncodingLength: 0, hiresFixScale: 24,
       note:
         "[Ideogram 4](https://huggingface.co/ideogram-ai/ideogram-4-fp8) is Ideogram's non-commercial text-to-image release. The Hugging Face release packages the FP8 checkpoint for Diffusers as an Ideogram4Pipeline flow-matching DiT, with benchmark material focused on typography, design, and image quality. Ideogram's native prompting path uses structured JSON captions with a high-level description and compositional deconstruction of background, objects, and text elements; prompt upsampling converts short user ideas into that schema. This Draw Things entry uses Qwen3-VL 8B Instruct for text encoding and the FLUX.2 VAE.",
@@ -1382,9 +1381,6 @@ public struct ModelZoo: DownloadZoo {
       name: "Krea 2 Turbo (8-bit S)", file: "krea_2_turbo_i8x.ckpt", prefix: "",
       version: .krea2, defaultScale: 16, textEncoder: "qwen_3_vl_4b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", clipEncoder: "krea_2_turbo_i8x.ckpt",
-      isConsistencyModel: true,
-      objective: .u(conditionScale: 1000),
-      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
       paddedTextEncodingLength: 0, hiresFixScale: 24,
       note:
         "Krea 2 Turbo is a fast text-to-image flow model using Qwen3-VL text conditioning and the Qwen Image/Wan VAE latent contract. The turbo checkpoint is intended for low-step generation; 1024x1024 at CFG 1 with 4 sampling steps is the validated bring-up target."
@@ -1393,8 +1389,6 @@ public struct ModelZoo: DownloadZoo {
       name: "Krea 2 Raw (8-bit S)", file: "krea_2_raw_i8x.ckpt", prefix: "",
       version: .krea2, defaultScale: 16, textEncoder: "qwen_3_vl_4b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", clipEncoder: "krea_2_raw_i8x.ckpt",
-      objective: .u(conditionScale: 1000),
-      noiseDiscretization: .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000)),
       paddedTextEncodingLength: 0, hiresFixScale: 24,
       note:
         "Krea 2 Raw is the higher-step Krea 2 text-to-image flow checkpoint using Qwen3-VL text conditioning and the Qwen Image/Wan VAE latent contract. It is intended for CFG-guided generation; 1024x1024 at CFG 4 with around 30 sampling steps is the validated bring-up target."

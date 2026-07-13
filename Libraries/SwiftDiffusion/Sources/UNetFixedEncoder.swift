@@ -250,10 +250,18 @@ extension UNetFixedEncoder {
     case .ideogram4:
       let c0 = textEncoding[0]
       let featureLength = c0.shape[2]
-      let textLength = (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond
+      let useUnconditionalDiT =
+        isCfgEnabled && zeroNegativePrompt
+        && Ideogram4HasUnconditionalDiT(graph: graph, filePath: filePath)
+      let textLength =
+        useUnconditionalDiT
+        ? tokenLengthCond : (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond
       var c = graph.variable(
         .GPU(0), .HWC(batchSize, textLength, featureLength), of: FloatType.self)
-      if isCfgEnabled {
+      if useUnconditionalDiT {
+        c[0..<batchSize, 0..<tokenLengthCond, 0..<featureLength] =
+          c0[batchSize..<(batchSize * 2), 0..<tokenLengthCond, 0..<featureLength]
+      } else if isCfgEnabled {
         c[0..<batchSize, 0..<tokenLengthUncond, 0..<featureLength] =
           c0[0..<batchSize, 0..<tokenLengthUncond, 0..<featureLength]
         c[
@@ -354,13 +362,45 @@ extension UNetFixedEncoder {
         inputs: c, [textIndicatorIDs, imageIndicatorIDs, timeEmbeds]
       ).map { $0.as(of: FloatType.self) }
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
-      let maxTextLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
+      let maxTextLength =
+        useUnconditionalDiT
+        ? tokenLengthCond
+        : (isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond)
       let rotary = graph.variable(
         Ideogram4RotaryPositionEmbedding(
           textLength: maxTextLength, gridHeight: h, gridWidth: w, of: FloatType.self
         ).toGPU(0))
-      precondition(fixedConditions.count == 2 + 34 * 4 + 1)
-      return ([fixedConditions[0], fixedConditions[1], rotary] + Array(fixedConditions[2...]), nil)
+      let conditionalConditions =
+        [fixedConditions[0], fixedConditions[1], rotary] + Array(fixedConditions[2...])
+      guard useUnconditionalDiT else { return (conditionalConditions, nil) }
+
+      let (_, unconditionalFixed) = Ideogram4Fixed(
+        timesteps: timesteps.count, hasTextConditioning: false)
+      unconditionalFixed.maxConcurrency = .limit(4)
+      let unconditionalFixedInputs: [DynamicGraph.AnyTensor] = [imageIndicatorIDs, timeEmbeds]
+      unconditionalFixed.compile(inputs: unconditionalFixedInputs)
+      let unconditionalFixedCacheKey = "\(filePath):[unconditional_dit:fixed]"
+      if !weightsCache.detach(unconditionalFixedCacheKey, to: unconditionalFixed.parameters) {
+        graph.openStore(
+          filePath, flags: .readOnly,
+          externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          store.read(
+            "unconditional_dit", model: unconditionalFixed,
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      let unconditionalFixedConditions = unconditionalFixed(
+        inputs: imageIndicatorIDs, [timeEmbeds]
+      ).map { $0.as(of: FloatType.self) }
+      weightsCache.attach(unconditionalFixedCacheKey, from: unconditionalFixed.parameters)
+      let unconditionalRotary = rotary[
+        0..<1, 0..<imageLength, 0..<1, 0..<256
+      ].copied()
+      let unconditionalConditions =
+        [unconditionalFixedConditions[0], unconditionalRotary]
+        + Array(unconditionalFixedConditions[1...])
+      return (conditionalConditions + unconditionalConditions, nil)
     case .krea2:
       let c0 = textEncoding[0]
       let featureLength = c0.shape[2]
