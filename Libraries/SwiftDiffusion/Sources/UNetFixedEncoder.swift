@@ -322,9 +322,13 @@ extension UNetFixedEncoder {
               })
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+                "dit", model: unetFixed,
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) {
                 name, dataType, format, shape in
+                if name.contains("t-indicator_embedding-0-0") {
+                  return .continue("indicator_embedding")
+                }
                 let result = loader.concatenateLoRA(
                   graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape, of: FloatType.self
@@ -345,9 +349,13 @@ extension UNetFixedEncoder {
           } else {
             LoRALoader.openStore(graph, lora: lora) { loader in
               store.read(
-                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+                "dit", model: unetFixed,
+                codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
               ) {
                 name, dataType, _, shape in
+                if name.contains("t-indicator_embedding-0-0") {
+                  return .continue("indicator_embedding")
+                }
                 return loader.mergeLoRA(
                   graph, name: name, store: store, dataType: dataType, shape: shape,
                   of: FloatType.self)
@@ -355,7 +363,15 @@ extension UNetFixedEncoder {
             }
           }
         } else if !loadedFromWeightsCache {
-          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+          store.read(
+            "dit", model: unetFixed,
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+          ) { name, _, _, _ in
+            if name.contains("t-indicator_embedding-0-0") {
+              return .continue("indicator_embedding")
+            }
+            return .continue(name)
+          }
         }
       }
       let fixedConditions = unetFixed(
@@ -387,7 +403,13 @@ extension UNetFixedEncoder {
         ) { store in
           store.read(
             "unconditional_dit", model: unconditionalFixed,
-            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+          ) { name, _, _, _ in
+            if name.contains("t-indicator_embedding-0-0") {
+              return .continue("indicator_embedding")
+            }
+            return .continue(name)
+          }
         }
       }
       let unconditionalFixedConditions = unconditionalFixed(
