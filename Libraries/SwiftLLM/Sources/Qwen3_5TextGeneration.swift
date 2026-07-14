@@ -1,14 +1,15 @@
 import Foundation
 import NNC
 
-private let qwen3_5PrefillChunkSize = 4_096
-
 public enum Qwen3_5TextGenerationError: LocalizedError {
+  case cancelled
   case missingStoreTensor(String)
   case invalidLogits
 
   public var errorDescription: String? {
     switch self {
+    case .cancelled:
+      return "Qwen3.5 generation was cancelled."
     case .missingStoreTensor(let name):
       return "Missing tensor '\(name)' in Qwen3.5 store."
     case .invalidLogits:
@@ -94,14 +95,18 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
 
   public func generate(
     graph: DynamicGraph, promptTokenIds: [Int32], maxTokens: Int,
+    prefillChunkSize: Int = 4_096,
+    shouldContinue: () -> Bool = { true },
     partialHandler: ([Int32]) -> Bool,
     timingHandler: ((Qwen3_5GenerationTiming) -> Void)? = nil
   ) throws -> [Int32] {
     precondition(!promptTokenIds.isEmpty)
+    precondition(prefillChunkSize > 0)
     guard maxTokens > 0 else { return [] }
     let streamContext = StreamContext(.GPU(0))
     return try graph.withStream(streamContext) {
       try graph.withNoGrad {
+        guard shouldContinue() else { throw Qwen3_5TextGenerationError.cancelled }
         let hasFullAttentionLayer = (0..<configuration.layers).contains {
           !configuration.isLinearAttentionLayer($0)
         }
@@ -147,7 +152,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         var loadAndCompileMilliseconds = 0.0
         var prefillMilliseconds = 0.0
         do {
-          let firstChunkLength = min(qwen3_5PrefillChunkSize, promptTokenIds.count)
+          let firstChunkLength = min(prefillChunkSize, promptTokenIds.count)
           let firstPrefillTokens = promptTokens.reshaped(
             .C(firstChunkLength), offset: [0], strides: [1])
           var firstPrefillAttentionInputs = [DynamicGraph.AnyTensor]()
@@ -166,6 +171,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let inputs: [DynamicGraph.AnyTensor] =
             [firstPrefillTokens] + firstPrefillAttentionInputs + firstPrefillCacheInputs
           let loadStart = Date.timeIntervalSinceReferenceDate
+          guard shouldContinue() else { throw Qwen3_5TextGenerationError.cancelled }
           try graph.openStore(
             filePath, flags: .readOnly,
             externalStore: TensorData.externalStore(filePath: filePath)
@@ -183,8 +189,9 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           loadAndCompileMilliseconds = (Date.timeIntervalSinceReferenceDate - loadStart) * 1_000
           let prefillStart = Date.timeIntervalSinceReferenceDate
           var prefillTokenCPU: DynamicGraph.Tensor<Int32>?
-          for start in stride(from: 0, to: promptTokenIds.count, by: qwen3_5PrefillChunkSize) {
-            let length = min(qwen3_5PrefillChunkSize, promptTokenIds.count - start)
+          for start in stride(from: 0, to: promptTokenIds.count, by: prefillChunkSize) {
+            guard shouldContinue() else { throw Qwen3_5TextGenerationError.cancelled }
+            let length = min(prefillChunkSize, promptTokenIds.count - start)
             let isLast = start + length == promptTokenIds.count
             let chunkTokens = promptTokens.reshaped(.C(length), offset: [start], strides: [1])
             var chunkAttentionInputs = [DynamicGraph.AnyTensor]()
@@ -269,6 +276,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             }
             var shouldAppendPendingToken = true
             for decodeIndex in 0..<(maxTokens - 1) {
+              guard shouldContinue() else { throw Qwen3_5TextGenerationError.cancelled }
               let cachedTokenLength = promptTokenIds.count + decodeIndex
               var oneAttentionInputs = [DynamicGraph.AnyTensor]()
               if let rotaryEmbeddingForMaxTokens = rotaryEmbeddingForMaxTokens {
