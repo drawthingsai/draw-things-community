@@ -3167,22 +3167,14 @@ extension TextEncoder {
               "dit", model: textAdapter,
               codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
             ) { name, dataType, format, shape in
-              let loraName: String
-              if (name.contains("lora_up") || name.contains("lora_down"))
-                && name.hasPrefix("__dit__")
-              {
-                loraName = "__llm_adapter__" + String(name.dropFirst("__dit__".count))
-              } else {
-                loraName = name
-              }
               let result: DynamicGraph.Store.ModelReaderResult
               if dataType == .Float32 {
                 result = loader.concatenateLoRA(
-                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: loraName,
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape, of: Float32.self)
               } else {
                 result = loader.concatenateLoRA(
-                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: loraName,
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
                   store: store, dataType: dataType, format: format, shape: shape,
                   of: FloatType.self)
               }
