@@ -3180,7 +3180,6 @@ extension TextEncoder {
               }
               switch result {
               case .continue(let updatedName, _, _):
-                guard loraName == name else { return .fail }
                 guard updatedName == name else { return result }
                 if !loadedFromWeightsCache {
                   return result
