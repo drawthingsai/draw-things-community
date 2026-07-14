@@ -898,4 +898,15 @@ extension GenerationConfiguration {
     FieldExpr(
       name: "f176", primaryKey: false, hasIndex: false, tableReader: _tr__f176,
       objectReader: _or__f176)
+
+  private static func _tr__f178(_ table: ByteBuffer) -> Bool? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return tr0.expandPromptToJson
+  }
+  private static func _or__f178(_ or0: GenerationConfiguration) -> Bool? {
+    return or0.expandPromptToJson
+  }
+  public static let expandPromptToJson: FieldExpr<Bool, GenerationConfiguration> = FieldExpr(
+    name: "f178", primaryKey: false, hasIndex: false, tableReader: _tr__f178,
+    objectReader: _or__f178)
 }

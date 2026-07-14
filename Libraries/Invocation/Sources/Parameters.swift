@@ -147,7 +147,8 @@ public final class Parameters {
     preserveOriginalAfterInpaintParameter, tiledDiffusionParameter,
     t5TextEncoderParameter, separateClipLParameter, separateOpenClipGParameter,
     speedUpWithGuidanceEmbedParameter, resolutionDependentShiftParameter,
-    teaCacheParameter, separateT5Parameter, cfgZeroStarParameter: BoolParameter
+    teaCacheParameter, separateT5Parameter, cfgZeroStarParameter,
+    expandPromptToJsonParameter: BoolParameter
   let lorasParameter: JSONParameter<[JSLoRA]>
   let controlsParameter: JSONParameter<[JSControl]>
 
@@ -489,6 +490,10 @@ public final class Parameters {
       titleKey: "color_calibration", explanationKey: nil,
       defaultValue: defaultConfiguration.colorCalibration,
       commandLineFlag: "color-calibration", additionalJsonKeys: ["color_calibration"])
+    expandPromptToJsonParameter = BoolParameter(
+      titleKey: "expand_prompt_to_json", explanationKey: nil,
+      commandLineFlag: "expand-prompt-to-json", additionalJsonKeys: ["expand_prompt_to_json"],
+      defaultValue: defaultConfiguration.expandPromptToJson)
   }
 
   public func allParameters() -> [Parameter] {
@@ -575,6 +580,7 @@ public final class Parameters {
       compressionArtifactsParameter,
       compressionArtifactsQualityParameter,
       colorCalibrationParameter,
+      expandPromptToJsonParameter,
     ]
   }
 }

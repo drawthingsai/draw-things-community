@@ -181,6 +181,7 @@ public final class JSGenerationConfiguration: Codable {
   public var compressionArtifacts: String?
   public var compressionArtifactsQuality: Float32?
   public var colorCalibration: String?
+  public var expandPromptToJson: Bool
 
   public init(configuration: GenerationConfiguration) {
     id = configuration.id
@@ -280,6 +281,7 @@ public final class JSGenerationConfiguration: Codable {
     case .lab:
       colorCalibration = "lab"
     }
+    expandPromptToJson = configuration.expandPromptToJson
   }
 
   public func createGenerationConfiguration() -> GenerationConfiguration {
@@ -368,7 +370,8 @@ public final class JSGenerationConfiguration: Codable {
       cfgZeroInitSteps: cfgZeroInitSteps,
       compressionArtifacts: compressionArtifactsSetting,
       compressionArtifactsQuality: compressionArtifactsQuality,
-      colorCalibration: colorCalibrationSetting
+      colorCalibration: colorCalibrationSetting,
+      expandPromptToJson: expandPromptToJson
     )
   }
 }

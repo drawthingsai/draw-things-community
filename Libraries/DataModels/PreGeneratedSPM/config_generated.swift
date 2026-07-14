@@ -490,6 +490,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     case compressionArtifacts = 172
     case compressionArtifactsQuality = 174
     case colorCalibration = 176
+    case expandPromptToJson = 178
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -882,8 +883,12 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
       : zzz_DflatGen_ColorCalibration(rawValue: _accessor.readBuffer(of: Int8.self, at: o))
         ?? .disabled
   }
+  public var expandPromptToJson: Bool {
+    let o = _accessor.offset(VTOFFSET.expandPromptToJson.v)
+    return o == 0 ? false : 0 != _accessor.readBuffer(of: Byte.self, at: o)
+  }
   public static func startGenerationConfiguration(_ fbb: inout FlatBufferBuilder) -> UOffset {
-    fbb.startTable(with: 87)
+    fbb.startTable(with: 88)
   }
   public static func add(id: Int64, _ fbb: inout FlatBufferBuilder) {
     fbb.add(element: id, def: 0, at: VTOFFSET.id.p)
@@ -1172,6 +1177,11 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
   public static func add(
     colorCalibration: zzz_DflatGen_ColorCalibration, _ fbb: inout FlatBufferBuilder
   ) { fbb.add(element: colorCalibration.rawValue, def: 0, at: VTOFFSET.colorCalibration.p) }
+  public static func add(expandPromptToJson: Bool, _ fbb: inout FlatBufferBuilder) {
+    fbb.add(
+      element: expandPromptToJson, def: false,
+      at: VTOFFSET.expandPromptToJson.p)
+  }
   public static func endGenerationConfiguration(_ fbb: inout FlatBufferBuilder, start: UOffset)
     -> Offset
   {
@@ -1264,7 +1274,8 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     cfgZeroInitSteps: Int32 = 0,
     compressionArtifacts: zzz_DflatGen_CompressionMethod = .disabled,
     compressionArtifactsQuality: Float32 = 43.1,
-    colorCalibration: zzz_DflatGen_ColorCalibration = .disabled
+    colorCalibration: zzz_DflatGen_ColorCalibration = .disabled,
+    expandPromptToJson: Bool = false
   ) -> Offset {
     let __start = zzz_DflatGen_GenerationConfiguration.startGenerationConfiguration(&fbb)
     zzz_DflatGen_GenerationConfiguration.add(id: id, &fbb)
@@ -1359,6 +1370,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     zzz_DflatGen_GenerationConfiguration.add(
       compressionArtifactsQuality: compressionArtifactsQuality, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(colorCalibration: colorCalibration, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(expandPromptToJson: expandPromptToJson, &fbb)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(&fbb, start: __start)
   }
 
@@ -1584,6 +1596,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     try _v.visit(
       field: VTOFFSET.colorCalibration.p, fieldName: "colorCalibration", required: false,
       type: zzz_DflatGen_ColorCalibration.self)
+    try _v.visit(
+      field: VTOFFSET.expandPromptToJson.p, fieldName: "expandPromptToJson", required: false,
+      type: Bool.self)
     _v.finish()
   }
 }

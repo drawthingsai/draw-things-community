@@ -181,6 +181,7 @@ table GenerationConfiguration {
   compression_artifacts: CompressionMethod = Disabled;
   compression_artifacts_quality: float = 43.1;
   color_calibration: ColorCalibration = Disabled;
+  expand_prompt_to_json: bool = false;
 }
 
 root_type GenerationConfiguration;

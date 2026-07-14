@@ -196,6 +196,7 @@ public struct MediaGenerationPipeline: Sendable {
     public var compressionArtifacts: CompressionMethod
     public var compressionArtifactsQuality: Float?
     public var colorCalibration: ColorCalibration
+    public var expandPromptToJson: Bool
 
     fileprivate init(configuration: GenerationConfiguration, model: String) {
       let options = JSGenerationConfiguration(configuration: configuration)
@@ -282,6 +283,7 @@ public struct MediaGenerationPipeline: Sendable {
       self.compressionArtifactsQuality =
         options.compressionArtifactsQuality.map { quality in Float(quality) }
       self.colorCalibration = Self.colorCalibration(from: options.colorCalibration)
+      self.expandPromptToJson = options.expandPromptToJson
     }
 
     internal func runtimeConfiguration(template: GenerationConfiguration) throws
@@ -400,6 +402,7 @@ public struct MediaGenerationPipeline: Sendable {
       options.compressionArtifacts = Self.compressionArtifactsName(for: compressionArtifacts)
       options.compressionArtifactsQuality = compressionArtifactsQuality
       options.colorCalibration = Self.colorCalibrationName(for: colorCalibration)
+      options.expandPromptToJson = expandPromptToJson
       return options.createGenerationConfiguration()
     }
 

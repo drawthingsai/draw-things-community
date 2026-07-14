@@ -351,6 +351,7 @@ final class MediaGenerationKitTests: XCTestCase {
     pipeline.configuration.compressionArtifacts = .H264
     pipeline.configuration.compressionArtifactsQuality = 55
     pipeline.configuration.colorCalibration = .lab
+    pipeline.configuration.expandPromptToJson = true
 
     let runtime = try pipeline.configuration.runtimeConfiguration(template: .default)
 
@@ -425,6 +426,7 @@ final class MediaGenerationKitTests: XCTestCase {
     XCTAssertEqual(runtime.compressionArtifacts, .H264)
     XCTAssertEqual(runtime.compressionArtifactsQuality, 55, accuracy: 0.0001)
     XCTAssertEqual(runtime.colorCalibration, .lab)
+    XCTAssertTrue(runtime.expandPromptToJson)
   }
 
   func testStateMapsSamplingSignpost() {

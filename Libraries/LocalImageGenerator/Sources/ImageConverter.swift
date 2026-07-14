@@ -1790,6 +1790,11 @@ public enum ImageConverter {
           description +=
             ", Negative Prompt for Image Prior: \(configuration.negativePromptForImagePrior ? "true" : "false")"
         }
+        if modelVersion == .ideogram4 {
+          json["expand_prompt_to_json"] = configuration.expandPromptToJson
+          description +=
+            ", Expand Prompt to JSON: \(configuration.expandPromptToJson ? "true" : "false")"
+        }
         if modelVersion == .wurstchenStageC {
           let width = Int(
             ((Double(
@@ -2220,6 +2225,10 @@ public enum ImageConverter {
 
         if let zeroNegativePrompt = commentsJsonDictionary["zero_negative_prompt"] as? Bool {
           configurationBuilder.zeroNegativePrompt = zeroNegativePrompt
+        }
+
+        if let expandPromptToJson = commentsJsonDictionary["expand_prompt_to_json"] as? Bool {
+          configurationBuilder.expandPromptToJson = expandPromptToJson
         }
 
         if let negativeOriginalSize = commentsJsonDictionary["negative_original_size"] as? String {

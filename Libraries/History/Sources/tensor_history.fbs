@@ -219,6 +219,7 @@ table TensorHistoryNode {
   compression_artifacts_quality: float = 43.1;
   audio: bool = false;
   color_calibration: ColorCalibration = Disabled;
+  expand_prompt_to_json: bool = false;
 }
 
 root_type TensorHistoryNode;

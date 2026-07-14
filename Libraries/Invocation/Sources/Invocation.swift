@@ -191,7 +191,8 @@ public struct Invocation {
       cfgZeroInitSteps: parameters.cfgZeroInitStepsParameter.int32Value(),
       compressionArtifacts: parameters.compressionArtifactsParameter.value,
       compressionArtifactsQuality: parameters.compressionArtifactsQualityParameter.float32Value(),
-      colorCalibration: parameters.colorCalibrationParameter.value
+      colorCalibration: parameters.colorCalibrationParameter.value,
+      expandPromptToJson: parameters.expandPromptToJsonParameter.value
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")
@@ -270,6 +271,7 @@ extension Invocation: CustomDebugStringConvertible {
       ("compressionArtifacts", configuration.compressionArtifacts),
       ("compressionArtifactsQuality", configuration.compressionArtifactsQuality),
       ("colorCalibration", configuration.colorCalibration),
+      ("expandPromptToJson", configuration.expandPromptToJson),
     ]
     return pairs.map { (name, value) in
       "\(name): \(value)"

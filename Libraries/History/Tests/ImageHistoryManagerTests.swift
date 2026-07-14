@@ -57,11 +57,13 @@ final class ImageHistoryManagerTests: XCTestCase {
   }
 
   private func makeConfiguration(
-    seed: UInt32 = 1, colorCalibration: DataModels.ColorCalibration = .disabled
+    seed: UInt32 = 1, colorCalibration: DataModels.ColorCalibration = .disabled,
+    expandPromptToJson: Bool = false
   ) -> GenerationConfiguration {
     GenerationConfiguration(
       id: 0, startWidth: 8, startHeight: 8, seed: seed, steps: 20, guidanceScale: 7.5,
-      batchCount: 1, batchSize: 1, colorCalibration: colorCalibration
+      batchCount: 1, batchSize: 1, colorCalibration: colorCalibration,
+      expandPromptToJson: expandPromptToJson
     )
   }
 
@@ -179,6 +181,31 @@ final class ImageHistoryManagerTests: XCTestCase {
     XCTAssertEqual(onMain { manager.configuration?.colorCalibration }, .lab)
     let nodes = onMain { Array(manager.allImageHistories(false)) }
     XCTAssertEqual(nodes.first?.colorCalibration.rawValue, DataModels.ColorCalibration.lab.rawValue)
+  }
+
+  func testExpandPromptToJsonRoundTripsThroughHistory() {
+    let manager = onMain {
+      ImageHistoryManager(
+        project: workspace, filePath: temporaryDirectory.appendingPathComponent("store.ckpt").path)
+    }
+
+    onMain {
+      manager.pushHistory([
+        makeHistory(
+          configuration: makeConfiguration(expandPromptToJson: true), tensorId: 45,
+          isGenerated: true)
+      ])
+    }
+
+    waitForCondition { [self] in
+      self.onMain { manager.configuration?.expandPromptToJson == true }
+    }
+    waitForCondition { [self] in
+      self.onMain { manager.allImageHistories(false).first?.expandPromptToJson == true }
+    }
+
+    XCTAssertEqual(onMain { manager.configuration?.expandPromptToJson }, true)
+    XCTAssertEqual(onMain { manager.allImageHistories(false).first?.expandPromptToJson }, true)
   }
 
   #if false

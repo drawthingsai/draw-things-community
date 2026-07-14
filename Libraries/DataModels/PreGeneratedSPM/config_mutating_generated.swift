@@ -255,6 +255,8 @@ extension GenerationConfiguration: FlatBuffersEncodable {
       compressionArtifactsQuality: self.compressionArtifactsQuality, &flatBufferBuilder)
     zzz_DflatGen_GenerationConfiguration.add(
       colorCalibration: __colorCalibration, &flatBufferBuilder)
+    zzz_DflatGen_GenerationConfiguration.add(
+      expandPromptToJson: self.expandPromptToJson, &flatBufferBuilder)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(
       &flatBufferBuilder, start: start)
   }
@@ -367,6 +369,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
   public var compressionArtifacts: CompressionMethod
   public var compressionArtifactsQuality: Float32
   public var colorCalibration: ColorCalibration
+  public var expandPromptToJson: Bool
   private init(type _type: ChangeRequestType) {
     _o = nil
     self._type = _type
@@ -456,6 +459,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     compressionArtifacts = .disabled
     compressionArtifactsQuality = 43.1
     colorCalibration = .disabled
+    expandPromptToJson = false
   }
   private init(type _type: ChangeRequestType, _ _o: GenerationConfiguration) {
     self._o = _o
@@ -546,6 +550,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     compressionArtifacts = _o.compressionArtifacts
     compressionArtifactsQuality = _o.compressionArtifactsQuality
     colorCalibration = _o.colorCalibration
+    expandPromptToJson = _o.expandPromptToJson
   }
   public static func changeRequest(_ o: GenerationConfiguration)
     -> GenerationConfigurationChangeRequest?
@@ -626,7 +631,8 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
       causalInferenceEnabled: causalInferenceEnabled, causalInference: causalInference,
       causalInferencePad: causalInferencePad, cfgZeroStar: cfgZeroStar,
       cfgZeroInitSteps: cfgZeroInitSteps, compressionArtifacts: compressionArtifacts,
-      compressionArtifactsQuality: compressionArtifactsQuality, colorCalibration: colorCalibration)
+      compressionArtifactsQuality: compressionArtifactsQuality, colorCalibration: colorCalibration,
+      expandPromptToJson: expandPromptToJson)
     atom._rowid = _rowid
     return atom
   }
