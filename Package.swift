@@ -108,6 +108,16 @@ let package = Package(
       path: "Libraries/SwiftLLM/Sources"
     ),
     .target(
+      name: "PromptJSONExpansion",
+      dependencies: [
+        "BinaryResources",
+        "LLM",
+        "Tokenizer",
+        .product(name: "NNC", package: "s4nnc"),
+      ],
+      path: "Libraries/PromptJSONExpansion/Sources"
+    ),
+    .target(
       name: "Diffusion",
       dependencies: [
         "DiffusionMappings",

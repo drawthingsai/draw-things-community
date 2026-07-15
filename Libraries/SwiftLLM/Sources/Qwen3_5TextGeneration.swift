@@ -203,7 +203,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                   strides: [
                     promptTokenIds.count * configuration.attentionHeadDim,
                     configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
-                  ]))
+                  ]
+                ).copied())
             }
             let chunkCacheInputs = Self.cacheInputs(
               caches, currentTokenLength: start + length, configuration: configuration)
