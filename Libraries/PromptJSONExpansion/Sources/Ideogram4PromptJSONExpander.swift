@@ -124,7 +124,8 @@ public struct Ideogram4PromptJSONExpander {
       throw Ideogram4PromptJSONExpansionError.cancelled
     }
     let response = completedResponse ?? Self.decode(generated)
-    return Self.formatJSON(response) ?? response
+    return Self.formatJSON(
+      response, aspectRatio: Self.aspectRatio(width: width, height: height)) ?? response
   }
 
   static func aspectRatio(width: Int, height: Int) -> String {
@@ -161,7 +162,7 @@ public struct Ideogram4PromptJSONExpander {
     return true
   }
 
-  private static func formatJSON(_ response: String) -> String? {
+  private static func formatJSON(_ response: String, aspectRatio: String) -> String? {
     func encode(_ value: Any) -> String? {
       guard
         let data = try? JSONSerialization.data(
@@ -269,6 +270,7 @@ public struct Ideogram4PromptJSONExpander {
       Set(composition.keys) == ["background", "elements"],
       let background = composition["background"] as? String,
       let elements = composition["elements"] as? [Any],
+      let encodedAspectRatio = encode(aspectRatio),
       let encodedDescription = encode(description),
       let encodedBackground = encode(background)
     else { return nil }
@@ -278,7 +280,8 @@ public struct Ideogram4PromptJSONExpander {
       guard let formattedElement = formatElement(element) else { return nil }
       formattedElements.append(formattedElement)
     }
-    return "{\"high_level_description\":\(encodedDescription),"
+    return "{\"aspect_ratio\":\(encodedAspectRatio),"
+      + "\"high_level_description\":\(encodedDescription),"
       + "\"compositional_deconstruction\":{"
       + "\"background\":\(encodedBackground),"
       + "\"elements\":[\(formattedElements.joined(separator: ","))]}}"
