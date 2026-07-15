@@ -427,15 +427,26 @@ extension UNetFixedEncoder {
       let c0 = textEncoding[0]
       let featureLength = c0.shape[2]
       let textLength = (isCfgEnabled ? tokenLengthUncond : 0) + tokenLengthCond
+      let textOffset =
+        !isCfgEnabled && c0.shape[1] > tokenLengthCond ? c0.shape[1] - tokenLengthCond : 0
+      precondition(textOffset >= 0 && c0.shape[1] == textOffset + textLength)
+      let source: DynamicGraph.Tensor<FloatType>
+      if textOffset == 0 {
+        source = c0
+      } else {
+        source = c0[
+          0..<1, textOffset..<(textOffset + textLength), 0..<featureLength
+        ].copied()
+      }
       let c: DynamicGraph.Tensor<FloatType>
       if batchSize == 1 {
-        c = c0
+        c = source
       } else {
         var expanded = graph.variable(
           .GPU(0), .HWC(batchSize, textLength, featureLength), of: FloatType.self)
         for i in 0..<batchSize {
           expanded[i..<(i + 1), 0..<textLength, 0..<featureLength] =
-            c0[0..<1, 0..<textLength, 0..<featureLength]
+            source[0..<1, 0..<textLength, 0..<featureLength]
         }
         c = expanded
       }
