@@ -16,5 +16,9 @@ swift_library(
 swift_test(
     name = "PromptJSONExpansionTests",
     srcs = glob(["Tests/**/*.swift"]),
-    deps = [":PromptJSONExpansion"],
+    deps = [
+        ":PromptJSONExpansion",
+        "//Libraries/SwiftLLM",
+        "@s4nnc//nnc",
+    ],
 )

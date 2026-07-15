@@ -31,6 +31,20 @@ public struct Qwen3_5GenerationTiming: Sendable {
   }
 }
 
+public protocol Qwen3_5TextGenerationPrefixCache {
+  var tokenIds: [Int32] { get }
+
+  func restore(
+    graph: DynamicGraph, configuration: Qwen3_5ModelConfiguration,
+    caches: inout [DynamicGraph.AnyTensor]
+  ) -> Bool
+
+  func save(
+    graph: DynamicGraph, configuration: Qwen3_5ModelConfiguration,
+    caches: [DynamicGraph.AnyTensor]
+  )
+}
+
 public struct Qwen3_5MTPDraftAcceptanceResult: Sendable {
   public var promptTokenCount: Int
   public var startCount: Int
@@ -96,6 +110,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
   public func generate(
     graph: DynamicGraph, promptTokenIds: [Int32], maxTokens: Int,
     prefillChunkSize: Int = 4_096,
+    prefixCache: (any Qwen3_5TextGenerationPrefixCache)? = nil,
     shouldContinue: () -> Bool = { true },
     partialHandler: ([Int32]) -> Bool,
     timingHandler: ((Qwen3_5GenerationTiming) -> Void)? = nil
@@ -113,6 +128,19 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         let cacheCapacity = promptTokenIds.count + maxTokens + 1
         var caches = Self.makeCaches(
           graph: graph, capacity: cacheCapacity, configuration: configuration)
+        let validPrefixCache: (any Qwen3_5TextGenerationPrefixCache)?
+        if let prefixCache = prefixCache, !prefixCache.tokenIds.isEmpty,
+          prefixCache.tokenIds.count < promptTokenIds.count,
+          promptTokenIds.starts(with: prefixCache.tokenIds)
+        {
+          validPrefixCache = prefixCache
+        } else {
+          validPrefixCache = nil
+        }
+        let restoredPrefix =
+          validPrefixCache?.restore(
+            graph: graph, configuration: configuration, caches: &caches) == true
+        let prefillTokenStart = restoredPrefix ? validPrefixCache?.tokenIds.count ?? 0 : 0
 
         let decoder:
           ModelBuilder<(cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int)> =
@@ -152,22 +180,23 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         var loadAndCompileMilliseconds = 0.0
         var prefillMilliseconds = 0.0
         do {
-          let firstChunkLength = min(prefillChunkSize, promptTokenIds.count)
+          let firstChunkLength = min(prefillChunkSize, promptTokenIds.count - prefillTokenStart)
           let firstPrefillTokens = promptTokens.reshaped(
-            .C(firstChunkLength), offset: [0], strides: [1])
+            .C(firstChunkLength), offset: [prefillTokenStart], strides: [1])
           var firstPrefillAttentionInputs = [DynamicGraph.AnyTensor]()
           if let prefillRotaryGPU = prefillRotaryGPU {
             firstPrefillAttentionInputs.append(
               prefillRotaryGPU.reshaped(
                 .NHWC(1, firstChunkLength, 1, configuration.attentionHeadDim),
-                offset: [0, 0, 0, 0],
+                offset: [0, prefillTokenStart, 0, 0],
                 strides: [
                   promptTokenIds.count * configuration.attentionHeadDim,
                   configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
                 ]))
           }
           let firstPrefillCacheInputs = Self.cacheInputs(
-            caches, currentTokenLength: firstChunkLength, configuration: configuration)
+            caches, currentTokenLength: prefillTokenStart + firstChunkLength,
+            configuration: configuration)
           let inputs: [DynamicGraph.AnyTensor] =
             [firstPrefillTokens] + firstPrefillAttentionInputs + firstPrefillCacheInputs
           let loadStart = Date.timeIntervalSinceReferenceDate
@@ -178,7 +207,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           ) { store in
             decoder.compile(
               (
-                cachedTokenLength: 0, tokenLength: firstChunkLength,
+                cachedTokenLength: prefillTokenStart, tokenLength: firstChunkLength,
                 lastNumberOfTokens: 1
               ),
               inputs: inputs)
@@ -189,7 +218,9 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           loadAndCompileMilliseconds = (Date.timeIntervalSinceReferenceDate - loadStart) * 1_000
           let prefillStart = Date.timeIntervalSinceReferenceDate
           var prefillTokenCPU: DynamicGraph.Tensor<Int32>?
-          for start in stride(from: 0, to: promptTokenIds.count, by: prefillChunkSize) {
+          for start in stride(
+            from: prefillTokenStart, to: promptTokenIds.count, by: prefillChunkSize)
+          {
             guard shouldContinue() else { throw Qwen3_5TextGenerationError.cancelled }
             let length = min(prefillChunkSize, promptTokenIds.count - start)
             let isLast = start + length == promptTokenIds.count
@@ -215,6 +246,12 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               ), inputs: chunkTokens, chunkAttentionInputs + chunkCacheInputs)
             Self.updateLinearCaches(
               &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
+            if !restoredPrefix, let validPrefixCache = validPrefixCache,
+              start + length == validPrefixCache.tokenIds.count
+            {
+              validPrefixCache.save(
+                graph: graph, configuration: configuration, caches: caches)
+            }
             if isLast {
               let logits = prefillOutputs[0].as(of: FloatType.self)
               // On macOS 26.4.1, native FP16/BF16 MPSGraph argmax was unreliable on Qwen vocab-sized logits.

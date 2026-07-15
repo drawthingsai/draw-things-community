@@ -95,10 +95,10 @@ public struct Ideogram4PromptJSONExpander {
     guard shouldContinue() else {
       throw Ideogram4PromptJSONExpansionError.cancelled
     }
-    let promptTokenIDs = Self.tokenizer.tokenize(
-      text: Self.chatPrompt(prompt: prompt, width: width, height: height),
-      addSpecialTokens: false
-    ).0
+    let promptTokenIDs = Self.promptTokenIDs(prompt: prompt, width: width, height: height)
+    let prefixTokenIDs = Self.cachePrefixTokenIDs(prefillChunkSize: prefillChunkSize)
+    let contextCache = Qwen3_5PromptJSONPrefixCache<FloatType>(
+      modelFilePath: modelFilePath, tokenIds: prefixTokenIDs)
     let graph = DynamicGraph()
     let textGeneration = Qwen3_5TextGeneration<FloatType>(
       filePath: modelFilePath, configuration: .qwen3_5_9B,
@@ -108,7 +108,8 @@ public struct Ideogram4PromptJSONExpander {
     do {
       generated = try textGeneration.generate(
         graph: graph, promptTokenIds: promptTokenIDs, maxTokens: maxTokens,
-        prefillChunkSize: prefillChunkSize, shouldContinue: shouldContinue
+        prefillChunkSize: prefillChunkSize, prefixCache: contextCache,
+        shouldContinue: shouldContinue
       ) { tokenIDs in
         guard shouldContinue() else { return false }
         let response = Self.decode(tokenIDs)
@@ -150,9 +151,25 @@ public struct Ideogram4PromptJSONExpander {
 
   static func chatPrompt(prompt: String, width: Int, height: Int) -> String {
     let userPrompt = userPrompt(prompt: prompt, width: width, height: height)
-    return "<|im_start|>system\n\(Ideogram4MagicSystemPrompt)<|im_end|>\n"
-      + "<|im_start|>user\n\(userPrompt)<|im_end|>\n"
+    return systemTurn + "<|im_start|>user\n\(userPrompt)<|im_end|>\n"
       + "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  }
+
+  static var systemTurn: String {
+    return "<|im_start|>system\n\(Ideogram4MagicSystemPrompt)<|im_end|>\n"
+  }
+
+  static func promptTokenIDs(prompt: String, width: Int, height: Int) -> [Int32] {
+    return tokenizer.tokenize(
+      text: chatPrompt(prompt: prompt, width: width, height: height), addSpecialTokens: false
+    ).0
+  }
+
+  static func cachePrefixTokenIDs(prefillChunkSize: Int) -> [Int32] {
+    precondition(prefillChunkSize > 0)
+    let tokenIDs = tokenizer.tokenize(text: systemTurn, addSpecialTokens: false).0
+    let count = tokenIDs.count / prefillChunkSize * prefillChunkSize
+    return Array(tokenIDs.prefix(count))
   }
 
   public static func isCompleteJSONObject(_ response: String) -> Bool {
