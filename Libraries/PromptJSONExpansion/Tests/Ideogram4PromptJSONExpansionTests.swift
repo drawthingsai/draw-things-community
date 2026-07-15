@@ -5,6 +5,17 @@ import XCTest
 @testable import PromptJSONExpansion
 
 final class Ideogram4PromptJSONExpansionTests: XCTestCase {
+  func testModelConfiguration() {
+    XCTAssertEqual(Ideogram4PromptJSONExpander.Model.qwen3_5_4B.file, "qwen_3.5_4b_i8x.ckpt")
+    XCTAssertEqual(Ideogram4PromptJSONExpander.Model.qwen3_5_4B.configuration.layers, 32)
+    XCTAssertEqual(Ideogram4PromptJSONExpander.Model.qwen3_5_4B.configuration.hiddenSize, 2_560)
+    XCTAssertTrue(Ideogram4PromptJSONExpander.Model.qwen3_5_4B.tieEmbedding)
+    XCTAssertEqual(Ideogram4PromptJSONExpander.Model.qwen3_5_9B.file, "qwen_3.5_9b_i5x.ckpt")
+    XCTAssertEqual(Ideogram4PromptJSONExpander.Model.qwen3_5_9B.configuration.layers, 32)
+    XCTAssertEqual(Ideogram4PromptJSONExpander.Model.qwen3_5_9B.configuration.hiddenSize, 4_096)
+    XCTAssertFalse(Ideogram4PromptJSONExpander.Model.qwen3_5_9B.tieEmbedding)
+  }
+
   func testAspectRatioReduction() {
     XCTAssertEqual(Ideogram4PromptJSONExpander.aspectRatio(width: 1_024, height: 1_024), "1:1")
     XCTAssertEqual(Ideogram4PromptJSONExpander.aspectRatio(width: 1_536, height: 1_024), "3:2")

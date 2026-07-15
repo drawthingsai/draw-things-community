@@ -19,13 +19,44 @@ public enum Ideogram4PromptJSONExpansionError: LocalizedError {
     case .invalidDimensions(let width, let height):
       return "Invalid target dimensions \(width)x\(height)."
     case .missingModel(let path):
-      return "Qwen 3.5 9B checkpoint does not exist at \(path)."
+      return "Qwen 3.5 checkpoint does not exist at \(path)."
     }
   }
 }
 
 public struct Ideogram4PromptJSONExpander {
-  public static let defaultModelFile = "qwen_3.5_9b_i5x.ckpt"
+  public enum Model {
+    case qwen3_5_4B
+    case qwen3_5_9B
+
+    public var file: String {
+      switch self {
+      case .qwen3_5_4B:
+        return "qwen_3.5_4b_i8x.ckpt"
+      case .qwen3_5_9B:
+        return "qwen_3.5_9b_i5x.ckpt"
+      }
+    }
+
+    var configuration: Qwen3_5ModelConfiguration {
+      switch self {
+      case .qwen3_5_4B:
+        return .qwen3_5_4B
+      case .qwen3_5_9B:
+        return .qwen3_5_9B
+      }
+    }
+
+    var tieEmbedding: Bool {
+      switch self {
+      case .qwen3_5_4B:
+        return true
+      case .qwen3_5_9B:
+        return false
+      }
+    }
+  }
+
   public static let defaultMaxTokens = 8_192
   public static let defaultPrefillChunkSize = 2_048
 
@@ -65,14 +96,16 @@ public struct Ideogram4PromptJSONExpander {
     specialTokens: specialTokens, unknownToken: "<|endoftext|>",
     startToken: "<|endoftext|>", endToken: "<|im_end|>")
 
+  public let model: Model
   public let modelFilePath: String
   public let maxTokens: Int
   public let prefillChunkSize: Int
 
   public init(
-    modelFilePath: String, maxTokens: Int = defaultMaxTokens,
+    model: Model, modelFilePath: String, maxTokens: Int = defaultMaxTokens,
     prefillChunkSize: Int = defaultPrefillChunkSize
   ) {
+    self.model = model
     self.modelFilePath = modelFilePath
     self.maxTokens = maxTokens
     self.prefillChunkSize = prefillChunkSize
@@ -101,8 +134,8 @@ public struct Ideogram4PromptJSONExpander {
       modelFilePath: modelFilePath, tokenIds: prefixTokenIDs)
     let graph = DynamicGraph()
     let textGeneration = Qwen3_5TextGeneration<FloatType>(
-      filePath: modelFilePath, configuration: .qwen3_5_9B,
-      eosTokenIds: Self.eosTokenIDs, tieEmbedding: false)
+      filePath: modelFilePath, configuration: model.configuration,
+      eosTokenIds: Self.eosTokenIDs, tieEmbedding: model.tieEmbedding)
     var completedResponse: String?
     let generated: [Int32]
     do {
