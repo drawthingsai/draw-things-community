@@ -262,7 +262,7 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
-          case .ltx2, .ltx2_3:
+          case .ltx2, .ltx2_3, .longcatVideoAvatar1_5:
             fatalError()
           case .flux2, .flux2_9b, .flux2_4b, .ideogram4:
             if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {

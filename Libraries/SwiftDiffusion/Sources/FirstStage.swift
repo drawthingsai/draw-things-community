@@ -232,7 +232,7 @@ extension FirstStage {
       scaleFactor = 32
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
-      .seedvr2_3b, .seedvr2_7b:
+      .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wan22_5b:
@@ -512,7 +512,8 @@ extension FirstStage {
         }
       }
       outputChannels = 3
-    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b:
+    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+      .longcatVideoAvatar1_5:
       let startDepth =
         version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b ? 1 : shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
@@ -945,6 +946,7 @@ extension FirstStage {
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
         && version != .wan22_5b && version != .ltx2 && version != .ltx2_3
+        && version != .longcatVideoAvatar1_5
     else {
       let audio: DynamicGraph.Tensor<Float>?
       if audioDecoder.count > 1, let audioZ = audioZ {
@@ -1316,7 +1318,7 @@ extension FirstStage {
       scaleFactor = 32
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
-      .seedvr2_3b, .seedvr2_7b:
+      .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       scaleFactor = 8
       scaleFactorZ = 4
     case .wan22_5b:
@@ -1495,7 +1497,8 @@ extension FirstStage {
         }
       }
       outputChannels = 32
-    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b:
+    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+      .longcatVideoAvatar1_5:
       let startDepth =
         version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
         ? 1 : (shape[0] - 1) / 4 + 1
@@ -1865,6 +1868,7 @@ extension FirstStage {
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
         && version != .wan22_5b && version != .ltx2 && version != .ltx2_3
+        && version != .longcatVideoAvatar1_5
     else {
       if highPrecision {
         if tiledEncoding {

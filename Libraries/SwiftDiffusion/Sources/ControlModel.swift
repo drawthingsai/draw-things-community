@@ -27,6 +27,7 @@ public enum ControlHintType: String, Codable & CaseIterable {
   case blur
   case lowquality
   case gray
+  case audio
 }
 
 public enum ControlType: String, Codable {
@@ -384,7 +385,7 @@ extension ControlModel {
     case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21, .sd3, .pixart, .auraflow,
       .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b,
-      .ideogram4, .krea2:
+      .ideogram4, .krea2, .longcatVideoAvatar1_5:
       tiledHeight =
         tiledDiffusion.isEnabled
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
@@ -514,7 +515,7 @@ extension ControlModel {
             encoder = result.2
             return [result.0]
           }
-        case .wan21_14b, .wan21_1_3b:
+        case .wan21_14b, .wan21_1_3b, .longcatVideoAvatar1_5:
           return withoutActuallyEscaping(cancellation) { parent in
             let isCancelled = ManagedAtomic<Bool>(false)
             var encoder: Model? = nil
@@ -924,7 +925,8 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+          .longcatVideoAvatar1_5:
           fatalError()
         }
       }
@@ -957,7 +959,8 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+          .longcatVideoAvatar1_5:
           fatalError()
         }
       }
@@ -978,7 +981,8 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1032,7 +1036,7 @@ extension ControlModel {
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage,
               .flux2,
               .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-              .ideogram4, .krea2:
+              .ideogram4, .krea2, .longcatVideoAvatar1_5:
               fatalError()
             }
           }
@@ -1069,7 +1073,8 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
       projModel.compile(inputs: imageEmbeds[0])
@@ -1100,7 +1105,8 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+          .longcatVideoAvatar1_5:
           fatalError()
         }
       }
@@ -1121,7 +1127,8 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1176,7 +1183,7 @@ extension ControlModel {
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage,
               .flux2,
               .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-              .ideogram4, .krea2:
+              .ideogram4, .krea2, .longcatVideoAvatar1_5:
               fatalError()
             }
           }
@@ -1298,7 +1305,8 @@ extension ControlModel {
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
           .flux2_4b,
-          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+          .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+          .longcatVideoAvatar1_5:
           fatalError()
         }
       }
@@ -1319,7 +1327,8 @@ extension ControlModel {
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1377,7 +1386,7 @@ extension ControlModel {
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage,
               .flux2,
               .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-              .ideogram4, .krea2:
+              .ideogram4, .krea2, .longcatVideoAvatar1_5:
               fatalError()
             }
           }
@@ -1481,7 +1490,8 @@ extension ControlModel {
           .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
           .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
           .flux2_9b,
-          .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+          .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+          .longcatVideoAvatar1_5:
           fatalError()
         }
       }
@@ -1498,7 +1508,8 @@ extension ControlModel {
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b,
-        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
       pulidFixed.maxConcurrency = .limit(4)
@@ -1792,7 +1803,7 @@ extension ControlModel {
       let emptyControl = graph.variable(
         .GPU(0), .HWC(batchSize, (startHeight / 2) * (startWidth / 2), 3072), of: FloatType.self)
       emptyControls = Array(repeating: emptyControl, count: 19 + 38)
-    case .wan21_1_3b, .wan21_14b:
+    case .wan21_1_3b, .wan21_14b, .longcatVideoAvatar1_5:
       emptyControls = []
     case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .qwenImage,
@@ -1947,7 +1958,8 @@ extension ControlModel {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .longcatVideoAvatar1_5:
       fatalError()
     }
     for emptyAdapter in emptyAdapters {
@@ -2026,6 +2038,8 @@ extension ControlModel {
           controlType = 6
         case .inpaint, .ip2p:
           controlType = 7
+        case .audio:
+          fatalError()
         }
         controlType = min(numberOfControlTypes - 1, controlType)
         var controlTypeEncoded = Tensor<FloatType>(.CPU, .WC(1, numberOfControlTypes * 256))
@@ -2269,6 +2283,8 @@ extension ControlModel {
           mode[0] = 6
         case .custom, .color, .inpaint, .ip2p, .seg, .shuffle:
           mode[0] = 1
+        case .audio:
+          fatalError()
         }
         return graph.variable(mode.toGPU(0))
       }()
@@ -2341,7 +2357,8 @@ extension ControlModel {
       .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .longcatVideoAvatar1_5:
       fatalError()
     }
   }
@@ -2495,7 +2512,8 @@ extension ControlModel {
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
         .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
     } else {
@@ -2571,7 +2589,7 @@ extension ControlModel {
         controlNetWeightMapper = nil
         xIn =
           channels == 16 ? xT : xT[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<16].copied()
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .longcatVideoAvatar1_5:
         // Set the strength for the generation.
         DynamicGraph.Tensor<FloatType>(inputs[7]).full(strength)
         return []
@@ -2723,7 +2741,8 @@ extension ControlModel {
       .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
       .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .longcatVideoAvatar1_5:
       break
     }
     return result

@@ -844,7 +844,7 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .wan21_1_3b, .wan21_14b:
+      case .wan21_1_3b, .wan21_14b, .longcatVideoAvatar1_5:
         imageHeight = shape[1] * 8
         imageWidth = shape[2] * 8
         isVideo = true
@@ -1473,7 +1473,8 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
-        case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .krea2:
+        case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .krea2,
+          .longcatVideoAvatar1_5:
           for i in 0..<imageHeight * imageWidth {
             let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
               fp16[i * 16], fp16[i * 16 + 1], fp16[i * 16 + 2], fp16[i * 16 + 3],
@@ -1938,6 +1939,8 @@ public enum ImageConverter {
                     file, $0.weight, $0.guidanceStart, $0.guidanceEnd, $0.noPrompt,
                     $0.globalAveragePooling, $0.inputOverride
                   )
+                case .audio:
+                  return nil
                 }
               }
           if controls.count > 1 {

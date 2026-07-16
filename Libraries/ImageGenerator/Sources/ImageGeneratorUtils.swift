@@ -92,7 +92,7 @@ public struct ImageGeneratorUtils {
             injectControls || hasHints.contains(modifier) || (isPreprocessorDownloaded && hasImage)
           injectedControls +=
             hasHints.contains(modifier) || (isPreprocessorDownloaded && hasImage) ? 1 : 0
-        case .color:
+        case .color, .audio:
           break  // Not supported. See generateInjectedControls.
         case .softedge:
           let isPreprocessorDownloaded =
@@ -152,7 +152,7 @@ public struct ImageGeneratorUtils {
           injectT2IAdapters = injectT2IAdapters || hasHints.contains(modifier)
         case .color:
           injectT2IAdapters = injectT2IAdapters || hasHints.contains(modifier) || hasImage
-        case .normalbae, .lineart, .softedge, .seg, .inpaint, .ip2p, .shuffle, .custom:
+        case .normalbae, .lineart, .softedge, .seg, .inpaint, .ip2p, .shuffle, .custom, .audio:
           break
         }
       }
@@ -184,7 +184,8 @@ public struct ImageGeneratorUtils {
       .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .seedvr2_3b,
       .seedvr2_7b, .ideogram4, .krea2:
       return false
-    case .hunyuanVideo, .svdI2v, .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3:
+    case .hunyuanVideo, .svdI2v, .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3,
+      .longcatVideoAvatar1_5:
       return true
     }
   }

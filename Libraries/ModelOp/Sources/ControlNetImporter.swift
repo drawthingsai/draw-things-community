@@ -258,6 +258,8 @@ public final class ControlNetImporter {
     let tembed = graph.variable(.CPU, .WC(2, 320), of: FloatType.self)
     let dim: Int
     switch modelVersion {
+    case .longcatVideoAvatar1_5:
+      fatalError()
     case .v1:
       dim = 768
     case .v2:
@@ -285,6 +287,8 @@ public final class ControlNetImporter {
     let isControlUnion = stateDict["control_add_embedding.linear_1.weight"] != nil
     var transformerBlocks = [Int]()
     switch modelVersion {
+    case .longcatVideoAvatar1_5:
+      fatalError()
     case .v1:
       (controlNet, controlNetReader) = ControlNet(
         batchSize: 2, embeddingLength: (77, 77), startWidth: 64, startHeight: 64,
@@ -376,6 +380,8 @@ public final class ControlNetImporter {
         let mappingFixed: ModelWeightMapping
         let hintMapping: ModelWeightMapping
         switch modelVersion {
+        case .longcatVideoAvatar1_5:
+          fatalError()
         case .sdxlBase:
           let vector = graph.variable(.GPU(0), .WC(2, 2816), of: FloatType.self)
           // These values doesn't matter, it won't affect the model shape, just the input vector.

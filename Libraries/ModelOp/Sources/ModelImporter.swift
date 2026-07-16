@@ -132,8 +132,11 @@ public final class ModelImporter {
         ($0.contains("joint_blocks.23.context_block.")
           || $0.contains("transformer_blocks.22.ff_context."))
       }
+    let isLongCatVideoAvatar = stateDict.keys.contains {
+      $0.contains("blocks.47.audio_cross_attn.kv_linear.")
+    }
     var isPixArtSigmaXL =
-      !isSD3Large
+      !isSD3Large && !isLongCatVideoAvatar
       && stateDict.keys.contains {
         $0.contains("blocks.27.cross_attn.kv_") || $0.contains("transformer_blocks.27.attn2.to_")
       }
@@ -326,6 +329,12 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.39.")
       }
+    } else if isLongCatVideoAvatar {
+      modelVersion = .longcatVideoAvatar1_5
+      modifier = .kontext
+      inputDim = 16
+      expectedTotalAccess = 1608
+      isDiffusersFormat = false
     } else if isWan21_14B {
       modelVersion = .wan21_14b
       modifier =
@@ -470,6 +479,8 @@ public final class ModelImporter {
     progress?(0.05)
     if isTextEncoderCustomized {
       switch modelVersion {
+      case .longcatVideoAvatar1_5:
+        throw Error.noTextEncoder
       case .v1:
         expectedTotalAccess += 196
       case .v2:
@@ -542,6 +553,8 @@ public final class ModelImporter {
             }
           }
           switch modelVersion {
+          case .longcatVideoAvatar1_5:
+            fatalError()
           case .v1, .sdxlBase, .ssd1b:
             (textModel, textModelReader) = CLIPTextModel(
               FloatType.self, injectEmbeddings: false,
@@ -595,6 +608,8 @@ public final class ModelImporter {
           }
           try graph.openStore(filePath) {
             switch modelVersion {
+            case .longcatVideoAvatar1_5:
+              fatalError()
             case .v1, .sdxlBase, .ssd1b:
               if $0.keys.count < 196 {
                 throw Error.tensorWritesFailed
@@ -712,6 +727,9 @@ public final class ModelImporter {
     let conditionalLength: Int
     let batchSize: Int
     switch modelVersion {
+    case .longcatVideoAvatar1_5:
+      conditionalLength = 4096
+      batchSize = 1
     case .v1:
       conditionalLength = 768
       batchSize = 2
@@ -792,6 +810,19 @@ public final class ModelImporter {
       let unetMapper: ModelWeightMapper?
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
+      case .longcatVideoAvatar1_5:
+        let rot = Tensor<FloatType>(
+          from: WanRotaryPositionEmbedding(
+            height: 32, width: 32, time: 1, channels: 128)
+        )
+        cArr =
+          [graph.variable(rot)]
+          + LongCatVideoAvatarFixedOutputShapes(
+            timesteps: 1, time: 1, condFrames: 0, channels: 4_096, layers: 48, textLength: 512,
+            audioTokens: 32
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
       case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .pixart,
         .sd3, .sd3Large, .auraflow:
         let fixedEncoder = UNetFixedEncoder<FloatType>(
@@ -816,6 +847,8 @@ public final class ModelImporter {
         }
         let vectors: [DynamicGraph.Tensor<FloatType>]
         switch modelVersion {
+        case .longcatVideoAvatar1_5:
+          fatalError()
         case .sdxlBase, .ssd1b:
           vectors = [graph.variable(.CPU, .WC(batchSize, 2816), of: FloatType.self)]
         case .sdxlRefiner:
@@ -1029,6 +1062,15 @@ public final class ModelImporter {
       let unetFixedMapper: ModelWeightMapper?
       var additionalMappings = [(prefix: String, mapping: ModelWeightMapping)]()
       switch modelVersion {
+      case .longcatVideoAvatar1_5:
+        (unetMapper, unet) = LongCatVideoAvatar(
+          time: 1, height: 64, width: 64, channels: 4_096, layers: 48, intermediateSize: 11_008,
+          textLength: 512, audioTokens: 32, condFrames: 0, usesFlashAttention: .scale1)
+        unetReader = nil
+        (unetFixedMapper, unetFixed) = LongCatVideoAvatarFixed(
+          timesteps: 1, time: 2, condFrames: 0, channels: 4_096, layers: 48, textLength: 512,
+          audioWindow: 5, audioBlocks: 5, audioChannels: 1_280, audioTokens: 32,
+          audioIntermediateDim: 512, audioOutputDim: 768)
       case .v1:
         (unet, unetReader) = UNet(
           batchSize: batchSize, embeddingLength: (77, 77), startWidth: 64, startHeight: 64,
@@ -1286,6 +1328,14 @@ public final class ModelImporter {
       }
       let crossattn: [DynamicGraph.Tensor<FloatType>]
       switch modelVersion {
+      case .longcatVideoAvatar1_5:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(2, 256), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 5 * 5 * 1_280), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 8 * 5 * 1_280), of: FloatType.self),
+        ]
+        tEmb = nil
       case .sdxlBase, .ssd1b:
         crossattn = [graph.variable(.CPU, .HWC(batchSize, 77, 2048), of: FloatType.self)]
       case .sdxlRefiner:
@@ -1647,7 +1697,7 @@ public final class ModelImporter {
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
             .hiDreamO1,
             .wan22_5b, .qwenImage, .cosmos2_5_2b, .auraflow, .zImage, .ernieImage, .flux2,
-            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1899,6 +1949,10 @@ public final class ModelImporter {
       }
       try graph.openStore(filePath) {
         switch modelVersion {
+        case .longcatVideoAvatar1_5:
+          if $0.keys.count < 2_600 {
+            throw Error.tensorWritesFailed
+          }
         case .v1, .v2:
           if $0.keys.count != 718 {
             throw Error.tensorWritesFailed
@@ -2165,6 +2219,8 @@ extension ModelImporter {
     let textEncoder: String?
 
     switch modelVersion {
+    case .longcatVideoAvatar1_5:
+      textEncoder = "umt5_xxl_encoder_q8p.ckpt"
     case .v1:
       textEncoder = fileNames.first {
         $0.hasSuffix("_clip_vit_l14_f16.ckpt")
@@ -2314,6 +2370,18 @@ extension ModelImporter {
     var additionalModels = [(name: String, subtitle: String, file: String)]()
 
     switch modelVersion {
+    case .longcatVideoAvatar1_5:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "umt5_xxl_encoder_q8p.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "wan_v2.1_video_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      specification.isConsistencyModel = true
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .v1:
       break
     case .v2:

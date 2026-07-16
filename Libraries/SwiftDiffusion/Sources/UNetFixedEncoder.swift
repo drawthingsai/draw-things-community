@@ -57,7 +57,8 @@ extension UNetFixedEncoder {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .longcatVideoAvatar1_5:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -201,7 +202,8 @@ extension UNetFixedEncoder {
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .longcatVideoAvatar1_5:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -985,7 +987,8 @@ extension UNetFixedEncoder {
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
       var timeEmbeds = graph.variable(
@@ -1474,6 +1477,136 @@ extension UNetFixedEncoder {
       return (
         [graph.variable(rot0), graph.variable(rot1)] + conditions, nil
       )
+    case .longcatVideoAvatar1_5:
+      // LongCat's distilled path runs without CFG; the triple-guidance base path is not wired.
+      precondition(!isCfgEnabled, "LongCat-Video-Avatar requires guidance scale 1 (distilled).")
+      let h = startHeight / 2
+      let w = startWidth / 2
+      let condFrames = referenceImages.first?.shape[0] ?? 0
+      let kvCache = condFrames > 1
+      let rot = Tensor<FloatType>(
+        from: LongCatVideoAvatarRotaryPositionEmbedding(
+          height: h, width: w, time: batchSize, channels: 128,
+          refIndex: condFrames > 1 ? 10 : nil, numRefLatents: condFrames > 1 ? 1 : 0)
+      ).toGPU(0)
+      let cleanCondRotaryEmbedding: DynamicGraph.Tensor<FloatType>?
+      if kvCache {
+        cleanCondRotaryEmbedding = graph.variable(
+          Tensor<FloatType>(
+            from: LongCatVideoAvatarRotaryPositionEmbedding(
+              height: h, width: w, time: condFrames, channels: 128, refIndex: 10,
+              numRefLatents: 1)
+          ).toGPU(0))
+      } else {
+        cleanCondRotaryEmbedding = nil
+      }
+      let c0 = textEncoding[0]
+      let textLength = 512
+      // text_tokens_zero_pad: zero out padded positions and attend over the full 512 tokens.
+      var c = graph.variable(.GPU(0), .HWC(1, textLength, 4_096), of: FloatType.self)
+      c.full(0)
+      let condTokens = min(c0.shape[1], textLength)
+      c[0..<1, 0..<condTokens, 0..<4096] = c0[
+        (c0.shape[0] - 1)..<c0.shape[0], 0..<condTokens, 0..<4096
+      ].copied()
+      // referenceImages layout for this model: [cleanCondLatents, audioFirst, audioLatter].
+      // cleanCondLatents is 1 frame for AI2V and 1 ref + 4 continuation frames for AVC.
+      var timeEmbeds = graph.variable(
+        .GPU(0), .WC(timesteps.count * batchSize, 256), of: Float.self)
+      for (i, timestep) in timesteps.enumerated() {
+        let timeEmbed = graph.variable(
+          timeEmbedding(
+            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000
+          ).toGPU(0))
+        let zeroEmbed = graph.variable(
+          timeEmbedding(
+            timestep: 0, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000
+          ).toGPU(0))
+        for j in 0..<batchSize {
+          timeEmbeds[(i * batchSize + j)..<(i * batchSize + j + 1), 0..<256] =
+            j < condFrames ? zeroEmbed : timeEmbed
+        }
+      }
+      let audioWindow = 5
+      let audioBlocks = 5
+      let audioChannels = 1_280
+      let vaeScale = 4
+      let audioFirst: DynamicGraph.Tensor<FloatType>
+      let audioLatter: DynamicGraph.Tensor<FloatType>
+      if referenceImages.count >= 3 {
+        audioFirst = referenceImages[1]
+        audioLatter = referenceImages[2]
+      } else {
+        let zeroFirst = graph.variable(
+          .GPU(0), .HWC(1, 1, audioWindow * audioBlocks * audioChannels), of: FloatType.self)
+        zeroFirst.full(0)
+        let audioFrames = condFrames > 1 ? batchSize - 1 : batchSize
+        let zeroLatter = graph.variable(
+          .GPU(0),
+          .HWC(1, audioFrames - 1, (audioWindow + vaeScale - 1) * audioBlocks * audioChannels),
+          of: FloatType.self)
+        zeroLatter.full(0)
+        audioFirst = zeroFirst
+        audioLatter = zeroLatter
+      }
+      let unetFixed = LongCatVideoAvatarFixed(
+        timesteps: timesteps.count, time: batchSize, condFrames: condFrames, height: startHeight,
+        width: startWidth, channels: 4_096, layers: 48, textLength: textLength,
+        audioWindow: audioWindow, audioBlocks: audioBlocks, audioChannels: audioChannels,
+        audioTokens: 32, audioIntermediateDim: 512, audioOutputDim: 768, kvCache: kvCache,
+        usesFlashAttention: valueOr(usesFlashAttention, .scale1)
+      ).1
+      unetFixed.maxConcurrency = .limit(4)
+      if kvCache, let cleanCondRotaryEmbedding = cleanCondRotaryEmbedding {
+        unetFixed.compile(
+          inputs: c, timeEmbeds, audioFirst, audioLatter, referenceImages[0],
+          cleanCondRotaryEmbedding)
+      } else {
+        unetFixed.compile(inputs: c, timeEmbeds, audioFirst, audioLatter)
+      }
+      let suffix = kvCache ? ":kv" : ""
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]\(suffix)", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !lora.isEmpty {
+          LoRALoader.openStore(graph, lora: lora) { loader in
+            store.read(
+              "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+            ) { name, dataType, _, shape in
+              if dataType == .Float32 {
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: Float32.self)
+              } else {
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      var conditions: [DynamicGraph.AnyTensor]
+      if kvCache, let cleanCondRotaryEmbedding = cleanCondRotaryEmbedding {
+        conditions = unetFixed(
+          inputs: c, timeEmbeds, audioFirst, audioLatter, referenceImages[0],
+          cleanCondRotaryEmbedding)
+      } else {
+        conditions = unetFixed(inputs: c, timeEmbeds, audioFirst, audioLatter)
+      }
+      if kvCache {
+        conditions.removeLast()
+      }
+      if lora.isEmpty {
+        weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      }
+      let firstFrame: [DynamicGraph.Tensor<FloatType>] =
+        referenceImages.isEmpty ? [] : [referenceImages[0]]
+      return (firstFrame + [graph.variable(rot)] + conditions, nil)
     case .wan21_1_3b, .wan21_14b, .wan22_5b:
       let h = startHeight / 2
       let w = startWidth / 2

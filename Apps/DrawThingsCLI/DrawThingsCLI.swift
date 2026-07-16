@@ -1,12 +1,13 @@
 import ArgumentParser
+import AudioConverter
 import BinaryResources
+import CLICloudAuth
 import ConfigurationZoo
 import DataModels
 import Dflat
 import Diffusion
 import Dispatch
 import Downloader
-import CLICloudAuth
 import Foundation
 import GRPCServer
 import ImageGenerator
@@ -248,6 +249,11 @@ private enum CLIHelpText {
          --frames, --seed, and --strength.
       4. --negative-prompt overrides any recommended negative prompt.
 
+    AUDIO VIDEO CONTINUATION:
+      --avc enables segmented audio video continuation. It currently supports only
+      LongCat-Video-Avatar 1.5. The output duration follows --audio; use
+      --segment-frames and --cond-frames to control continuation segments.
+
     EXAMPLES:
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\""))
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt-file prompt.txt"))
@@ -256,6 +262,7 @@ private enum CLIHelpText {
       \(CLIIdentity.command("generate --remote --remote-url 127.0.0.1 --no-remote-tls --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube\""))
       \(CLIIdentity.command("generate --model flux_2_klein_4b_q6p.ckpt --prompt \"a red cube on a table\" --terminal-image"))
       \(CLIIdentity.command("generate --model ltx_2.3_22b_distilled_q6p.ckpt --prompt \"ocean waves at sunset\" --frames 49 --output clip.mov"))
+      \(CLIIdentity.command("generate --avc --model longcat_video_avatar_1.5_dmd_i8x.ckpt --image man.png --audio man.mp3 --output man.mp4"))
     """
 
   static let models = """
@@ -532,7 +539,11 @@ struct GenerateSamplingOptions: ParsableArguments {
   @Option(name: .long, help: "Output height in pixels (multiple of 64).")
   var height: Int?
 
-  @Option(name: .long, help: "Number of frames for video-capable models.")
+  @Option(
+    name: .long,
+    help:
+      "Number of frames for video-capable models. Without --avc, duration is the frame count divided by the model FPS."
+  )
   var frames: Int?
 
   @Option(name: .long, help: "Denoising strength for img2img (0...1).")
@@ -563,6 +574,16 @@ struct GenerateImageInputOptions: ParsableArguments {
     name: .customLong("input-image"),
     help: ArgumentHelp("Alias of --image.", visibility: .hidden))
   var inputImage: String?
+
+  @Option(
+    name: .long,
+    help: "Driving audio file for audio-conditioned video models (e.g. LongCat-Video-Avatar).")
+  var audio: String?
+
+  @Option(
+    name: .customLong("audio-encoder-file"),
+    help: "Audio encoder checkpoint filename in the models directory (Whisper-large-v3).")
+  var audioEncoderFile: String = "whisper_large_v3_f16.ckpt"
 }
 
 struct GenerateOutputOptions: ParsableArguments {
@@ -616,13 +637,19 @@ struct GenerateBackendOptions: ParsableArguments {
     help: "Use TLS for remote generation.")
   var remoteTLS: Bool = true
 
-  @Option(name: .customLong("remote-shared-secret"), help: "Shared secret for password-protected remote servers.")
+  @Option(
+    name: .customLong("remote-shared-secret"),
+    help: "Shared secret for password-protected remote servers.")
   var remoteSharedSecret: String?
 
   @Flag(name: .customLong("cloud-compute"), help: "Generate on Draw Things cloud compute.")
   var cloudCompute: Bool = false
 
-  @Option(name: .long, help: "Draw Things API key for cloud compute. Uses saved credentials or DRAWTHINGS_API_KEY if omitted.")
+  @Option(
+    name: .long,
+    help:
+      "Draw Things API key for cloud compute. Uses saved credentials or DRAWTHINGS_API_KEY if omitted."
+  )
   var apiKey: String?
 
   @Option(name: .customLong("cloud-api-base-url"), help: "Cloud API base URL.")
@@ -636,13 +663,42 @@ struct GenerateBackendOptions: ParsableArguments {
     if remote && cloudCompute {
       throw ValidationError("--remote and --cloud-compute cannot be combined.")
     }
-    if !remote && (remoteURL != nil || remotePort != 7859 || remoteTLS != true || remoteSharedSecret != nil) {
+    if !remote
+      && (remoteURL != nil || remotePort != 7859 || remoteTLS != true || remoteSharedSecret != nil)
+    {
       throw ValidationError("Remote endpoint flags require --remote.")
     }
     if !cloudCompute && (apiKey != nil || cloudAPIBaseURL != nil) {
       throw ValidationError("Cloud compute flags require --cloud-compute.")
     }
   }
+}
+
+struct GenerateAVCOptions: ParsableArguments {
+  @Flag(
+    name: .customLong("avc"),
+    help: ArgumentHelp(
+      "Enable segmented audio video continuation.",
+      discussion: "Currently supported only for LongCat-Video-Avatar 1.5."))
+  var enabled: Bool = false
+
+  @Option(
+    name: .customLong("segment-frames"),
+    help: "Frames generated per AVC segment. Requires --avc. (default: 93)")
+  var segmentFrames: Int?
+
+  @Option(
+    name: .customLong("cond-frames"),
+    help: "Overlap frames reused for AVC continuation. Requires --avc. (default: 13)")
+  var condFrames: Int?
+
+  @Flag(
+    name: .customLong("zero-audio-features"),
+    help: ArgumentHelp(
+      "Use zero LongCat audio features for fast AVC pipeline validation.",
+      visibility: .hidden)
+  )
+  var zeroAudioFeatures: Bool = false
 }
 
 struct LoRATrainModelAndDatasetOptions: ParsableArguments {
@@ -1024,6 +1080,12 @@ private enum RecommendedSettingsResolver {
       builder.seedMode = .legacy
       builder.resolutionDependentShift = true
       builder.shift = 1
+    } else if modelSpecification.version == .longcatVideoAvatar1_5 {
+      builder.steps = 8
+      builder.guidanceScale = 1
+      builder.sampler = .dDIMTrailing
+      builder.numFrames = 93
+      builder.shift = 7
     }
     return builder.build()
   }
@@ -1572,7 +1634,7 @@ private func defaultImportedModelDisplayName(for artifactURL: URL) -> String {
 
 private func defaultImportScale(for version: ModelVersion, artifactFileName: String) -> UInt16 {
   switch version {
-  case .hunyuanVideo, .wan21_14b, .wan22_5b:
+  case .hunyuanVideo, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
     return 12
   case .wan21_1_3b:
     return 8
@@ -1602,7 +1664,7 @@ private func validateCustomTextEncoderSupport(
   case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
     .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
     .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-    .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+    .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
     throw ValidationError(
       "Custom text encoder import is not supported for \(ModelZoo.humanReadableNameForVersion(version))."
     )
@@ -1630,7 +1692,7 @@ private func projectedImportedOutputFiles(
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
       .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
       break
     }
   }
@@ -1881,6 +1943,12 @@ private final class LocalGenerationRunner {
     let timing: GenerationTimingSummary
   }
 
+  struct GenerationTensorResult {
+    let images: [Tensor<FloatType>]
+    let audio: [Tensor<Float>]?
+    let timing: GenerationTimingSummary
+  }
+
   private enum OutputDestination {
     case png(URL)
     case video(URL, containerExtension: String)
@@ -1982,48 +2050,67 @@ private final class LocalGenerationRunner {
     prompt: String, negativePrompt: String, configuration: GenerationConfiguration,
     outputPath: String,
     inputImage: Tensor<FloatType>?, videoFormat: VideoExportFormat?,
+    hints: [(ControlHintType, [(AnyTensor, Float)])] = [],
+    fallbackAudio: Tensor<Float>? = nil,
     livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil
   ) throws -> GenerationRunResult {
+    let tensorResult = try generateTensors(
+      prompt: prompt, negativePrompt: negativePrompt, configuration: configuration,
+      inputImage: inputImage, hints: hints, livePreviewSession: livePreviewSession)
+    let outputPaths = try saveOutputs(
+      tensorResult.images, audio: tensorResult.audio?.first ?? fallbackAudio,
+      outputPath: outputPath,
+      configuration: configuration, videoFormat: videoFormat)
+    return GenerationRunResult(outputPaths: outputPaths, timing: tensorResult.timing)
+  }
+
+  func generateTensors(
+    prompt: String, negativePrompt: String, configuration: GenerationConfiguration,
+    inputImage: Tensor<FloatType>?, hints: [(ControlHintType, [(AnyTensor, Float)])] = [],
+    livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil
+  ) throws -> GenerationTensorResult {
     let trace = ImageGeneratorTrace(fromBridge: true)
     let progressPrinter = ProgressBarPrinter()
     let estimation = GenerationEstimation.default
     let timingTracker = GenerationTimingTracker()
-    let hints = [(ControlHintType, [(AnyTensor, Float)])]()
     progressPrinter.update(progress: 0, label: "Starting...", detail: nil)
-    let (images, audio, _) = queue.sync {
-      imageGenerator.generate(
-        trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints, text: prompt,
-        negativeText: negativePrompt, configuration: configuration, fileMapping: [:], keywords: [],
-        cancellation: { _ in },
-        feedback: { signpost, signposts, previewTensor in
-          timingTracker.record(signpost: signpost, signposts: signposts)
-          let (elapsed, estimatedTotal) = GenerationEstimator.estimateUpToDateDuration(
-            from: estimation, signpost: signpost, signposts: signposts)
-          if estimatedTotal > 0 {
-            let progress = Float(elapsed / estimatedTotal)
-            let progressText = cliProgressText(signpost: signpost, signposts: signposts)
-            progressPrinter.update(
-              progress: progress, label: progressText.label, detail: progressText.detail
-            )
+    let generationResult: ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) = queue.sync {
+      () -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) in
+      let feedback:
+        (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+          Bool = { signpost, signposts, previewTensor in
+            timingTracker.record(signpost: signpost, signposts: signposts)
+            let (elapsed, estimatedTotal) = GenerationEstimator.estimateUpToDateDuration(
+              from: estimation, signpost: signpost, signposts: signposts)
+            if estimatedTotal > 0 {
+              let progress = Float(elapsed / estimatedTotal)
+              let progressText = cliProgressText(signpost: signpost, signposts: signposts)
+              progressPrinter.update(
+                progress: progress, label: progressText.label, detail: progressText.detail
+              )
+            }
+            if let previewTensor {
+              livePreviewSession?.update(tensor: previewTensor)
+            }
+            return true
           }
-          if let previewTensor {
-            livePreviewSession?.update(tensor: previewTensor)
-          }
-          return true
-        })
+      let result = imageGenerator.generate(
+        trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints,
+        text: prompt, negativeText: negativePrompt, configuration: configuration, fileMapping: [:],
+        keywords: [], cancellation: { _ in },
+        feedback: feedback)
+      return result
     }
+    let (images, audio, _) = generationResult
     guard let images, !images.isEmpty else {
       throw DrawThingsCLIError.generationFailed
     }
     let timing = timingTracker.summary()
-    let outputPaths = try saveOutputs(
-      images, audio: audio?.first, outputPath: outputPath, configuration: configuration,
-      videoFormat: videoFormat)
     progressPrinter.update(progress: 1, label: "Generated", detail: nil)
-    return GenerationRunResult(outputPaths: outputPaths, timing: timing)
+    return GenerationTensorResult(images: images, audio: audio, timing: timing)
   }
 
-  private func saveOutputs(
+  func saveOutputs(
     _ tensors: [Tensor<FloatType>], audio: Tensor<Float>?, outputPath: String,
     configuration: GenerationConfiguration, videoFormat: VideoExportFormat?
   ) throws -> [String] {
@@ -2271,11 +2358,13 @@ private final class LocalGenerationRunner {
       for containerExtension: String, sampleRate: Double
     ) -> [String: Any] {
       if containerExtension == "mp4" {
+        // AAC caps the allowed bitrate per sample rate; 192kbps is invalid at 16kHz.
+        let bitRate = min(192_000, Int(sampleRate) * 6)
         return [
           AVFormatIDKey: kAudioFormatMPEG4AAC,
           AVSampleRateKey: sampleRate,
           AVNumberOfChannelsKey: 2,
-          AVEncoderBitRateKey: 192_000,
+          AVEncoderBitRateKey: bitRate,
         ]
       }
       return [
@@ -2576,7 +2665,9 @@ private final class RemoteGenerationRunner {
       throw ValidationError("--remote-url is required with --remote.")
     }
     let trimmed = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
-    let candidate = trimmed.contains("://") ? trimmed : "\(backendOptions.remoteTLS ? "https" : "http")://\(trimmed)"
+    let candidate =
+      trimmed.contains("://")
+      ? trimmed : "\(backendOptions.remoteTLS ? "https" : "http")://\(trimmed)"
     guard
       let components = URLComponents(string: candidate),
       let host = components.host,
@@ -3418,6 +3509,12 @@ private func requiredFiles(for configuration: GenerationConfiguration) -> [Strin
   ImageGeneratorUtils.filesToDownload(configuration, keywords: []).map(\.file)
 }
 
+private func validateLongCatTemporalFrameCount(_ frames: Int, flag: String) throws {
+  guard frames % LongCatAudioConditioningEncoder.vaeScale == 1 else {
+    throw ValidationError("\(flag) must be 4k + 1 for LongCat temporal VAE alignment.")
+  }
+}
+
 private func createConfiguration(
   modelSpecification: ModelZoo.Specification, steps: Int?, cfg: Float?, width: Int?, height: Int?,
   frames: Int?, seed: UInt32?, strength: Float?, configJSON: String?, configFile: String?,
@@ -3451,6 +3548,9 @@ private func createConfiguration(
   }
   if let frames {
     guard frames >= 1 else { throw ValidationError("--frames must be >= 1") }
+    if ModelZoo.versionForModel(modelSpecification.file) == .longcatVideoAvatar1_5 {
+      try validateLongCatTemporalFrameCount(frames, flag: "--frames")
+    }
     builder.numFrames = UInt32(frames)
   }
   if let seed {
@@ -3459,6 +3559,9 @@ private func createConfiguration(
   if let strength {
     guard (0...1).contains(strength) else { throw ValidationError("--strength must be in [0, 1]") }
     builder.strength = strength
+  }
+  if ModelZoo.versionForModel(modelSpecification.file) == .longcatVideoAvatar1_5 {
+    try validateLongCatTemporalFrameCount(Int(builder.numFrames), flag: "LongCat frame count")
   }
   return ResolvedGenerationConfiguration(
     configuration: builder.build(),
@@ -3793,6 +3896,7 @@ extension DrawThingsCLI {
     @OptionGroup(title: "Configuration Overrides")
     var configurationOverrides: GenerateConfigurationOverrideOptions
     @OptionGroup(title: "Image Input") var imageInput: GenerateImageInputOptions
+    @OptionGroup(title: "Audio Video Continuation") var avc: GenerateAVCOptions
     @OptionGroup(title: "Output") var output: GenerateOutputOptions
     @OptionGroup(title: "Execution") var execution: GenerateExecutionOptions
     @OptionGroup(title: "Backend") var backend: GenerateBackendOptions
@@ -3802,6 +3906,20 @@ extension DrawThingsCLI {
       try backend.validate()
       if execution.offline && backend.isRemoteOrCloud {
         throw ValidationError("--offline cannot be combined with --remote or --cloud-compute.")
+      }
+      if avc.enabled {
+        if backend.isRemoteOrCloud {
+          throw ValidationError("--avc currently supports only local generation.")
+        }
+        try runLongCatAvatarAVC()
+        return
+      }
+      if imageInput.audio != nil && backend.isRemoteOrCloud {
+        throw ValidationError("--audio currently supports only local generation.")
+      }
+      if avc.segmentFrames != nil || avc.condFrames != nil || avc.zeroAudioFeatures {
+        throw ValidationError(
+          "--segment-frames, --cond-frames, and --zero-audio-features require --avc.")
       }
       let modelsDirectory = try ModelsDirectoryResolver.resolve(
         path: modelResolution.modelsDirectoryOptions.modelsDir)
@@ -3813,7 +3931,8 @@ extension DrawThingsCLI {
         ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
           "draw-things-cli-preview-\(UUID().uuidString).png"
         ).path
-      let livePreviewEnabled = !backend.isRemoteOrCloud && !writesOutputFile && !execution.disablePreview
+      let livePreviewEnabled =
+        !backend.isRemoteOrCloud && !writesOutputFile && !execution.disablePreview
       let terminalImageMode: TerminalImageRenderMode =
         if output.terminalImage {
           .explicit
@@ -3854,7 +3973,10 @@ extension DrawThingsCLI {
         LoRAZoo.overrideMapping = [:]
       }
 
-      let files = requiredFiles(for: configuration)
+      var files = requiredFiles(for: configuration)
+      if imageInput.audio != nil && !files.contains(imageInput.audioEncoderFile) {
+        files.append(imageInput.audioEncoderFile)
+      }
 
       let imagePath = try mergedAlias(
         primary: try mergedAlias(
@@ -3914,6 +4036,28 @@ extension DrawThingsCLI {
           nil
         }
 
+      var audioConditioning: LongCatAudioConditioning? = nil
+      var fallbackAudio: Tensor<Float>? = nil
+      if let audioPath = imageInput.audio {
+        guard modelSpecification.version == .longcatVideoAvatar1_5 else {
+          throw ValidationError("--audio currently supports only LongCat-Video-Avatar 1.5.")
+        }
+        let audioEncoderFilePath =
+          modelsDirectory.appendingPathComponent(imageInput.audioEncoderFile).path
+        let fps = max(
+          Int(ModelZoo.framesPerSecondForModel(configuration.model ?? "").rounded()), 1)
+        let videoFrames = max(Int(configuration.numFrames), 1)
+        let audioInput = try AudioInput(
+          contentsOf: audioPath, sampleRate: LongCatAudioConditioningEncoder.sampleRate)
+        print("Encoding audio: \(audioPath)")
+        let features = try LongCatAudioConditioningEncoder(filePath: audioEncoderFilePath).encode(
+          audioInput, videoFrames: videoFrames, framesPerSecond: fps)
+        audioConditioning = features.conditioning()
+        // The model consumes audio as conditioning and outputs silent frames; mux the input
+        // speech into the exported container like the reference pipeline does.
+        fallbackAudio = audioInput.waveformTensor(
+          videoFrames: videoFrames, framesPerSecond: fps)
+      }
       let runner = try LocalGenerationRunner()
       let livePreviewSession =
         livePreviewEnabled
@@ -3924,11 +4068,14 @@ extension DrawThingsCLI {
       defer {
         livePreviewSession?.finish()
       }
+      let hints: [(ControlHintType, [(AnyTensor, Float)])] =
+        audioConditioning.map { [(.audio, $0.tensors.map { ($0, 1) })] } ?? []
       print("Models directory: \(modelsDirectory.path)")
       let result = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
         configuration: configuration, outputPath: outputPath, inputImage: inputImageTensor,
-        videoFormat: output.videoFormat, livePreviewSession: livePreviewSession)
+        videoFormat: output.videoFormat, hints: hints, fallbackAudio: fallbackAudio,
+        livePreviewSession: livePreviewSession)
       let renderedFinalImageInPlace =
         livePreviewSession.flatMap { session in
           result.outputPaths.first.flatMap { path in
@@ -3964,7 +4111,9 @@ extension DrawThingsCLI {
     )
 
     struct CloudAuthOptions: ParsableArguments {
-      @Option(name: .long, help: "Draw Things API key. Uses saved credentials or DRAWTHINGS_API_KEY if omitted.")
+      @Option(
+        name: .long,
+        help: "Draw Things API key. Uses saved credentials or DRAWTHINGS_API_KEY if omitted.")
       var apiKey: String?
 
       @Option(name: .customLong("cloud-api-base-url"), help: "Cloud API base URL.")
@@ -4038,7 +4187,8 @@ extension DrawThingsCLI {
           let data = try encoder.encode(output)
           print(String(decoding: data, as: UTF8.self))
         } else {
-          print("Removed saved cloud credentials from: \(DrawThingsCLICredentialsStore.description())")
+          print(
+            "Removed saved cloud credentials from: \(DrawThingsCLICredentialsStore.description())")
         }
       }
     }
@@ -4103,7 +4253,174 @@ extension DrawThingsCLI {
       }
     }
   }
+}
 
+extension DrawThingsCLI.Generate {
+  // Keep this workflow model-specific because its audio conditioning, temporal alignment, and
+  // continuation-frame semantics are defined by LongCat rather than a shared AVC contract.
+  private func runLongCatAvatarAVC() throws {
+    let segmentFrames = avc.segmentFrames ?? 93
+    let condFrames = avc.condFrames ?? 13
+    guard segmentFrames > condFrames, condFrames > 0 else {
+      throw ValidationError("--segment-frames must be greater than --cond-frames")
+    }
+    try validateLongCatTemporalFrameCount(segmentFrames, flag: "--segment-frames")
+    try validateLongCatTemporalFrameCount(condFrames, flag: "--cond-frames")
+    if sampling.frames != nil {
+      throw ValidationError("--frames cannot be used with --avc; use --segment-frames.")
+    }
+    guard let outputPath = output.output else {
+      throw ValidationError("--output is required with --avc.")
+    }
+    var outputURL = URL(fileURLWithPath: outputPath)
+    if outputURL.pathExtension.isEmpty {
+      outputURL = outputURL.appendingPathExtension("mp4")
+    }
+    try validateVideoOutputOptions(outputPath: outputURL.path, videoFormat: output.videoFormat)
+    switch outputURL.pathExtension.lowercased() {
+    case "mp4", "mov":
+      break
+    default:
+      throw DrawThingsCLIError.invalidOutputPath(outputURL.path)
+    }
+
+    let modelsDirectory = try ModelsDirectoryResolver.resolve(
+      path: modelResolution.modelsDirectoryOptions.modelsDir)
+    ModelZoo.isExternalUrlsPreferred = true
+    ModelZoo.externalUrls = [modelsDirectory]
+    guard let model = modelResolution.model else {
+      printModelResolutionHelp(modelsDirectory: modelsDirectory)
+      throw ValidationError("--model is required.")
+    }
+    guard
+      let modelSpecification = ModelResolver.resolve(model, modelsDirectory: modelsDirectory)
+    else {
+      printModelResolutionHelp(modelsDirectory: modelsDirectory)
+      throw unresolvedModelValidationError(model)
+    }
+    guard ModelZoo.versionForModel(modelSpecification.file) == .longcatVideoAvatar1_5 else {
+      throw ValidationError("--avc currently supports only LongCat-Video-Avatar 1.5 models.")
+    }
+
+    let resolvedConfiguration = try createConfiguration(
+      modelSpecification: modelSpecification, steps: sampling.steps, cfg: sampling.cfg,
+      width: sampling.width, height: sampling.height, frames: segmentFrames,
+      seed: sampling.seed, strength: sampling.strength,
+      configJSON: configurationOverrides.configJSON,
+      configFile: configurationOverrides.configFile,
+      modelsDirectory: modelsDirectory)
+    let promptValues = try resolvedPrompts(prompts)
+    let configuration = resolvedConfiguration.configuration
+    guard configuration.guidanceScale == 1 else {
+      throw ValidationError("LongCat-Video-Avatar AVC currently requires --cfg 1.")
+    }
+    let resolvedNegativePrompt =
+      promptValues.negative ?? resolvedConfiguration.recommendedNegativePrompt ?? ""
+    LoRAZoo.overrideMapping = resolvedConfiguration.loraOverrideMapping
+    defer {
+      LoRAZoo.overrideMapping = [:]
+    }
+
+    var files = requiredFiles(for: configuration)
+    if !avc.zeroAudioFeatures && !files.contains(imageInput.audioEncoderFile) {
+      files.append(imageInput.audioEncoderFile)
+    }
+    try ModelDownloader.ensureFiles(
+      files, modelsDirectory: modelsDirectory, downloadMissing: execution.downloadMissing)
+
+    guard
+      let imagePath = try mergedAlias(
+        primary: try mergedAlias(
+          primary: imageInput.image, alias: imageInput.initImage, primaryFlag: "--image",
+          aliasFlag: "--init-image"),
+        alias: imageInput.inputImage, primaryFlag: "--image", aliasFlag: "--input-image")
+    else {
+      throw ValidationError("--image is required with --avc.")
+    }
+    guard let audioPath = imageInput.audio else {
+      throw ValidationError("--audio is required with --avc.")
+    }
+    let referenceImage = try loadInputImageTensor(
+      path: imagePath, imageWidth: Int(configuration.startWidth) * 64,
+      imageHeight: Int(configuration.startHeight) * 64)
+    let fps = max(Int(ModelZoo.framesPerSecondForModel(configuration.model ?? "").rounded()), 1)
+    let audioInput = try AudioInput(
+      contentsOf: audioPath, sampleRate: LongCatAudioConditioningEncoder.sampleRate)
+    let targetVideoFrames = audioInput.videoFrameCount(framesPerSecond: fps)
+    let stride = segmentFrames - condFrames
+    let segmentCount =
+      targetVideoFrames <= segmentFrames
+      ? 1 : ((targetVideoFrames - segmentFrames + stride - 1) / stride) + 1
+    let generatedVideoFrames = segmentFrames + (segmentCount - 1) * stride
+    let audioEncoderFilePath =
+      modelsDirectory.appendingPathComponent(imageInput.audioEncoderFile).path
+
+    let features: LongCatAudioFeatures
+    if avc.zeroAudioFeatures {
+      print("Using zero audio features for validation: \(audioPath)")
+      features = .zero(videoFrames: generatedVideoFrames, framesPerSecond: fps)
+    } else {
+      print("Encoding audio: \(audioPath)")
+      features = try LongCatAudioConditioningEncoder(filePath: audioEncoderFilePath).encode(
+        audioInput, videoFrames: generatedVideoFrames, framesPerSecond: fps)
+    }
+    let fallbackAudio = audioInput.waveformTensor(
+      videoFrames: targetVideoFrames, framesPerSecond: fps)
+
+    let runner = try LocalGenerationRunner()
+    var allFrames = [Tensor<FloatType>]()
+    var currentSegmentFrames = [Tensor<FloatType>]()
+    var timings = [LocalGenerationRunner.GenerationTimingSummary]()
+    print("Models directory: \(modelsDirectory.path)")
+    print(
+      "LongCat AVC: \(segmentCount) segments, \(generatedVideoFrames) generated frames, trimming to \(targetVideoFrames) frames."
+    )
+    for segmentIndex in 0..<segmentCount {
+      let startFrame = segmentIndex * stride
+      let audioConditioning = features.conditioning(
+        startFrame: startFrame, videoFrames: segmentFrames)
+      let hints: [(ControlHintType, [(AnyTensor, Float)])] = [
+        (.audio, audioConditioning.tensors.map { ($0, 1) })
+      ]
+      print("Generating segment \(segmentIndex + 1)/\(segmentCount)...")
+      let segmentConfiguration = configurationWithSegmentSeed(
+        configuration, seedForSegment: segmentIndex)
+      let tensorResult: LocalGenerationRunner.GenerationTensorResult
+      if segmentIndex == 0 {
+        tensorResult = try runner.generateTensors(
+          prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
+          configuration: segmentConfiguration, inputImage: referenceImage, hints: hints)
+      } else {
+        let imageInput = try longCatImageInput(
+          referenceImage: referenceImage,
+          continuationFrames: currentSegmentFrames.suffix(condFrames),
+          condFrames: condFrames)
+        tensorResult = try runner.generateTensors(
+          prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
+          configuration: segmentConfiguration, inputImage: imageInput, hints: hints)
+      }
+      currentSegmentFrames = tensorResult.images
+      timings.append(tensorResult.timing)
+      if segmentIndex == 0 {
+        allFrames.append(contentsOf: tensorResult.images)
+      } else {
+        allFrames.append(contentsOf: tensorResult.images.dropFirst(condFrames))
+      }
+      if allFrames.count > targetVideoFrames {
+        allFrames.removeLast(allFrames.count - targetVideoFrames)
+      }
+    }
+    let outputPaths = try runner.saveOutputs(
+      allFrames, audio: fallbackAudio, outputPath: outputURL.path, configuration: configuration,
+      videoFormat: output.videoFormat)
+    for path in outputPaths {
+      print("Wrote: \(path)")
+    }
+    printGenerationTimingSummary(combinedTimingSummary(timings))
+  }
+}
+
+extension DrawThingsCLI {
   struct Models: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Model utilities.",
@@ -4526,6 +4843,52 @@ private func loadInputImageTensor(path: String, imageWidth: Int, imageHeight: In
     throw DrawThingsCLIError.invalidInputImage(filePath)
   }
   return tensor
+}
+
+private func longCatImageInput(
+  referenceImage: Tensor<FloatType>, continuationFrames: ArraySlice<Tensor<FloatType>>,
+  condFrames: Int
+) throws -> Tensor<FloatType> {
+  guard continuationFrames.count == condFrames else {
+    throw ValidationError("LongCat AVC requires exactly \(condFrames) continuation frames.")
+  }
+  let shape = referenceImage.shape
+  guard shape.count == 4, shape[0] == 1, shape[3] >= 3 else {
+    throw DrawThingsCLIError.unsupportedTensorShape("\(shape)")
+  }
+  let height = shape[1]
+  let width = shape[2]
+  let channels = shape[3]
+  var tensor = Tensor<FloatType>(.CPU, .NHWC(condFrames + 1, height, width, channels))
+  tensor[0..<1, 0..<height, 0..<width, 0..<channels] = referenceImage
+  for (index, frame) in continuationFrames.enumerated() {
+    let frameShape = frame.shape
+    guard frameShape.count == 4, frameShape[0] == 1, frameShape[1] == height,
+      frameShape[2] == width, frameShape[3] == channels
+    else {
+      throw DrawThingsCLIError.unsupportedTensorShape("\(frameShape)")
+    }
+    tensor[(index + 1)..<(index + 2), 0..<height, 0..<width, 0..<channels] =
+      frame[
+        0..<1, 0..<height, 0..<width, 0..<channels]
+  }
+  return tensor
+}
+
+private func configurationWithSegmentSeed(
+  _ configuration: GenerationConfiguration, seedForSegment segmentIndex: Int
+) -> GenerationConfiguration {
+  var builder = GenerationConfigurationBuilder(from: configuration)
+  builder.seed = configuration.seed &+ UInt32(segmentIndex)
+  return builder.build()
+}
+
+private func combinedTimingSummary(
+  _ summaries: [LocalGenerationRunner.GenerationTimingSummary]
+) -> LocalGenerationRunner.GenerationTimingSummary {
+  LocalGenerationRunner.GenerationTimingSummary(
+    totalGenerationDuration: summaries.reduce(0) { $0 + $1.totalGenerationDuration },
+    samplingStepDurations: summaries.flatMap(\.samplingStepDurations))
 }
 
 private enum LoRATrainConfigLoader {

@@ -102,7 +102,7 @@ public enum ComputeUnits {
       return (cfgChannels, max(1, Int(configuration.numFrames)))
     case .hunyuanVideo:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
-    case .wan21_1_3b, .wan21_14b, .wan22_5b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
     case .ltx2, .ltx2_3:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 8 + 1))
@@ -363,6 +363,15 @@ public enum ComputeUnits {
       let fixedCount = WanFixedInstructionCount(
         timesteps: 1, batchSize: (1, 1), channels: 1536, layers: 30, vaceLayers: [],
         textLength: baseTokenLength, injectImage: hasImage)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .longcatVideoAvatar1_5:
+      let mainCount = WanInstructionCount(
+        channels: 4096, layers: 48, vaceLayers: [], intermediateSize: 11_008,
+        time: numFrames, height: startHeight, width: startWidth, textLength: baseTokenLength,
+        causalInference: (0, 0), injectImage: false, outputChannels: 16)
+      let fixedCount = WanFixedInstructionCount(
+        timesteps: 1, batchSize: (1, 1), channels: 4096, layers: 48, vaceLayers: [],
+        textLength: baseTokenLength, injectImage: false)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .wan21_14b:
       let causalInference: (Int, pad: Int) =

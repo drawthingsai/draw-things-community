@@ -413,6 +413,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (Wan v2.1 1.3B)"
     case .wan21_14b:
       return " (Wan v2.x 14B)"
+    case .longcatVideoAvatar1_5:
+      return " (LongCat-Video Avatar 1.5)"
     case .hiDreamI1:
       return " (HiDream I1)"
     case .hiDreamO1:

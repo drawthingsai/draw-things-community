@@ -12,6 +12,7 @@ Apps/ModelConverter
 Apps/ModelQuantizer
 Apps/gRPCServerCLI
 Apps/DrawThingsCLI
+Libraries/AudioConverter
 Libraries/ConfigurationZoo
 Libraries/DataModels
 Libraries/Downloader

@@ -163,7 +163,8 @@ extension LocalImageGenerator {
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .wurstchenStageB,
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .longcatVideoAvatar1_5:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1023,7 +1024,8 @@ extension LocalImageGenerator {
     hints: [(ControlHintType, [(AnyTensor, Float)])],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     fileMapping: [String: String], keywords: [String], cancellation: (@escaping () -> Void) -> Void,
-    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+    feedback:
+      @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
 
@@ -1043,18 +1045,44 @@ extension LocalImageGenerator {
     let poses: [(Tensor<FloatType>, Float)] =
       hints.first(where: { $0.0 == .pose })?.1 as? [(Tensor<FloatType>, Float)] ?? []
 
-    let hints: [ControlHintType: AnyTensor] = hints.reduce(into: [:]) { dict, hint in
+    let audioHint = hints.first(where: { $0.0 == .audio })?.1 ?? []
+    let audioTensors = audioHint.compactMap { $0.0 as? Tensor<FloatType> }
+    guard audioTensors.count == audioHint.count else { return (nil, nil, 1) }
+    let audioConditioning: Tensor<FloatType>?
+    if audioTensors.isEmpty {
+      audioConditioning = nil
+    } else {
+      guard audioTensors.count == 2 else { return (nil, nil, 1) }
+      let firstCount = audioTensors[0].shape.reduce(1, *)
+      let latterCount = audioTensors[1].shape.reduce(1, *)
+      var packed = Tensor<FloatType>(.CPU, .C(firstCount + latterCount))
+      packed[0..<firstCount] = audioTensors[0].reshaped(.C(firstCount))
+      packed[firstCount..<(firstCount + latterCount)] =
+        audioTensors[1].reshaped(.C(latterCount))
+      audioConditioning = packed
+    }
+
+    var hints: [ControlHintType: AnyTensor] = hints.reduce(into: [:]) { dict, hint in
       if hint.0 != .depth, hint.0 != .custom, hint.0 != .shuffle, hint.0 != .pose,
+        hint.0 != .audio,
         let tensor = hint.1.first?.0
       {
         dict[hint.0] = tensor
       }
+    }
+    if let audioConditioning {
+      hints[.audio] = audioConditioning
     }
 
     let file =
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
+    let modelVersion = ModelZoo.versionForModel(file)
+    if audioConditioning != nil {
+      guard modelVersion == .longcatVideoAvatar1_5, image != nil, mask == nil
+      else { return (nil, nil, 1) }
+    }
     let denoiserParameterization: Denoiser.Parameterization
     switch ModelZoo.noiseDiscretizationForModel(file) {
     case .edm(let edm):
@@ -1066,7 +1094,7 @@ extension LocalImageGenerator {
     }
     let shift: Double
     if ModelZoo.isResolutionDependentShiftAvailable(
-      ModelZoo.versionForModel(file), isConsistencyModel: ModelZoo.isConsistencyModelForModel(file)),
+      modelVersion, isConsistencyModel: ModelZoo.isConsistencyModelForModel(file)),
       configuration.resolutionDependentShift
     {
       let tiledWidth =
@@ -1081,6 +1109,15 @@ extension LocalImageGenerator {
       shift = Double(configuration.shift)
     }
     let sampling = Sampling(steps: Int(configuration.steps), shift: shift)
+    if audioConditioning != nil {
+      guard let image else { return (nil, nil, 1) }
+      return generateTextOnly(
+        image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
+        shuffles: shuffles, poses: poses, text: text, negativeText: negativeText,
+        configuration: configuration,
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        cancellation: cancellation, feedback: feedback)
+    }
     guard let image = image else {
       return generateTextOnly(
         nil, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
@@ -1518,7 +1555,7 @@ extension LocalImageGenerator {
       result.7 = tokenLengthsUncond - 95  // Remove the leading template.
       result.8 = tokenLengthsCond - 95
       return result
-    case .wan21_14b, .wan21_1_3b, .wan22_5b:
+    case .wan21_14b, .wan21_1_3b, .wan22_5b, .longcatVideoAvatar1_5:
       return tokenize(
         graph: graph, tokenizer: tokenizerUMT5, text: text, negativeText: negativeText,
         paddingToken: 0, addSpecialTokens: true, conditionalLength: 4096, modifier: .t5xxl,
@@ -2950,7 +2987,7 @@ extension LocalImageGenerator {
             ], cancellation: cancellation
           ).map { ($0, control.weight) }
           return (model: controlModel, hints: hints)
-        case .color:
+        case .color, .audio:
           return nil  // Not supported at the moment.
         }
       case .injectKV:
@@ -3150,7 +3187,7 @@ extension LocalImageGenerator {
           ).map { ($0, 1) }
           return (model: controlModel, hints: hints)
         case .normalbae, .lineart, .softedge, .seg, .inpaint, .ip2p, .shuffle, .mlsd, .tile,
-          .custom, .blur, .gray, .lowquality:
+          .custom, .blur, .gray, .lowquality, .audio:
           return nil  // Not supported at the moment.
         }
       }
@@ -3223,7 +3260,7 @@ extension LocalImageGenerator {
       case .hiDreamI1, .hiDreamO1:
         // While HiDream uses CLIP, these are not meaningful because it only uses the pooling vector from CLIP.
         break
-      case .wan21_1_3b, .wan21_14b, .wan22_5b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
         fatalError()
       case .qwenImage, .cosmos2_5_2b, .krea2:
         fatalError()
@@ -3331,7 +3368,7 @@ extension LocalImageGenerator {
         fatalError()
       case .flux2, .flux2_9b, .flux2_4b:
         fatalError()
-      case .wan21_1_3b, .wan21_14b, .wan22_5b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
         fatalError()
       case .ltx2, .ltx2_3:
         fatalError()
@@ -3345,7 +3382,8 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         return (nil, [])
       case .flux1:
         guard
@@ -3372,6 +3410,19 @@ extension LocalImageGenerator {
         .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b, .seedvr2_3b,
         .seedvr2_7b, .ideogram4, .krea2:
         return (nil, [])
+      case .longcatVideoAvatar1_5:
+        // ai2v: the reference image becomes the clean first latent frame substituted during
+        // sampling. Encoded through the shared Wan 2.1 first stage.
+        guard let image = image else { return (nil, []) }
+        let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
+        let shape = encoded.shape
+        return (
+          nil,
+          [
+            firstStage.scale(
+              encoded[0..<1, 0..<shape[1], 0..<shape[2], 0..<16].copied())
+          ]
+        )
       case .ltx2, .ltx2_3:
         guard let image = image else { return (nil, []) }
         let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
@@ -3439,12 +3490,12 @@ extension LocalImageGenerator {
     case .kontext, .kontextKv:
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
-        .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
+        .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .flux1, .qwenImage, .cosmos2_5_2b,
         .flux2,
         .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         return x
-      case .ltx2, .ltx2_3:
+      case .ltx2, .ltx2_3, .longcatVideoAvatar1_5:
         guard let firstFrame = imageCond.1.first else { return x }
         var x = x
         let shape = x.shape
@@ -3466,7 +3517,7 @@ extension LocalImageGenerator {
       return false
     case .svdI2v:
       return true
-    case .wan21_14b, .wan21_1_3b, .hunyuanVideo, .ltx2, .ltx2_3:
+    case .wan21_14b, .wan21_1_3b, .hunyuanVideo, .ltx2, .ltx2_3, .longcatVideoAvatar1_5:
       return modifier == .inpainting
     }
   }
@@ -3500,7 +3551,7 @@ extension LocalImageGenerator {
           ].copied()
       }
       return (1, image, repeatedImage)
-    case .wan21_14b, .wan21_1_3b:
+    case .wan21_14b, .wan21_1_3b, .longcatVideoAvatar1_5:
       let shape = image.shape
       let batchSize = batchSize.0 - batchSize.1
       guard shape[0] < (batchSize - 1) * 4 + 1 else {
@@ -3572,7 +3623,7 @@ extension LocalImageGenerator {
     hasCustom: Bool
   ) -> (Int, Int) {
     switch version {
-    case .wan21_14b, .wan21_1_3b, .wan22_5b:
+    case .wan21_14b, .wan21_1_3b, .wan22_5b, .longcatVideoAvatar1_5:
       let referenceFrames =
         (canInjectControls ? (shuffleCount > 0 ? shuffleCount : (hasCustom ? 1 : 0)) : 0)
       return (
@@ -3626,7 +3677,7 @@ extension LocalImageGenerator {
       result[0..<min(shape[0], batchSize.0), 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
         encodedImage[0..<min(shape[0], batchSize.0), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
       return result
-    case .wan21_1_3b, .wan21_14b, .wan22_5b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
       // For this mask, it contains 4 channels, each channel represent a frame (4x compression). First frame will use all 4 channels.
       let shape = encodedImage.shape
       var result = graph.variable(
@@ -3680,7 +3731,8 @@ extension LocalImageGenerator {
     colorCalibrationReference: Tensor<FloatType>? = nil,
     colorCalibrationMask: Tensor<UInt8>? = nil,
     cancellation: (@escaping () -> Void) -> Void,
-    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
+    feedback:
+      @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?)
       -> Bool
   ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
@@ -3701,8 +3753,41 @@ extension LocalImageGenerator {
       }) ?? ModelZoo.defaultSpecification.file
     let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
-    let colorCalibrationReference = colorCalibrationReference ?? image
     let modelVersion = ModelZoo.versionForModel(file)
+    let inputImage = image
+    let image: Tensor<FloatType>?
+    let videoContinuationFrames: Tensor<FloatType>?
+    if modelVersion == .longcatVideoAvatar1_5, let inputImage, inputImage.shape[0] > 1 {
+      let shape = inputImage.shape
+      image = inputImage[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+      videoContinuationFrames =
+        inputImage[1..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+    } else {
+      image = inputImage
+      videoContinuationFrames = nil
+    }
+    let audioConditioning: [Tensor<FloatType>]
+    if let packedAudio = hints[.audio] {
+      let packedAudioTensor = Tensor<FloatType>(packedAudio)
+      let audioBlockSize = 5 * 1_280
+      let firstCount = 5 * audioBlockSize
+      let latentFrames = (Int(configuration.numFrames) - 1) / 4 + 1
+      let latterFrames = latentFrames - 1
+      let latterWidth = 8 * audioBlockSize
+      let latterCount = latterFrames * latterWidth
+      guard packedAudioTensor.shape.reduce(1, *) == firstCount + latterCount else {
+        return (nil, nil, 1)
+      }
+      let flattenedAudio = packedAudioTensor.reshaped(.C(firstCount + latterCount))
+      let audioFirst = flattenedAudio[0..<firstCount].copied().reshaped(
+        .HWC(1, 1, firstCount))
+      let audioLatter = flattenedAudio[firstCount..<(firstCount + latterCount)].copied().reshaped(
+        .HWC(1, latterFrames, latterWidth))
+      audioConditioning = [audioFirst, audioLatter]
+    } else {
+      audioConditioning = []
+    }
+    let colorCalibrationReference = colorCalibrationReference ?? image
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
     // generateTextOnly cannot handle I2v model.
     guard modelVersion != .svdI2v else {
@@ -4021,7 +4106,8 @@ extension LocalImageGenerator {
           * 2
         firstPassAudioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .longcatVideoAvatar1_5:
         firstPassChannels = 16
         firstPassScaleFactor = 8
         firstPassStartWidth =
@@ -4266,6 +4352,14 @@ extension LocalImageGenerator {
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
           hasCustom: custom != nil)
+      case .longcatVideoAvatar1_5:
+        batchSize = injectReferenceFrames(
+          batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
+          canInjectControls: canInjectControls, shuffleCount: shuffles.count,
+          hasCustom: custom != nil)
+        if videoContinuationFrames != nil {
+          batchSize = (batchSize.0 + 1, batchSize.1)
+        }
       case .ltx2, .ltx2_3:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 8) + 1, version: modelVersion,
@@ -4372,11 +4466,41 @@ extension LocalImageGenerator {
           widthScale: Float(firstPassStartHeight * firstPassScaleFactor) / Float(customHeight),
           heightScale: Float(firstPassStartWidth * firstPassScaleFactor) / Float(customWidth))($0)
       }
-      let firstPassImageCond = encodeImageCond(
+      var firstPassImageCond = encodeImageCond(
         startHeight: firstPassStartHeight, startWidth: firstPassStartWidth, graph: graph,
         image: firstPassImage, depth: firstPassDepthImage, custom: firstPassCustomImage,
         shuffles: shuffles, modifier: modifier, version: modelVersion, firstStage: firstStage,
         usesFlashAttention: isMFAEnabled)
+      if modelVersion == .longcatVideoAvatar1_5,
+        let videoContinuationFrames,
+        let refLatent = firstPassImageCond.1.first
+      {
+        var continuation = graph.variable(videoContinuationFrames.toGPU(0))
+        let continuationHeight = continuation.shape[1]
+        let continuationWidth = continuation.shape[2]
+        let targetHeight = firstPassStartHeight * firstPassScaleFactor
+        let targetWidth = firstPassStartWidth * firstPassScaleFactor
+        if continuationHeight != targetHeight || continuationWidth != targetWidth {
+          continuation = Upsample(
+            .bilinear, widthScale: Float(targetWidth) / Float(continuationWidth),
+            heightScale: Float(targetHeight) / Float(continuationHeight))(continuation)
+        }
+        let encodedContinuation = firstStage.encode(
+          continuation, encoder: nil, cancellation: cancellation
+        ).0
+        let continuationShape = encodedContinuation.shape
+        let continuationLatents = firstStage.scale(
+          encodedContinuation[
+            0..<continuationShape[0], 0..<continuationShape[1], 0..<continuationShape[2],
+            0..<16
+          ].copied())
+        firstPassImageCond.1[0] = Functional.concat(axis: 0, refLatent, continuationLatents)
+      }
+      if !audioConditioning.isEmpty {
+        firstPassImageCond.1 += audioConditioning.map {
+          graph.variable($0.toGPU(0))
+        }
+      }
 
       let injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: firstPassStartHeight,
@@ -4430,6 +4554,11 @@ extension LocalImageGenerator {
       }
       x = applyImageCond(
         x, modifier: modifier, version: modelVersion, imageCond: firstPassImageCond)
+      if modelVersion == .longcatVideoAvatar1_5, videoContinuationFrames != nil {
+        let shape = x.shape
+        x = x[1..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+        batchSize = (batchSize.0 - 1, batchSize.1)
+      }
 
       let isHighPrecisionVAEFallbackEnabled = DeviceCapability.isHighPrecisionVAEFallbackEnabled(
         scale: imageScale)
@@ -4690,12 +4819,17 @@ extension LocalImageGenerator {
           .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(customHeight),
           heightScale: Float(startWidth * startScaleFactor) / Float(customWidth))($0)
       }
-      let secondPassImageCond = encodeImageCond(
+      var secondPassImageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,
         image: image, depth: secondPassDepthImage, custom: secondPassCustomImage,
         shuffles: shuffles,
         modifier: modifier, version: modelVersion, firstStage: firstStage,
         usesFlashAttention: isMFAEnabled)
+      if !audioConditioning.isEmpty {
+        secondPassImageCond.1 += audioConditioning.map {
+          graph.variable($0.toGPU(0))
+        }
+      }
       let (
         canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
         canInjectedControls
@@ -4778,7 +4912,8 @@ extension LocalImageGenerator {
         let channels: Int
         switch modelVersion {
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
+          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+          .longcatVideoAvatar1_5:
           channels = 16
         case .hiDreamO1:
           channels = 3 * 32 * 32
@@ -4960,7 +5095,8 @@ extension LocalImageGenerator {
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
     colorCalibrationMask: Tensor<UInt8>? = nil,
     cancellation: (@escaping () -> Void) -> Void,
-    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+    feedback:
+      @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
@@ -5292,7 +5428,8 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 32 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .longcatVideoAvatar1_5:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -5509,7 +5646,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -6087,7 +6224,8 @@ extension LocalImageGenerator {
     negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
     cancellation: (@escaping () -> Void) -> Void,
-    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+    feedback:
+      @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
     // The binary mask is a shape of (height, width), with content of 0, 1, 2, 3
@@ -6421,7 +6559,8 @@ extension LocalImageGenerator {
     configuration: GenerationConfiguration, denoiserParameterization: Denoiser.Parameterization,
     sampling: Sampling, signposts: inout Set<ImageGeneratorSignpost>,
     cancellation: (@escaping () -> Void) -> Void,
-    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+    feedback:
+      @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>], [Tensor<Float>]?)? {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
@@ -6644,7 +6783,8 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 32 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .longcatVideoAvatar1_5:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -6934,7 +7074,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,
@@ -7327,7 +7467,8 @@ extension LocalImageGenerator {
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
     signposts: inout Set<ImageGeneratorSignpost>, cancellation: (@escaping () -> Void) -> Void,
-    feedback: @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+    feedback:
+      @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>], [Tensor<Float>]?)? {
     let coreMLGuard = modelPreloader.beginCoreMLGuard()
@@ -7550,7 +7691,8 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 32 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2:
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .longcatVideoAvatar1_5:
         channels = 16
         startScaleFactor = 8
         startWidth = image.shape[2] / 8 / imageScaleFactor
@@ -7839,7 +7981,7 @@ extension LocalImageGenerator {
       switch modelVersion {
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
-      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
+      case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
         batchSize = injectReferenceFrames(
           batchSize: ((Int(configuration.numFrames) - 1) / 4) + 1, version: modelVersion,
           canInjectControls: canInjectControls, shuffleCount: shuffles.count,

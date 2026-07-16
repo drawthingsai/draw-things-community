@@ -324,6 +324,14 @@ let package = Package(
     ),
 
     .target(
+      name: "AudioConverter",
+      dependencies: [
+        "Diffusion",
+        .product(name: "NNC", package: "s4nnc"),
+      ],
+      path: "Libraries/AudioConverter/Sources"
+    ),
+    .target(
       name: "ImageGenerator",
       dependencies: [
         "DataModels",
@@ -478,6 +486,7 @@ let package = Package(
     .executableTarget(
       name: "DrawThingsCLI",
       dependencies: [
+        "AudioConverter",
         "BinaryResources",
         "ConfigurationZoo",
         "DataModels",

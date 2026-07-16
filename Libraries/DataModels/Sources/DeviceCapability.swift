@@ -688,7 +688,7 @@ public struct DeviceCapability {
       guard (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force else {
         return false
       }
-    case .wan21_14b:
+    case .wan21_14b, .longcatVideoAvatar1_5:
       guard
         (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force
       else {

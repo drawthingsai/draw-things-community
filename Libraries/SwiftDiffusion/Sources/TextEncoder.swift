@@ -3823,7 +3823,7 @@ extension TextEncoder {
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         lengthsOfUncond: lengthsOfUncond, lengthsOfCond: lengthsOfCond,
         injectedTextEmbeddings: injectedTextEmbeddings, textModels: existingTextModels)
-    case .wan21_1_3b, .wan21_14b, .wan22_5b:
+    case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
       return encodeWan(
         images: images,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
@@ -3914,7 +3914,7 @@ extension TextEncoder {
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
-        .seedvr2_7b:
+        .seedvr2_7b, .longcatVideoAvatar1_5:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3953,7 +3953,8 @@ extension TextEncoder {
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                   .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
                   .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
-                  .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+                  .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+                  .longcatVideoAvatar1_5:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3994,7 +3995,8 @@ extension TextEncoder {
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                 .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
                 .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
-                .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+                .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+                .longcatVideoAvatar1_5:
                 fatalError()
               }
               return .continue(name)

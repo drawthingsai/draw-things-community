@@ -128,7 +128,7 @@ extension UNetProtocol {
         .toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3:
+      .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .longcatVideoAvatar1_5:
       return nil
     case .seedvr2_3b, .seedvr2_7b:
       return graph.variable(
@@ -288,6 +288,22 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
               (index + timesteps)..<(index + timesteps + 1), 0..<shape[1], 0..<shape[2]])
         }
       }
+  case .longcatVideoAvatar1_5:
+    // Layout:
+    // [cleanCondLatents?, rot, tEmb, 48 x (4 text/audio KVs + optional 2 clean KVs)].
+    // tEmb is [timesteps, time, 512] and is sliced to the current sampling step here.
+    let longCatLayerCount = 48
+    let longCatPerLayerConditionCount = conditions.count > 240 ? 6 : 4
+    let longCatModelInputCount =
+      2 + longCatLayerCount * longCatPerLayerConditionCount
+    let tEmbIndex = conditions.count - longCatModelInputCount + 1
+    let shape = conditions[tEmbIndex].shape
+    return conditions[0..<tEmbIndex]
+      + [
+        DynamicGraph.Tensor<Float>(conditions[tEmbIndex])[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      ] + conditions[(tEmbIndex + 1)...]
   case .wan21_1_3b, .wan21_14b, .wan22_5b:
     return conditions[0..<1]
       + conditions[1..<7].map({
@@ -595,7 +611,7 @@ public func externalOnDemandPartially(
       return false
     case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .wan21_14b, .qwenImage, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
-      .seedvr2_7b, .ideogram4, .krea2:
+      .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
       return true
     }
   }
@@ -1263,6 +1279,30 @@ extension UNetFromNNC {
               width: tiledWidth, channels: 3072))
         }
       }
+    case .longcatVideoAvatar1_5:
+      precondition(!isCfgEnabled, "LongCat-Video-Avatar requires guidance scale 1 (distilled).")
+      tiledWidth = startWidth
+      tiledHeight = startHeight
+      tiledAudioHeight = 0
+      tileScaleFactor = 8
+      // c layout:
+      // [cleanCondLatents?, rot, tEmb, 48 x (4 text/audio KVs + optional 2 clean KVs)].
+      // LongCat AI2V uses one clean cond latent; AVC uses one ref latent plus continuation cond latents.
+      let longCatLayerCount = 48
+      let longCatPerLayerConditionCount = c.count > 240 ? 6 : 4
+      let longCatKVStart = c.count - longCatLayerCount * longCatPerLayerConditionCount
+      let hasCleanCondLatents = longCatKVStart >= 3
+      let condFrames = hasCleanCondLatents ? c[0].shape[0] : 0
+      let textLength = c[longCatKVStart].shape[1]
+      didRunLoRASeparately = false
+      unet = ModelBuilderOrModel.model(
+        LongCatVideoAvatar(
+          time: batchSize, height: tiledHeight, width: tiledWidth, channels: 4_096, layers: 48,
+          intermediateSize: 11_008, textLength: textLength, audioTokens: 32,
+          condFrames: condFrames,
+          usesFlashAttention: valueOr(useFlashAttention, .scale1),
+          kvCache: longCatPerLayerConditionCount == 6
+        ).1)
     case .wan21_1_3b:
       let vaceContextExists = (c[7].shape.count == 1 && c[7].shape[0] == 1)
       let vaceLayers: [Int] = vaceContextExists ? (0..<15).map { $0 * 2 } : []
@@ -1947,7 +1987,8 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
     }
@@ -2011,7 +2052,7 @@ extension UNetFromNNC {
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
       .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
-      .seedvr2_7b:
+      .seedvr2_7b, .longcatVideoAvatar1_5:
       modelKey = "dit"
     }
     let externalData: DynamicGraph.Store.Codec =
@@ -2114,6 +2155,11 @@ extension UNetFromNNC {
             case .wan21_1_3b, .wan21_14b, .wan22_5b:
               return [Int: Int](
                 uniqueKeysWithValues: (0..<40).map {
+                  return ($0, $0)
+                })
+            case .longcatVideoAvatar1_5:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<48).map {
                   return ($0, $0)
                 })
             case .hiDreamI1:
@@ -2631,7 +2677,7 @@ extension UNetFromNNC {
             tokenEncoding
           return finalEncoding
         }
-      case .wan21_1_3b, .wan21_14b, .wan22_5b:
+      case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
         if $0.0 == 0 {
           let shape = $0.1.shape
           let t = shape[1] / ((originalShape[1] / 2) * (originalShape[2] / 2))
@@ -2840,6 +2886,17 @@ extension UNetFromNNC {
       }
       unet.compile(inputs: inputs)
       teaCache?.compile(model: unet, inputs: inputs)
+      return
+    case .longcatVideoAvatar1_5:
+      precondition(!isCfgEnabled, "LongCat-Video-Avatar requires guidance scale 1 (distilled).")
+      // inputs layout:
+      // [x, cleanCondLatents?, rot, tEmb, 48 x (4 text/audio KVs + optional 2 clean KVs)]. The
+      // optional clean cond latents are sampler-side substitution inputs, not model inputs.
+      let longCatLayerCount = 48
+      let longCatPerLayerConditionCount = inputs.count > 240 ? 6 : 4
+      let longCatModelInputCount =
+        2 + longCatLayerCount * longCatPerLayerConditionCount
+      unet.compile(inputs: [inputs[0]] + Array(inputs[(inputs.count - longCatModelInputCount)...]))
       return
     case .wan21_1_3b, .wan21_14b, .wan22_5b:
       guard isCfgEnabled else {
@@ -3413,6 +3470,60 @@ extension UNetFromNNC {
         }
       }
       return Functional.concat(axis: 0, etUncond, etCond)
+    case .longcatVideoAvatar1_5:
+      precondition(!isCfgEnabled, "LongCat-Video-Avatar requires guidance scale 1 (distilled).")
+      let shape = firstInput.shape
+      let longCatLayerCount = 48
+      let longCatPerLayerConditionCount = restInputs.count > 240 ? 6 : 4
+      let longCatKVStart = restInputs.count - longCatLayerCount * longCatPerLayerConditionCount
+      let hasCleanCondLatents = longCatKVStart >= 3
+      let longCatModelInputCount =
+        2 + longCatLayerCount * longCatPerLayerConditionCount
+      let kvCache = longCatPerLayerConditionCount == 6
+      var xIn = firstInput
+      var cleanCondLatents: DynamicGraph.Tensor<FloatType>? = nil
+      var condFrames = 0
+      if hasCleanCondLatents {
+        let cleanCond = DynamicGraph.Tensor<FloatType>(restInputs[0])
+        let cleanCondShape = cleanCond.shape
+        condFrames = min(shape[0], cleanCondShape[0])
+        xIn = firstInput.copied()
+        // The conditioning prefix is substituted with clean latents at every step, matching
+        // LongCat's diffusion-forcing style conditioning (cond latents carry t = 0).
+        xIn[
+          0..<condFrames, 0..<min(shape[1], cleanCondShape[1]),
+          0..<min(shape[2], cleanCondShape[2]), 0..<shape[3]
+        ] =
+          cleanCond[
+            0..<condFrames, 0..<min(shape[1], cleanCondShape[1]),
+            0..<min(shape[2], cleanCondShape[2]), 0..<shape[3]
+          ]
+        cleanCondLatents = cleanCond
+      }
+      let modelInputs = Array(restInputs[(restInputs.count - longCatModelInputCount)...])
+      let modelEt = unet(inputs: xIn, modelInputs)[0].as(of: FloatType.self)
+      var et: DynamicGraph.Tensor<FloatType>
+      if kvCache {
+        et = firstInput.copied()
+        et.full(0)
+        let noiseFrames = min(shape[0] - condFrames, modelEt.shape[0])
+        et[
+          condFrames..<(condFrames + noiseFrames), 0..<shape[1], 0..<shape[2], 0..<shape[3]
+        ] = modelEt[0..<noiseFrames, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+      } else {
+        et = modelEt
+      }
+      if let cleanCondLatents = cleanCondLatents, condFrames > 0, timestep > 0 {
+        // Steer the sampler's cond prefix exactly onto clean latents: with rectified flow,
+        // v = (x_t - x_0) / sigma is the straight-line velocity whose Euler updates land on x_0.
+        let sigma = timestep / 1_000
+        et[0..<condFrames, 0..<shape[1], 0..<shape[2], 0..<shape[3]] = Functional.add(
+          left: firstInput[0..<condFrames, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+          right: cleanCondLatents[0..<condFrames, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
+            .copied(),
+          leftScalar: 1 / sigma, rightScalar: -1 / sigma)
+      }
+      return et
     case .wan21_1_3b, .wan21_14b, .wan22_5b:
       let shouldUseCache =
         teaCache?.shouldUseCacheForTimeEmbedding(
@@ -4612,7 +4723,8 @@ extension UNetFromNNC {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
       .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .longcatVideoAvatar1_5:
       return (0, 0)
     case .ltx2, .ltx2_3:
       return LTX2ExtractAudioFramesAndHeight(shape)
@@ -4729,7 +4841,7 @@ extension UNetFromNNC {
       .hiDreamI1,
       .kandinsky21, .qwenImage, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wan21_14b, .wan21_1_3b, .zImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4,
-      .krea2:
+      .krea2, .longcatVideoAvatar1_5:
       tileScaleFactor = 8
     case .hiDreamO1:
       tileScaleFactor = 32
@@ -4971,7 +5083,8 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .longcatVideoAvatar1_5:
         fatalError()
       }
     }
@@ -5006,7 +5119,8 @@ extension UNetFromNNC {
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
       .cosmos2_5_2b,
-      .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .longcatVideoAvatar1_5:
       return x
     }
   }

@@ -19,6 +19,10 @@ struct Converter: ParsableCommand {
   var outputDirectory: String
   @Flag(help: "Whether to convert the text encoder(s).")
   var textEncoders = false
+  @Flag(
+    help:
+      "Treat the input file as a Whisper-large-v3 audio encoder safetensors and convert it alone.")
+  var audioEncoder = false
 
   private struct Specification: Codable {
     var name: String
@@ -34,6 +38,10 @@ struct Converter: ParsableCommand {
 
   mutating func run() throws {
     ModelZoo.externalUrls = [URL(fileURLWithPath: outputDirectory)]
+    if audioEncoder {
+      try convertAudioEncoder()
+      return
+    }
     let fileName = Importer.cleanup(filename: name)
     let importer = ModelImporter(
       filePath: file, modelName: fileName,
@@ -142,6 +150,11 @@ struct Converter: ParsableCommand {
           autoencoder = "wan_v2.1_video_vae_f16.ckpt"
         }
       }
+    case .longcatVideoAvatar1_5:
+      textEncoder = "umt5_xxl_encoder_q8p.ckpt"
+      if autoencoder == nil {
+        autoencoder = "wan_v2.1_video_vae_f16.ckpt"
+      }
     case .hiDreamI1, .hiDreamO1:
       fatalError()
     case .qwenImage:
@@ -203,5 +216,62 @@ struct Converter: ParsableCommand {
     jsonEncoder.outputFormatting = .prettyPrinted
     let jsonData = try jsonEncoder.encode(specification)
     print(String(decoding: jsonData, as: UTF8.self))
+  }
+
+  private enum AudioEncoderError: Swift.Error {
+    case cannotOpenFile
+    case missingTensor(String)
+  }
+
+  private func convertAudioEncoder() throws {
+    guard let safeTensors = SafeTensors(url: URL(fileURLWithPath: file)) else {
+      throw AudioEncoderError.cannotOpenFile
+    }
+    // transformers saves WhisperForConditionalGeneration keys with a "model." prefix; the
+    // WhisperModel layout has none. Normalize to the bare "encoder." layout the mapper uses.
+    var stateDict = [String: TensorDescriptor]()
+    for (key, value) in safeTensors.states {
+      if key.hasPrefix("model.") {
+        stateDict[String(key.dropFirst("model.".count))] = value
+      } else {
+        stateDict[key] = value
+      }
+    }
+    let (mapper, encoder) = WhisperEncoder(
+      width: 1_280, layers: 32, heads: 20, melBins: 128, frames: 3_000, intermediateSize: 5_120,
+      usesFlashAttention: false)
+    let graph = DynamicGraph()
+    try graph.withNoGrad {
+      let mel = graph.variable(.CPU, .NCHW(1, 128, 1, 3_000), of: FloatType.self)
+      encoder.compile(inputs: mel)
+      let mapping = mapper(.diffusers)
+      let fileName = Importer.cleanup(filename: name)
+      let outputPath = URL(fileURLWithPath: outputDirectory)
+        .appendingPathComponent("\(fileName)_f16.ckpt").path
+      try graph.openStore(outputPath) { store in
+        try store.withTransaction {
+          for (key, value) in mapping.sorted(by: { $0.key < $1.key }) {
+            guard let descriptor = stateDict[key] else {
+              throw AudioEncoderError.missingTensor(key)
+            }
+            try safeTensors.with(descriptor) { tensor in
+              var tensor = Tensor<FloatType>(from: tensor)
+              let shape = tensor.shape
+              if shape.count == 3 {
+                // Conv1d weights map onto [O, I, 1, W] 2D convolutions.
+                tensor = tensor.reshaped(format: .NCHW, shape: [shape[0], shape[1], 1, shape[2]])
+              }
+              value.write(
+                graph: graph, to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                isDiagonalDown: false
+              ) {
+                return "__audio_encoder__[\($0)]"
+              }
+            }
+          }
+        }
+      }
+      print("Wrote audio encoder to \(outputPath)")
+    }
   }
 }
