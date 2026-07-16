@@ -648,7 +648,7 @@ public enum LoRAImporter {
         if format.contains(.diffusers) {
           adapterMapping.merge(adapterMapper(.diffusers)) { v, _ in v }
         }
-        otherMappings.append(("llm_adapter", adapterMapping))
+        otherMappings.append(("dit", adapterMapping))
       case .auraflow:
         fatalError()
       case .v1, .v2, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
