@@ -17,7 +17,13 @@ cc_library(
         "Sources/CCryptoBoringSSL/include/**/*.h",
     ]),
     aspect_hints = [":CCryptoBoringSSL_swift_interop"],
-    copts = [],
+    # This pinned SwiftCrypto revision omitted these two socket BIO exports
+    # from its generated prefix list. Keep them isolated from other libcrypto
+    # implementations that may be linked into the same app.
+    copts = [
+        "-DBIO_new_socket=CCryptoBoringSSL_BIO_new_socket",
+        "-DBIO_s_socket=CCryptoBoringSSL_BIO_s_socket",
+    ],
     includes = ["Sources/CCryptoBoringSSL/include"],
     tags = ["swift_module=CCryptoBoringSSL"],
     visibility = ["//visibility:public"],

@@ -201,6 +201,15 @@ new_git_repository(
 )
 
 new_git_repository(
+    name = "OpenSSH",
+    build_file = "openssh-portable.BUILD",
+    commit = "e8dd756725e8800fcd0b3fd71ee6b4382d1e8fab",
+    patch_args = ["-p1"],
+    patches = ["//Vendors/OpenSSH:ios.patch"],
+    remote = "https://github.com/openssh/openssh-portable.git",
+)
+
+new_git_repository(
     name = "SwiftNIO",
     build_file = "swift-nio.BUILD",
     commit = "a16e2f54a25b2af217044e5168997009a505930f",
