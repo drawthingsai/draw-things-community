@@ -3966,6 +3966,11 @@ extension DrawThingsCLI {
         modelsDirectory: modelsDirectory)
       let promptValues = try resolvedPrompts(prompts)
       let configuration = resolvedConfiguration.configuration
+      if modelSpecification.version == .longcatVideoAvatar1_5 {
+        guard configuration.guidanceScale == 1 else {
+          throw ValidationError("LongCat-Video-Avatar currently requires --cfg 1.")
+        }
+      }
       let resolvedNegativePrompt =
         promptValues.negative ?? resolvedConfiguration.recommendedNegativePrompt ?? ""
       LoRAZoo.overrideMapping = resolvedConfiguration.loraOverrideMapping

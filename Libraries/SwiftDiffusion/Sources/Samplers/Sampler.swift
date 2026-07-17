@@ -300,6 +300,10 @@ public func isCfgEnabled(
   guard version != .svdI2v else {
     return (textGuidanceScale - 1).magnitude > 1e-3 || (startFrameCfg - 1).magnitude > 1e-3
   }
+  guard version != .longcatVideoAvatar1_5 else {
+    // Only the distilled no-CFG path is wired; the triple-guidance base path is not implemented.
+    return false
+  }
   guard modifier != .editing else {
     // If both are 1, no cfg.
     if (textGuidanceScale - 1).magnitude <= 1e-3 && (imageGuidanceScale - 1).magnitude <= 1e-3 {
