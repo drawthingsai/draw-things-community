@@ -79,6 +79,7 @@ swift_library(
     srcs = glob(["DrawThingsCLI/*.swift"]),
     visibility = ["//Apps:__subpackages__"],
     deps = [
+        "//Libraries/AudioConverter",
         "//Libraries/BinaryResources",
         "//Libraries/ConfigurationZoo",
         "//Libraries/DataModels",
