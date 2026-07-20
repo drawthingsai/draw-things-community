@@ -81,6 +81,7 @@ swift_library(
     deps = [
         "//Libraries/AudioConverter",
         "//Libraries/BinaryResources",
+        "//Libraries/CLICloudAuth",
         "//Libraries/ConfigurationZoo",
         "//Libraries/DataModels",
         "//Libraries/Downloader",
