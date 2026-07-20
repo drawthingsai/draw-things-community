@@ -201,6 +201,17 @@ public final class ModelImporter {
         || $0.contains("blocks.5.self_attn.q_proj.")
         || $0.contains("blocks_5_self_attn_q_proj")
     }
+    var isIdeogram4 =
+      stateDict.keys.contains {
+        $0.contains("layers.33.attention.to_q.weight")
+          || $0.contains("layers.33.attention.qkv.weight")
+      }
+      && stateDict.keys.contains {
+        $0.contains("final_layer.adaln_modulation.weight")
+      }
+    if isIdeogram4 {
+      isZImage = false
+    }
     var isKrea2 =
       stateDict.keys.contains {
         $0.contains("blocks.27.attn.wq.weight")
@@ -286,6 +297,7 @@ public final class ModelImporter {
       isFlux2 = false
       isFlux2_9B = false
       isFlux2_4B = false
+      isIdeogram4 = false
       isKrea2 = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
@@ -442,6 +454,14 @@ public final class ModelImporter {
       expectedTotalAccess = 523
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.19.attn.to_qkv_mlp_proj.")
+      }
+    } else if isIdeogram4 {
+      modelVersion = .ideogram4
+      modifier = .none
+      inputDim = 32
+      expectedTotalAccess = 526
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("layers.33.attention.to_q.weight")
       }
     } else if isKrea2 {
       modelVersion = .krea2
@@ -806,10 +826,13 @@ public final class ModelImporter {
     case .flux2_4b:
       conditionalLength = 7680
       batchSize = 1
+    case .ideogram4:
+      conditionalLength = 13 * 4_096
+      batchSize = 1
     case .krea2:
       conditionalLength = 2560
       batchSize = 1
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
@@ -1085,7 +1108,20 @@ public final class ModelImporter {
           + (0..<7).map { _ in
             graph.variable(.CPU, .HWC(1, 1, 6_144), of: FloatType.self)
           }
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      case .ideogram4:
+        cArr =
+          [
+            graph.variable(.CPU, .HWC(1, 32, 4_608), of: FloatType.self),
+            graph.variable(.CPU, .WC(32 * 32, 4_608), of: FloatType.self),
+            graph.variable(
+              Tensor<FloatType>(
+                from: Ideogram4RotaryPositionEmbedding(
+                  textLength: 32, gridHeight: 32, gridWidth: 32, of: FloatType.self))),
+          ]
+          + (0..<(34 * 4 + 1)).map { _ in
+            graph.variable(.CPU, .WC(1, 4_608), of: FloatType.self)
+          }
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       case .kandinsky21, .v1, .v2:
         break
@@ -1353,6 +1389,10 @@ public final class ModelImporter {
           timesteps: 1,
           channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
           usesFlashAttention: .scale1, kvCache: false)
+      case .ideogram4:
+        (unetMapper, unet) = Ideogram4(
+          batchSize: 1, height: 64, width: 64, textLength: 32, usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = Ideogram4Fixed(timesteps: 1)
       case .krea2:
         (unetMapper, unet) = Krea2(
           batchSize: 1, height: 64, width: 64, textLength: 32, usesFlashAttention: .scale1)
@@ -1367,12 +1407,12 @@ public final class ModelImporter {
             prefix: "dit",
             mapping: textFusionMapper(isDiffusersFormat ? .diffusers : .generativeModels)
           ))
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
       }
-      let crossattn: [DynamicGraph.Tensor<FloatType>]
+      let crossattn: [DynamicGraph.AnyTensor]
       switch modelVersion {
       case .longcatVideoAvatar1_5:
         crossattn = [
@@ -1528,6 +1568,20 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
+      case .ideogram4:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 32, 13 * 4_096), of: FloatType.self),
+          graph.variable(
+            Tensor<Int32>(
+              from: Ideogram4IndicatorIDs(textLength: 32, imageLength: 0))),
+          graph.variable(
+            Tensor<Int32>(
+              from: Ideogram4IndicatorIDs(textLength: 0, imageLength: 32 * 32))),
+          graph.variable(
+            Tensor<FloatType>(
+              from: Ideogram4TimeEmbedding(timestep: 0, of: FloatType.self))),
+        ]
+        tEmb = nil
       case .krea2:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 32, 2_560), of: FloatType.self),
@@ -1538,7 +1592,7 @@ public final class ModelImporter {
             ).reshaped(.HWC(1, 1, 256))),
         ]
         tEmb = nil
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -1674,6 +1728,15 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(4))] = value
           }
         }
+      } else if modelVersion == .ideogram4 {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
       } else if modelVersion == .krea2 {
         // Remove the model.diffusion_model / model prefix.
         for (key, value) in stateDict {
@@ -1762,7 +1825,8 @@ public final class ModelImporter {
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
             .hiDreamO1,
             .wan22_5b, .qwenImage, .cosmos2_5_2b, .auraflow, .zImage, .ernieImage, .flux2,
-            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .krea2:
+            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .ideogram4,
+            .krea2:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1771,7 +1835,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b:
             fatalError()
           }
           func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
@@ -1938,6 +2002,18 @@ public final class ModelImporter {
                     let _ = interrupt()
                     return "__\(modelPrefixFixed)__[\($0)]"
                   }
+                } else if let name = value.first, modelVersion == .ideogram4,
+                  name == "t-indicator_embedding-0-0"
+                {
+                  value.write(
+                    graph: graph,
+                    to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
+                    isDiagonalDown: false
+                  ) { _ in
+                    let _ = interrupt()
+                    return "indicator_embedding"
+                  }
+                  let _ = interrupt()
                 } else if !value.isEmpty {
                   value.write(
                     graph: graph,
@@ -2118,11 +2194,15 @@ public final class ModelImporter {
           if $0.keys.count != 292 && $0.keys.count != 294 {
             throw Error.tensorWritesFailed
           }
+        case .ideogram4:
+          if $0.keys.count != 730 {
+            throw Error.tensorWritesFailed
+          }
         case .krea2:
           if $0.keys.count != 581 {
             throw Error.tensorWritesFailed
           }
-        case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
+        case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
