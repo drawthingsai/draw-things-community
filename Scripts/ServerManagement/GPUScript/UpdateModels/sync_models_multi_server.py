@@ -6,11 +6,12 @@ This script automatically manages the NAS HTTP server lifecycle - starting it
 at the beginning and stopping it at the end.
 
 Workflow:
-1. Start NAS HTTP server (if not already running)
-2. Check if NAS HTTP server is accessible
-3. Load GPU servers from gpu_servers.csv
-4. Download NAS sha256-list.csv as source of truth
-5. For each GPU server:
+1. Load GPU servers from gpu_servers.csv
+2. Verify non-interactive SSH access to every GPU server
+3. Start NAS HTTP server (if not already running)
+4. Check if NAS HTTP server is accessible
+5. Download NAS sha256-list.csv as source of truth
+6. For each GPU server:
    a. Force refresh L1 (filesize) on GPU server (unless --skip-l1-refresh)
    b. Update checksums on GPU server using compare_checksums.py
    c. Compare GPU server CSV with NAS CSV at all levels (L1, L2, L3)
@@ -19,7 +20,7 @@ Workflow:
       - If free space < 100G, moves file to models_path_2 (overflow)
       - Updates sha256sum in CSV immediately after each file download
    e. Run 'compare_checksums.py all' to fill in L1/L2 checksums for downloaded files
-6. Stop NAS HTTP server
+7. Stop NAS HTTP server
 
 Usage:
   # Perform actual sync (sequential)
@@ -39,6 +40,9 @@ Usage:
 
 Notes:
   - NAS HTTP server is automatically started/stopped by this script
+  - SSH access is checked sequentially before NAS startup or parallel sync
+  - New host keys are accepted; changed host keys are rejected
+  - Passwordless SSH authentication is required
   - In parallel mode, detailed output goes to logs/sync-{hostname}.log files
   - Terminal shows real-time progress updates every 30 seconds
   - wget uses dot format (--progress=dot:mega) for cleaner logs
@@ -66,6 +70,10 @@ SCRIPT_DIR = Path(__file__).parent
 # Global flags
 DRY_RUN = False
 SKIP_L1_REFRESH = False
+
+# SSH preflight configuration
+SSH_CONNECT_TIMEOUT_SECONDS = 10
+SSH_COMMAND_TIMEOUT_SECONDS = 20
 
 # Global progress tracking for parallel mode
 PROGRESS_LOCK = threading.Lock()
@@ -242,6 +250,79 @@ def load_gpu_servers(filepath="gpu_servers.csv"):
             print(f"   {hostname}: {path_info}")
 
     return servers
+
+
+def check_gpu_server_ssh_access(servers):
+    """Verify non-interactive SSH access to every configured GPU server.
+
+    Hosts are checked sequentially so first-time host-key enrollment cannot
+    produce overlapping prompts when the actual sync runs in parallel.
+    StrictHostKeyChecking=accept-new adds previously unseen keys while still
+    rejecting changed keys. BatchMode verifies that later sync commands will
+    not depend on password or passphrase prompts.
+
+    Args:
+        servers: GPU server tuples returned by load_gpu_servers().
+
+    Returns:
+        bool: True if every unique remote host is accessible, False otherwise.
+    """
+    remote_hosts = []
+    seen_hosts = set()
+    for server, _, _ in servers:
+        remote_host, _ = server.rsplit(':', 1)
+        if remote_host not in seen_hosts:
+            seen_hosts.add(remote_host)
+            remote_hosts.append(remote_host)
+
+    print("\n🔐 Checking non-interactive SSH access to GPU servers...")
+    print("   New host keys will be added to ~/.ssh/known_hosts; changed keys will be rejected.")
+
+    failures = []
+    for index, remote_host in enumerate(remote_hosts, 1):
+        print(f"   [{index}/{len(remote_hosts)}] {remote_host}... ", end='', flush=True)
+        command = [
+            'ssh',
+            '-T',
+            '-o', 'BatchMode=yes',
+            '-o', 'StrictHostKeyChecking=accept-new',
+            '-o', f'ConnectTimeout={SSH_CONNECT_TIMEOUT_SECONDS}',
+            '-o', 'ConnectionAttempts=1',
+            remote_host,
+            'true'
+        ]
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=SSH_COMMAND_TIMEOUT_SECONDS
+            )
+        except subprocess.TimeoutExpired:
+            error = f"timed out after {SSH_COMMAND_TIMEOUT_SECONDS} seconds"
+            print(f"❌ {error}")
+            failures.append((remote_host, error))
+            continue
+
+        if result.returncode == 0:
+            print("✅ Access confirmed")
+            continue
+
+        stderr_lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+        error = stderr_lines[-1] if stderr_lines else f"ssh exited with code {result.returncode}"
+        print(f"❌ {error}")
+        failures.append((remote_host, error))
+
+    if failures:
+        print("\n❌ SSH access check failed:")
+        for remote_host, error in failures:
+            print(f"   - {remote_host}: {error}")
+        print("   Fix SSH host-key or key-based authentication access before syncing.")
+        return False
+
+    print(f"\n✅ SSH access confirmed for all {len(remote_hosts)} GPU server(s)")
+    return True
 
 
 def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
@@ -1072,6 +1153,8 @@ def sync_server_with_logging(server, nas_csv_local, log_dir=".", custom_nas_url=
 def main():
     global DRY_RUN, SKIP_L1_REFRESH
 
+    nas_http_server_start_attempted = False
+
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description='Multi-Server Model Sync with NAS HTTP Server',
@@ -1136,7 +1219,7 @@ Examples:
 
     try:
         # Step 1: Load GPU servers
-        print_step(1, 5, "Load GPU servers from gpu_servers.csv")
+        print_step(1, 6, "Load GPU servers from gpu_servers.csv")
         servers = load_gpu_servers()
 
         if not servers:
@@ -1155,27 +1238,34 @@ Examples:
             else:
                 print(f"  {i}. {server.split(':')[0]}: {path_info}")
 
-        # Step 2: Start NAS HTTP server
-        print_step(2, 5, "Start NAS HTTP server")
+        # Step 2: Verify all GPU servers are ready for non-interactive SSH
+        print_step(2, 6, "Check SSH access to GPU servers")
+        if not check_gpu_server_ssh_access(servers):
+            print("\n❌ Not all GPU servers are accessible. Exiting before sync.")
+            sys.exit(1)
+
+        # Step 3: Start NAS HTTP server
+        print_step(3, 6, "Start NAS HTTP server")
+        nas_http_server_start_attempted = True
         if not start_nas_http_server():
             print("\n❌ Failed to start NAS HTTP server. Exiting.")
             sys.exit(1)
 
-        # Step 3: Check if NAS HTTP server is accessible
-        print_step(3, 5, "Check NAS HTTP server")
+        # Step 4: Check if NAS HTTP server is accessible
+        print_step(4, 6, "Check NAS HTTP server")
         if not check_nas_http_server():
             print("\n❌ NAS HTTP server is not accessible. Exiting.")
             sys.exit(1)
 
-        # Step 4: Download NAS CSV (source of truth)
-        print_step(4, 5, "Download NAS CSV (source of truth)")
+        # Step 5: Download NAS CSV (source of truth)
+        print_step(5, 6, "Download NAS CSV (source of truth)")
         nas_csv_local = download_nas_csv()
         if not nas_csv_local:
             print("❌ Failed to download NAS CSV")
             sys.exit(1)
 
-        # Step 5: Sync each GPU server
-        print_step(5, 5, "Sync GPU servers")
+        # Step 6: Sync each GPU server
+        print_step(6, 6, "Sync GPU servers")
 
         results = {}
 
@@ -1284,8 +1374,13 @@ Examples:
         exit_code = 1
 
     finally:
-        # Always stop the NAS HTTP server at the end
-        stop_nas_http_server()
+        # Only clean up after this run attempted to start the NAS server.
+        if nas_http_server_start_attempted:
+            try:
+                stop_nas_http_server()
+            except KeyboardInterrupt:
+                print("\n⚠️  NAS HTTP server cleanup interrupted")
+                exit_code = 1
 
     sys.exit(exit_code)
 
