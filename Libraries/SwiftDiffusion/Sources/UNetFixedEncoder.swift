@@ -531,7 +531,9 @@ extension UNetFixedEncoder {
         }
       }
       let fixedConditions = unetFixed(inputs: c, [timeEmbeds]).map { $0.as(of: FloatType.self) }
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      if lora.isEmpty || shouldRunLoRASeparately {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       let maxTextLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
       let rotary = graph.variable(
         Krea2RotaryPositionEmbedding(
