@@ -189,6 +189,7 @@ struct Converter: ParsableCommand {
         fileNames.first {
           $0.hasSuffix("_qwen_3_vl_4b_f16.ckpt") || $0.hasSuffix("_qwen_3_vl_4b_q8p.ckpt")
         } ?? "qwen_3_vl_4b_q8p.ckpt"
+      clipEncoder = "\(fileName)_f16.ckpt"
       if autoencoder == nil {
         autoencoder = "qwen_image_vae_f16.ckpt"
       }

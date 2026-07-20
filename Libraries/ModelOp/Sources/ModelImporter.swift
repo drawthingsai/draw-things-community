@@ -201,6 +201,14 @@ public final class ModelImporter {
         || $0.contains("blocks.5.self_attn.q_proj.")
         || $0.contains("blocks_5_self_attn_q_proj")
     }
+    var isKrea2 =
+      stateDict.keys.contains {
+        $0.contains("blocks.27.attn.wq.weight")
+          || $0.contains("transformer_blocks.27.attn.to_q.weight")
+      }
+      && stateDict.keys.contains {
+        $0.contains("txtfusion.projector.weight") || $0.contains("text_fusion.projector.weight")
+      }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -278,6 +286,7 @@ public final class ModelImporter {
       isFlux2 = false
       isFlux2_9B = false
       isFlux2_4B = false
+      isKrea2 = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -433,6 +442,14 @@ public final class ModelImporter {
       expectedTotalAccess = 523
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.19.attn.to_qkv_mlp_proj.")
+      }
+    } else if isKrea2 {
+      modelVersion = .krea2
+      modifier = .none
+      inputDim = 16
+      expectedTotalAccess = 430
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("transformer_blocks.27.attn.to_q.weight")
       }
     } else {
       throw UnpickleError.tensorNotFound
@@ -789,7 +806,10 @@ public final class ModelImporter {
     case .flux2_4b:
       conditionalLength = 7680
       batchSize = 1
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+    case .krea2:
+      conditionalLength = 2560
+      batchSize = 1
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
@@ -1053,7 +1073,19 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      case .krea2:
+        cArr =
+          [
+            graph.variable(.CPU, .HWC(1, 32, 6_144), of: FloatType.self),
+            graph.variable(
+              Tensor<FloatType>(
+                from: Krea2RotaryPositionEmbedding(
+                  textLength: 32, gridHeight: 32, gridWidth: 32, of: FloatType.self))),
+          ]
+          + (0..<7).map { _ in
+            graph.variable(.CPU, .HWC(1, 1, 6_144), of: FloatType.self)
+          }
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       case .kandinsky21, .v1, .v2:
         break
@@ -1321,7 +1353,21 @@ public final class ModelImporter {
           timesteps: 1,
           channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
           usesFlashAttention: .scale1, kvCache: false)
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      case .krea2:
+        (unetMapper, unet) = Krea2(
+          batchSize: 1, height: 64, width: 64, textLength: 32, usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = Krea2Fixed(timesteps: 1)
+        let (textFusionMapper, textFusion) = Krea2TextFusionAdapter(
+          batchSize: 1, textLength: (0, 32), usesFlashAttention: .scale1)
+        let textFusionInput = graph.variable(
+          .CPU, .HWC(1, 32, 12 * 2_560), of: FloatType.self)
+        textFusion.compile(inputs: textFusionInput)
+        additionalMappings.append(
+          (
+            prefix: "dit",
+            mapping: textFusionMapper(isDiffusersFormat ? .diffusers : .generativeModels)
+          ))
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       case .kandinsky21, .wurstchenStageB:
         fatalError()
@@ -1482,7 +1528,17 @@ public final class ModelImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      case .krea2:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 32, 2_560), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: timeEmbedding(
+                timestep: 1000, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+            ).reshaped(.HWC(1, 1, 256))),
+        ]
+        tEmb = nil
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
         fatalError()
       case .v1, .v2, .kandinsky21, .wurstchenStageB:
         crossattn = []
@@ -1618,6 +1674,15 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(4))] = value
           }
         }
+      } else if modelVersion == .krea2 {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
       }
       // In case it is not on high performance device and it is SDXL model, read the parameters directly from the mapping.
       if let unetReader = unetReader {
@@ -1697,7 +1762,7 @@ public final class ModelImporter {
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
             .hiDreamO1,
             .wan22_5b, .qwenImage, .cosmos2_5_2b, .auraflow, .zImage, .ernieImage, .flux2,
-            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5:
+            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .krea2:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1706,8 +1771,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b, .ideogram4,
-            .krea2:
+          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b, .ideogram4:
             fatalError()
           }
           func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
@@ -2054,7 +2118,11 @@ public final class ModelImporter {
           if $0.keys.count != 292 && $0.keys.count != 294 {
             throw Error.tensorWritesFailed
           }
-        case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        case .krea2:
+          if $0.keys.count != 581 {
+            throw Error.tensorWritesFailed
+          }
+        case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4:
           fatalError()
         case .kandinsky21, .wurstchenStageB:
           fatalError()
@@ -2347,6 +2415,7 @@ extension ModelImporter {
         $0.hasSuffix("_qwen_3_vl_4b_f16.ckpt")
           || $0.hasSuffix("_qwen_3_vl_4b_q8p.ckpt")
       }
+      clipEncoder = "\(fileName)_f16.ckpt"
     case .wurstchenStageC:
       textEncoder = nil
     case .kandinsky21, .wurstchenStageB:
@@ -2442,6 +2511,9 @@ extension ModelImporter {
       }
       if specification.autoencoder == nil {
         specification.autoencoder = "qwen_image_vae_f16.ckpt"
+      }
+      if specification.clipEncoder == nil {
+        specification.clipEncoder = "\(fileName)_f16.ckpt"
       }
     case .pixart:
       if specification.textEncoder == nil {
