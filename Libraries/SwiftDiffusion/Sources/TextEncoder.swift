@@ -3150,75 +3150,56 @@ extension TextEncoder {
     }
     textAdapter.maxConcurrency = .limit(4)
     textAdapter.compile(inputs: packedConditioning)
-    let loadedFromWeightsCache = weightsCache.detach(
-      "\(filePaths[1]):[llm_adapter]", to: textAdapter.parameters)
-    if !lora.isEmpty || !loadedFromWeightsCache {
-      graph.openStore(
-        filePaths[1], flags: .readOnly,
-        externalStore: TensorData.externalStore(filePath: filePaths[1])
-      ) { store in
-        if shouldRunLoRASeparately {
-          let mapping: [Int: Int] = [Int: Int](
-            uniqueKeysWithValues: (0..<2).map {
-              return ($0, $0)
-            })
-          LoRALoader.openStore(graph, lora: lora) { loader in
-            store.read(
-              "dit", model: textAdapter,
-              codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
-            ) { name, dataType, format, shape in
-              let result: DynamicGraph.Store.ModelReaderResult
-              if dataType == .Float32 {
-                result = loader.concatenateLoRA(
-                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape, of: Float32.self)
-              } else {
-                result = loader.concatenateLoRA(
-                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
-                  store: store, dataType: dataType, format: format, shape: shape,
-                  of: FloatType.self)
-              }
-              switch result {
-              case .continue(let updatedName, _, _):
-                guard updatedName == name else { return result }
-                if !loadedFromWeightsCache {
-                  return result
-                } else {
-                  return .fail
-                }
-              case .fail, .final(_):
-                return result
-              }
-            }
-          }
-        } else if !lora.isEmpty {
-          LoRALoader.openStore(graph, lora: lora) { loader in
-            store.read(
-              "dit", model: textAdapter,
-              codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
-            ) { name, dataType, _, shape in
-              if dataType == .Float32 {
-                return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape,
-                  of: Float32.self)
-              } else {
-                return loader.mergeLoRA(
-                  graph, name: name, store: store, dataType: dataType, shape: shape,
-                  of: FloatType.self)
-              }
-            }
-          }
-        } else {
+    graph.openStore(
+      filePaths[1], flags: .readOnly,
+      externalStore: TensorData.externalStore(filePath: filePaths[1])
+    ) { store in
+      if shouldRunLoRASeparately {
+        let mapping: [Int: Int] = [Int: Int](
+          uniqueKeysWithValues: (0..<2).map {
+            return ($0, $0)
+          })
+        LoRALoader.openStore(graph, lora: lora) { loader in
           store.read(
             "dit", model: textAdapter,
-            codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData])
+            codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
+          ) { name, dataType, format, shape in
+            if dataType == .Float32 {
+              return loader.concatenateLoRA(
+                graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                store: store, dataType: dataType, format: format, shape: shape, of: Float32.self)
+            } else {
+              return loader.concatenateLoRA(
+                graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                store: store, dataType: dataType, format: format, shape: shape,
+                of: FloatType.self)
+            }
+          }
         }
+      } else if !lora.isEmpty {
+        LoRALoader.openStore(graph, lora: lora) { loader in
+          store.read(
+            "dit", model: textAdapter,
+            codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData]
+          ) { name, dataType, _, shape in
+            if dataType == .Float32 {
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: Float32.self)
+            } else {
+              return loader.mergeLoRA(
+                graph, name: name, store: store, dataType: dataType, shape: shape,
+                of: FloatType.self)
+            }
+          }
+        }
+      } else {
+        store.read(
+          "dit", model: textAdapter,
+          codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData])
       }
     }
     let fusedConditioning = textAdapter(inputs: packedConditioning)[0].as(of: FloatType.self)
-    if lora.isEmpty || shouldRunLoRASeparately {
-      weightsCache.attach("\(filePaths[1]):[llm_adapter]", from: textAdapter.parameters)
-    }
     return ([fusedConditioning], [textModel])
   }
 
