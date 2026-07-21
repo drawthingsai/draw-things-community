@@ -357,10 +357,11 @@ private func Krea2TextFusion(
     out = block(out)
     mappers.append(mapper)
   }
-  out = out.reshaped([batchSize, totalTextLength, 12, 2_560]).permuted(0, 1, 3, 2)
+  let pre = out
+  out = out.reshaped([batchSize, totalTextLength, 12, 2_560]).transposed(2, 3).to(.Float32)
   let projector = Dense(count: 1, noBias: true, name: "text_fusion_projector")
   out = out.reshaped([batchSize * totalTextLength * 2_560, 12])
-  out = projector(out).reshaped([batchSize, totalTextLength, 2_560])
+  out = projector(out).reshaped([batchSize, totalTextLength, 2_560]).to(of: pre)
   for i in 0..<2 {
     let (mapper, block) = Krea2TextFusionBlock(
       batchSize: batchSize, tokenLength: totalTextLength, segments: segments,
@@ -915,12 +916,13 @@ private func LoRAKrea2TextFusion(
     out = block(out)
     mappers.append(mapper)
   }
-  out = out.reshaped([batchSize, totalTextLength, 12, 2_560]).permuted(0, 1, 3, 2)
+  let pre = out
+  out = out.reshaped([batchSize, totalTextLength, 12, 2_560]).transposed(2, 3).to(.Float32)
   let projector = LoRADense(
     count: 1, configuration: configuration, noBias: true, index: 0,
     name: "text_fusion_projector")
   out = out.reshaped([batchSize * totalTextLength * 2_560, 12])
-  out = projector(out).reshaped([batchSize, totalTextLength, 2_560])
+  out = projector(out).reshaped([batchSize, totalTextLength, 2_560]).to(of: pre)
   for i in 0..<2 {
     let (mapper, block) = LoRAKrea2TextFusionBlock(
       batchSize: batchSize, tokenLength: totalTextLength, segments: segments,
