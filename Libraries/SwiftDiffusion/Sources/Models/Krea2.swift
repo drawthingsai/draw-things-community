@@ -463,14 +463,14 @@ private func Krea2TransformerBlock(
     ).contiguous() : x
   var out =
     xIn
-    + (pregate .* attention(((1 + prescale) .* norm1(x).to(.Float16) + preshift), rot)).to(
+    + (pregate .* attention((prescale .* norm1(x).to(.Float16) + preshift), rot)).to(
       of: xIn)
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm2")
   let (ffMapper, ff) = Krea2SwiGLU(
     prefix: ("\(prefix.0).mlp", "\(prefix.1).ff"), hiddenSize: 6_144,
     intermediateSize: 16_384)
   out =
-    out + (postgate .* ff((1 + postscale) .* norm2(out).to(.Float16) + postshift)).to(of: out)
+    out + (postgate .* ff(postscale .* norm2(out).to(.Float16) + postshift)).to(of: out)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     mapping.merge(attentionMapper(format)) { v, _ in v }
@@ -517,10 +517,10 @@ public func Krea2Fixed(timesteps: Int) -> (ModelWeightMapper, Model) {
   let timeModProj5 = Dense(count: 6_144, name: "time_mod_proj_5")
   let temb = timeLinear2(timeLinear1(tEmbed).GELU(approximate: .tanh))
   let tembMod = temb.GELU(approximate: .tanh)
-  let prescaleMod = timeModProj0(tembMod)
+  let prescaleMod = 1 + timeModProj0(tembMod)
   let preshiftMod = timeModProj1(tembMod)
   let pregateMod = timeModProj2(tembMod)
-  let postscaleMod = timeModProj3(tembMod)
+  let postscaleMod = 1 + timeModProj3(tembMod)
   let postshiftMod = timeModProj4(tembMod)
   let postgateMod = timeModProj5(tembMod)
   let (txtInMapper, txtIn) = Krea2TextProjection()
@@ -1010,10 +1010,10 @@ public func LoRAKrea2Fixed(
     count: 6_144, configuration: LoRAConfiguration, index: 0, name: "time_mod_proj_5")
   let temb = timeLinear2(timeLinear1(tEmbed).GELU(approximate: .tanh))
   let tembMod = temb.GELU(approximate: .tanh)
-  let prescaleMod = timeModProj0(tembMod)
+  let prescaleMod = 1 + timeModProj0(tembMod)
   let preshiftMod = timeModProj1(tembMod)
   let pregateMod = timeModProj2(tembMod)
-  let postscaleMod = timeModProj3(tembMod)
+  let postscaleMod = 1 + timeModProj3(tembMod)
   let postshiftMod = timeModProj4(tembMod)
   let postgateMod = timeModProj5(tembMod)
   let (txtInMapper, txtIn) = LoRAKrea2TextProjection(configuration: LoRAConfiguration)
@@ -1100,14 +1100,14 @@ private func LoRAKrea2TransformerBlock(
     ).contiguous() : x
   var out =
     xIn
-    + (pregate .* attention(((1 + prescale) .* norm1(x).to(.Float16) + preshift), rot)).to(
+    + (pregate .* attention((prescale .* norm1(x).to(.Float16) + preshift), rot)).to(
       of: xIn)
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm2")
   let (ffMapper, ff) = LoRAKrea2SwiGLU(
     prefix: ("\(prefix.0).mlp", "\(prefix.1).ff"), hiddenSize: 6_144,
     intermediateSize: 16_384, layerIndex: layerIndex, configuration: configuration)
   out =
-    out + (postgate .* ff((1 + postscale) .* norm2(out).to(.Float16) + postshift)).to(of: out)
+    out + (postgate .* ff(postscale .* norm2(out).to(.Float16) + postshift)).to(of: out)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     mapping.merge(attentionMapper(format)) { v, _ in v }
