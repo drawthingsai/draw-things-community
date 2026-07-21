@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 Verify that all GPU servers have the same number of models (.ckpt and .ckpt-tensordata).
-Reads server list from gpu_servers.csv, compares model counts, and optionally
-triggers control panel update.
+Reads server list from gpu_servers.csv, compares model counts, filters the verified
+.ckpt names through model_blacklist.txt, writes model-list, and optionally triggers
+a control panel update.
 """
+
+from __future__ import annotations
 
 import argparse
 import csv
@@ -15,6 +18,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent.resolve()
 REPO_ROOT = SCRIPT_DIR.parents[3]  # Scripts/ServerManagement/GPUScript/UpdateModels -> repo root
 SERVERS_FILE = SCRIPT_DIR / "gpu_servers_logic.csv"
+MODEL_BLACKLIST_FILE = SCRIPT_DIR / "model_blacklist.txt"
 MODEL_LIST_FILE = REPO_ROOT / "model-list"
 SSH_TIMEOUT = 30
 
@@ -77,10 +81,10 @@ def get_file_count(server: str, models_path: str, pattern: str) -> tuple[int | N
         return None, str(e)
 
 
-def get_model_list(server: str, models_path: str) -> tuple[list[str] | None, str]:
+def get_file_list(server: str, models_path: str, pattern: str) -> tuple[list[str] | None, str]:
     """
-    SSH into server and get sorted list of .ckpt model names.
-    Returns (model_list, error_message). model_list is None if error occurred.
+    SSH into server and get a sorted list of names matching pattern.
+    Returns (file_list, error_message). file_list is None if error occurred.
     """
     cmd = [
         "ssh",
@@ -88,7 +92,7 @@ def get_model_list(server: str, models_path: str) -> tuple[list[str] | None, str
         "-o", "StrictHostKeyChecking=no",
         "-o", "BatchMode=yes",
         server,
-        f"ls -lrta {models_path} 2>/dev/null | awk '/\\.ckpt$/ {{print $NF}}' | sort"
+        f"ls -lrta {models_path} 2>/dev/null | awk '/{pattern}$/ {{print $NF}}' | sort"
     ]
 
     try:
@@ -216,52 +220,65 @@ def check_consistency(results: dict[str, dict]) -> tuple[bool, str]:
     return consistent, "\n".join(messages)
 
 
-def find_missing_models(results: dict[str, dict]) -> None:
-    """
-    Find and print specific .ckpt models missing on servers that have fewer files.
-    Uses the server(s) with the highest count as the reference.
-    """
+def print_file_differences(results: dict[str, dict]) -> None:
+    """Print filename differences for each count mismatch."""
     if not results:
         return
 
-    max_ckpt = max(r["ckpt"] for r in results.values())
-    deficient = {s: r for s, r in results.items() if r["ckpt"] < max_ckpt}
-    if not deficient:
-        return
-
-    # Pick first reference server (highest count)
-    ref_server, ref_info = next((s, r) for s, r in results.items() if r["ckpt"] == max_ckpt)
-    ref_path = ref_info["models_path"]
-
-    print(f"\nFetching model list from reference: {ref_server} ({ref_path})...")
-    ref_models, ref_err = get_model_list(ref_server, ref_path)
-    if ref_err:
-        print(f"  Error: {ref_err}")
-        return
-    ref_set = set(ref_models)
-
-    for server, info in deficient.items():
-        server_path = info["models_path"]
-        print(f"\nFetching model list from {server} ({server_path})...")
-        server_models, server_err = get_model_list(server, server_path)
-        if server_err:
-            print(f"  Error: {server_err}")
+    for count_key, pattern, label in (
+        ("ckpt", "\\.ckpt", ".ckpt"),
+        ("tensordata", "\\.ckpt-tensordata", ".ckpt-tensordata"),
+    ):
+        count_to_servers = {}
+        for server, info in results.items():
+            count_to_servers.setdefault(info[count_key], []).append(server)
+        if len(count_to_servers) == 1:
             continue
-        server_set = set(server_models)
 
-        missing = sorted(ref_set - server_set)
-        extra = sorted(server_set - ref_set)
+        # Use the most common count as the reference so an outlier with one
+        # extra file is reported as extra instead of every other server missing it.
+        reference_count = max(count_to_servers, key=lambda count: len(count_to_servers[count]))
+        reference_server = count_to_servers[reference_count][0]
+        reference_info = results[reference_server]
+        reference_path = reference_info["models_path"]
 
-        if missing:
-            print(f"  Missing on {server} ({len(missing)}):")
-            for m in missing:
-                print(f"    - {m}")
-        if extra:
-            print(f"  Extra on {server} not on reference ({len(extra)}):")
-            for m in extra:
-                print(f"    + {m}")
-        if not missing and not extra:
-            print(f"  No .ckpt name differences found (mismatch may be in sub-paths or symlinks)")
+        print(
+            f"\nFetching {label} list from reference: "
+            f"{reference_server} ({reference_path})..."
+        )
+        reference_files, reference_error = get_file_list(
+            reference_server, reference_path, pattern
+        )
+        if reference_error:
+            print(f"  Error: {reference_error}")
+            continue
+        reference_set = set(reference_files)
+
+        for server, info in results.items():
+            if info[count_key] == reference_count:
+                continue
+
+            server_path = info["models_path"]
+            print(f"\nFetching {label} list from {server} ({server_path})...")
+            server_files, server_error = get_file_list(server, server_path, pattern)
+            if server_error:
+                print(f"  Error: {server_error}")
+                continue
+            server_set = set(server_files)
+
+            missing = sorted(reference_set - server_set)
+            extra = sorted(server_set - reference_set)
+
+            if missing:
+                print(f"  Missing {label} on {server} ({len(missing)}):")
+                for filename in missing:
+                    print(f"    - {filename}")
+            if extra:
+                print(f"  Extra {label} on {server} ({len(extra)}):")
+                for filename in extra:
+                    print(f"    + {filename}")
+            if not missing and not extra:
+                print(f"  No {label} name differences found")
 
 
 def main():
@@ -289,7 +306,40 @@ def main():
         print("Error: No servers found in config file")
         sys.exit(1)
 
+    if not MODEL_BLACKLIST_FILE.exists():
+        print(f"Error: Model blacklist file not found: {MODEL_BLACKLIST_FILE}")
+        sys.exit(1)
+
+    try:
+        with open(MODEL_BLACKLIST_FILE, "r", encoding="utf-8") as f:
+            model_blacklist = {
+                line.strip()
+                for line in f
+                if line.strip() and not line.lstrip().startswith("#")
+            }
+    except OSError as e:
+        print(f"Error reading model blacklist: {e}")
+        sys.exit(1)
+
+    invalid_blacklist_entries = sorted(
+        entry
+        for entry in model_blacklist
+        if not entry.endswith(".ckpt") or Path(entry).name != entry
+    )
+    if invalid_blacklist_entries:
+        print(
+            "Error: Model blacklist entries must be exact .ckpt filenames "
+            "without directory paths:"
+        )
+        for entry in invalid_blacklist_entries:
+            print(f"  - {entry}")
+        sys.exit(1)
+
     print(f"Repository root: {REPO_ROOT}")
+    print(
+        f"Loaded {len(model_blacklist)} model blacklist entries from "
+        f"{MODEL_BLACKLIST_FILE}"
+    )
     print(f"Checking model counts on {len(servers)} servers...")
     print("-" * 70)
 
@@ -313,7 +363,7 @@ def main():
     print(summary)
 
     if not consistent:
-        find_missing_models(results)
+        print_file_differences(results)
 
     # Determine if we should update
     should_update = args.force_update or (args.update and consistent and not errors)
@@ -326,24 +376,57 @@ def main():
         print("\n⚠ Skipping control panel update due to connection errors")
         print("  Use --force-update to update anyway")
 
+    # A normal successful verification should still produce the model list.
+    # --force-update preserves the existing behavior of using the first
+    # successfully queried server even when verification is incomplete.
+    should_save_model_list = (consistent and not errors) or should_update
+    if should_save_model_list:
+        first_server = next(iter(results))
+        first_server_path = results[first_server]["models_path"]
+        print(f"\nFetching .ckpt list from {first_server} ({first_server_path})...")
+
+        model_list, error = get_file_list(first_server, first_server_path, "\\.ckpt")
+        if error or model_list is None:
+            print(f"Error fetching .ckpt list: {error or 'No file list returned'}")
+            sys.exit(1)
+
+        expected_count = results[first_server]["ckpt"]
+        if len(model_list) != expected_count:
+            print(
+                "Error: .ckpt count changed while fetching the model list "
+                f"(expected {expected_count}, got {len(model_list)})"
+            )
+            sys.exit(1)
+
+        filtered_model_list = [
+            model for model in model_list if model not in model_blacklist
+        ]
+        excluded_models = sorted(set(model_list) & model_blacklist)
+        unmatched_blacklist_entries = sorted(model_blacklist - set(model_list))
+
+        print(
+            f"Excluded {len(excluded_models)} blacklisted .ckpt files; "
+            f"{len(filtered_model_list)} remain"
+        )
+        if unmatched_blacklist_entries:
+            print(
+                f"⚠ {len(unmatched_blacklist_entries)} blacklist entries were not "
+                "present on the source server"
+            )
+
+        print(
+            f"Saving {len(filtered_model_list)} filtered .ckpt files to "
+            f"{MODEL_LIST_FILE}..."
+        )
+        with open(MODEL_LIST_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(filtered_model_list))
+            if filtered_model_list:
+                f.write("\n")
+        print(f"✓ Model list saved to {MODEL_LIST_FILE}")
+
     if should_update:
         print("\n" + "=" * 70)
         print("Updating control panel...")
-
-        # Get model list from first successful server
-        first_server = list(results.keys())[0]
-        first_server_path = results[first_server]["models_path"]
-        print(f"Fetching model list from {first_server} ({first_server_path})...")
-
-        model_list, error = get_model_list(first_server, first_server_path)
-        if error:
-            print(f"Error fetching model list: {error}")
-            sys.exit(1)
-
-        # Save model list to file
-        print(f"Saving {len(model_list)} models to {MODEL_LIST_FILE}...")
-        with open(MODEL_LIST_FILE, "w") as f:
-            f.write("\n".join(model_list) + "\n")
 
         # Run bazel command
         print(f"Running control panel update...")
