@@ -43,6 +43,8 @@ Notes:
   - SSH access is checked sequentially before NAS startup or parallel sync
   - New host keys are accepted; changed host keys are rejected
   - Passwordless SSH authentication is required
+  - Each GPU server must already have models_path_1/sha256-list.csv
+  - Missing or inaccessible checksum lists fail that server without a full sync
   - In parallel mode, detailed output goes to logs/sync-{hostname}.log files
   - Terminal shows real-time progress updates every 30 seconds
   - wget uses dot format (--progress=dot:mega) for cleaner logs
@@ -328,8 +330,8 @@ def check_gpu_server_ssh_access(servers):
 def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
     """Update checksums on GPU server using compare_checksums.py
 
-    This will generate/update sha256-list.csv on the GPU server and
-    clean up any corrupted files.
+    This updates an existing sha256-list.csv on the GPU server and cleans up
+    any corrupted files. A missing remote CSV is a fatal error for this sync.
 
     In dry-run mode, it only downloads the existing CSV without modifying it.
 
@@ -343,7 +345,8 @@ def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
     # Extract hostname for CSV file - save in logs directory
     hostname = gpu_server.split('@')[-1].split(':')[0]
     logs_dir = SCRIPT_DIR / "logs"
-    gpu_csv_local = str(logs_dir / f"sha256-list-{hostname}.csv")
+    gpu_csv_path = logs_dir / f"sha256-list-{hostname}.csv"
+    gpu_csv_local = str(gpu_csv_path)
 
     if DRY_RUN:
         log_print(log_file, f"   [DRY RUN] Downloading existing checksums (read-only)")
@@ -352,6 +355,11 @@ def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
         user_host = gpu_server.split(':')[0]  # e.g., root@dt-thpc-001
         server_path = gpu_server.split(':')[1]  # e.g., /mnt/models/official-models
         remote_csv = f"{user_host}:{server_path}/sha256-list.csv"
+        try:
+            gpu_csv_path.unlink(missing_ok=True)
+        except OSError as e:
+            log_print(log_file, f"   ❌ Could not invalidate local checksum cache: {e}")
+            return None
 
         result = subprocess.run(
             ['scp', remote_csv, gpu_csv_local],
@@ -362,8 +370,12 @@ def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
         if result.returncode == 0:
             log_print(log_file, f"   ✅ Downloaded existing checksums to: {gpu_csv_local}")
         else:
-            log_print(log_file, f"   ⚠️  Could not download checksums (file may not exist on server)")
-            log_print(log_file, f"   [DRY RUN] In actual run, checksums would be generated on server")
+            gpu_csv_path.unlink(missing_ok=True)
+            log_print(log_file, f"   ❌ Required remote checksum list is missing or inaccessible: {remote_csv}")
+            if result.stderr.strip():
+                log_print(log_file, f"   Error: {result.stderr.strip()}")
+            log_print(log_file, f"   Refusing to use a stale local cache or start a full sync")
+            return None
 
         return gpu_csv_local
 
@@ -384,7 +396,8 @@ def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
             result = subprocess.run(cmd_l1, text=True)
 
         if result.returncode != 0:
-            log_print(log_file, f"   ⚠️  Warning: L1 refresh returned code {result.returncode}")
+            log_print(log_file, f"   ❌ L1 refresh failed with code {result.returncode}")
+            return None
         else:
             log_print(log_file, f"   ✅ L1 (filesize) refreshed")
 
@@ -402,7 +415,8 @@ def update_gpu_server_checksums(gpu_server, log_file=None, refresh_l1=True):
         result = subprocess.run(cmd, text=True)
 
     if result.returncode != 0:
-        log_print(log_file, f"   ⚠️  Warning: Checksum update returned code {result.returncode}")
+        log_print(log_file, f"   ❌ Checksum update failed with code {result.returncode}")
+        return None
 
     log_print(log_file, f"   ✅ GPU server checksums updated: {gpu_csv_local}")
     return gpu_csv_local
@@ -420,7 +434,8 @@ def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
         log_file: Optional file object to write logs to
 
     Returns:
-        list: Filenames that need to be downloaded
+        list or None: Filenames that need to be downloaded, or None if the
+        GPU checksum CSV is unavailable.
     """
     log_print(log_file, f"\n📋 Comparing checksums (L3/sha256sum) to determine files to download...")
     log_print(log_file, f"   GPU server CSV: {gpu_csv_local}")
@@ -428,21 +443,9 @@ def get_files_to_download(gpu_csv_local, nas_csv_local, log_file=None):
 
     # Check if GPU CSV exists locally
     if not Path(gpu_csv_local).exists():
-        log_print(log_file, f"   ⚠️  GPU server CSV not found: {gpu_csv_local}")
-        log_print(log_file, f"   ℹ️  Fresh server - will download ALL files from source")
-        # Return all files from NAS/source CSV
-        import csv
-        all_files = []
-        with open(nas_csv_local, 'r', newline='') as f:
-            reader = csv.DictReader(f)
-            if reader.fieldnames:
-                reader.fieldnames = [name.strip() for name in reader.fieldnames]
-            for row in reader:
-                filename = (row.get('filename', '') or '').strip()
-                if filename:
-                    all_files.append(filename)
-        log_print(log_file, f"   ✅ Found {len(all_files)} file(s) to download (full sync)")
-        return all_files
+        log_print(log_file, f"   ❌ GPU server CSV not found: {gpu_csv_local}")
+        log_print(log_file, f"   Refusing to start an implicit full sync")
+        return None
 
     # Use L3 (sha256sum) comparison only - this checks actual file content
     # Using 'all' would also check L2 (8k_sha256sum) which may not be populated
@@ -1031,6 +1034,13 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         else:
             log_print(log_file, f"\n[Step 1/4] Update checksums on {gpu_server}")
         gpu_csv_local = update_gpu_server_checksums(gpu_server, log_file)
+        if gpu_csv_local is None:
+            error_msg = f"Required remote checksum list is missing or inaccessible: {gpu_server}/sha256-list.csv"
+            if server_name:
+                update_progress(server_name, "Failed", 0, 0, status="failed", error_msg=error_msg)
+            log_print(log_file, f"\n❌ {error_msg}")
+            log_print(log_file, "❌ Stopping sync for this server")
+            return False
 
         # Step 2: Compare checksums to get files to download
         if server_name:
@@ -1040,6 +1050,14 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
         else:
             log_print(log_file, f"\n[Step 2/4] Compare checksums")
         files_to_download = get_files_to_download(gpu_csv_local, nas_csv_local, log_file)
+
+        if files_to_download is None:
+            error_msg = f"Local checksum list is unavailable for {gpu_server}"
+            if server_name:
+                update_progress(server_name, "Failed", 0, 0, status="failed", error_msg=error_msg)
+            log_print(log_file, f"\n❌ {error_msg}")
+            log_print(log_file, "❌ Stopping sync for this server")
+            return False
 
         if not files_to_download:
             if server_name:
@@ -1085,7 +1103,18 @@ def sync_single_server(gpu_server, nas_csv_local, log_file=None, server_name=Non
             else:
                 result = subprocess.run(cmd, text=True)
             if result.returncode != 0:
-                log_print(log_file, f"   ⚠️  Checksum update returned code {result.returncode}")
+                error_msg = f"Final checksum update failed with code {result.returncode}"
+                if server_name:
+                    update_progress(
+                        server_name,
+                        "Failed",
+                        success_count,
+                        len(files_to_download),
+                        status="failed",
+                        error_msg=error_msg
+                    )
+                log_print(log_file, f"   ❌ {error_msg}")
+                return False
             else:
                 log_print(log_file, f"   ✅ Checksums updated")
 
@@ -1317,7 +1346,11 @@ Examples:
                             data = PROGRESS_DATA.get(hostname, {})
                             files_synced = data.get("files_synced", 0)
                             total_files = data.get("total_files", 0)
-                            if total_files > 0:
+                            error_msg = data.get("error_msg")
+                            if not success:
+                                failure_detail = error_msg or f"See logs/sync-{hostname}.log"
+                                print(f"\n[{hostname}] ❌ Failed: {failure_detail}")
+                            elif total_files > 0:
                                 print(f"\n[{hostname}] ✅ Completed: {files_synced}/{total_files} files synced")
                             else:
                                 print(f"\n[{hostname}] ✅ Completed: Already in sync")

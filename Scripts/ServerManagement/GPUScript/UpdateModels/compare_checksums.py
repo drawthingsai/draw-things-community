@@ -665,27 +665,26 @@ def compare_checksums(csv_file1, csv_file2, level='L3', verbose=False):
 
 
 def download_remote_csv(ssh_host, remote_path, local_csv_file):
-    """Download CSV file from remote host if it exists."""
+    """Download CSV file from remote host without reusing stale local data."""
     remote_csv = f"{remote_path}/sha256-list.csv"
+    local_csv_path = Path(local_csv_file)
+
     try:
-        result = subprocess.run(
-            ['ssh', ssh_host, f'test -f "{remote_csv}" && echo "exists"'],
-            capture_output=True,
-            text=True,
-            check=False
+        local_csv_path.unlink(missing_ok=True)
+    except OSError as e:
+        print(f"Error invalidating local CSV cache for {local_csv_file}: {e}")
+        return False
+
+    try:
+        print(f"Downloading existing CSV from remote: {remote_csv}")
+        subprocess.run(
+            ['scp', f'{ssh_host}:{remote_csv}', local_csv_file],
+            check=True
         )
-        if result.stdout.strip() == "exists":
-            print(f"Downloading existing CSV from remote: {remote_csv}")
-            subprocess.run(
-                ['scp', f'{ssh_host}:{remote_csv}', local_csv_file],
-                check=True
-            )
-            print(f"Downloaded to: {local_csv_file}")
-            return True
-        else:
-            print(f"No existing CSV found on remote host")
-            return False
+        print(f"Downloaded to: {local_csv_file}")
+        return True
     except subprocess.CalledProcessError as e:
+        local_csv_path.unlink(missing_ok=True)
         print(f"Error downloading remote CSV: {e}")
         return False
 
@@ -1006,8 +1005,13 @@ def main():
             hostname = ssh_host.split('@')[-1] if '@' in ssh_host else ssh_host
             csv_file1 = str(logs_dir / f"sha256-list-{hostname}.csv")
 
-            # Always download remote CSV to get accurate state (even in dry-run)
-            download_remote_csv(ssh_host, dir_path, csv_file1)
+            # Always download the remote CSV to get accurate state. A missing
+            # manifest is fatal so a path change cannot silently turn an
+            # incremental update into a full sync.
+            csv_downloaded = download_remote_csv(ssh_host, dir_path, csv_file1)
+            if not csv_downloaded:
+                print(f"Error: Required remote CSV is missing or inaccessible: {ssh_host}:{dir_path}/sha256-list.csv")
+                sys.exit(1)
 
             initialize_csv_from_directory(None, csv_file1, dry_run, ssh_host, dir_path)
 
