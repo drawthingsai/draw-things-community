@@ -106,7 +106,7 @@ if [ $# -lt 4 ]; then
     echo "  Local:  $SCRIPT_NAME 192.168.1.100 /mnt/models/official-models /root/utils/LaunchGPU /mnt/loraModels"
     echo ""
     echo "Note: For remote execution, address is derived from remote_host (e.g., root@dfw-026-001 -> dfw-026-001)"
-    echo "      Hostnames are resolved to IP via 'tailscale ip -4'"
+    echo "      The target's Tailscale IPv4 is queried over the verified SSH connection"
     exit 1
 fi
 
@@ -181,10 +181,15 @@ if [ -n "$REMOTE_HOST" ]; then
         exit 1
     fi
 
-    # Resolve hostname to IP
-    RESOLVED_ADDRESS=$(resolve_hostname_to_ip "$ADDRESS_HOSTNAME")
-    if [ $? -ne 0 ]; then
-        echo "Error: Failed to resolve address '$ADDRESS_HOSTNAME'"
+    # Query the target server for its own Tailscale IPv4 address. SSH access
+    # was already verified above, so this does not depend on a local Tailscale
+    # CLI installation or local hostname resolution.
+    if ! RESOLVED_ADDRESS=$(ssh -T -o BatchMode=yes -o ConnectTimeout=5 "$REMOTE_HOST" 'tailscale ip -4'); then
+        echo "Error: Could not get the Tailscale IPv4 address from '$REMOTE_HOST'"
+        exit 1
+    fi
+    if [[ ! "$RESOLVED_ADDRESS" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Invalid Tailscale IPv4 address from '$REMOTE_HOST': $RESOLVED_ADDRESS"
         exit 1
     fi
 
