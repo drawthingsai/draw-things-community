@@ -9,8 +9,6 @@
 
 root@dt-thpc-001, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --tmpfs-list tmpfs_thpc.ls
 root@dt-thpc-002, /mnt/models/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --tmpfs-list tmpfs_thpc.ls
-root@dfw-141-005, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --tmpfs-list tmpfs_4090.ls
-root@dfw-099-006, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --tmpfs-list tmpfs_4090.ls
 root@dfw-100-007, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --tmpfs-list tmpfs_4090.ls
 root@dfw-049-008, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --tmpfs-list tmpfs_4090.ls
 root@dfw-242-009, /mnt/official-models, /root/utils/LaunchGPU, /mnt/loraModels, --tmpfs-list tmpfs_4090.ls
