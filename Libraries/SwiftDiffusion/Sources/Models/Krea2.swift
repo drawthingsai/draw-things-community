@@ -713,14 +713,29 @@ private func LoRAKrea2Attention(
   keys = normK(keys)
   let values = toV(x).reshaped([batchSize, tokenLength, keyValueHeads, headDim])
   if let rot = rot {
-    let queryRot: Model.IO =
-      queryLength < tokenLength
-      ? rot.reshaped(
-        [1, queryLength, 1, headDim], offset: [0, 0, 0, 0],
-        strides: [tokenLength * headDim, headDim, headDim, 1]
-      ) : rot
-    queries = Functional.cmul(left: queries, right: queryRot)
-    keys = Functional.cmul(left: keys, right: rot)
+    if !configuration.testing {
+      let queryRot: Model.IO =
+        queryLength < tokenLength
+        ? rot.reshaped(
+          [1, queryLength, heads, headDim], offset: [0, 0, 0, 0],
+          strides: [tokenLength * heads * headDim, heads * headDim, headDim, 1]
+        ).contiguous() : rot
+      let keyRot = rot.reshaped(
+        [1, tokenLength, keyValueHeads, headDim], offset: [0, 0, 0, 0],
+        strides: [tokenLength * heads * headDim, heads * headDim, headDim, 1]
+      ).contiguous()
+      queries = Functional.cmul(left: queries, right: queryRot)
+      keys = Functional.cmul(left: keys, right: keyRot)
+    } else {
+      let queryRot: Model.IO =
+        queryLength < tokenLength
+        ? rot.reshaped(
+          [1, queryLength, 1, headDim], offset: [0, 0, 0, 0],
+          strides: [tokenLength * headDim, headDim, headDim, 1]
+        ) : rot
+      queries = Functional.cmul(left: queries, right: queryRot)
+      keys = Functional.cmul(left: keys, right: rot)
+    }
   }
   let attention: Model.IO
   switch usesFlashAttention {
@@ -758,6 +773,9 @@ private func LoRAKrea2Attention(
         keyValueHeads: keyValueHeads, headDim: headDim)
     }
   case .scale1:
+    let queryKeyScale = 1.0 / Float(headDim).squareRoot().squareRoot()
+    queries = queryKeyScale * queries
+    keys = queryKeyScale * keys
     let scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Float16])
     if segments.count > 1 {
       var offset = 0
@@ -775,21 +793,29 @@ private func LoRAKrea2Attention(
           [batchSize, segment, keyValueHeads, headDim], offset: [0, offset, 0, 0],
           strides: [tokenLength * keyValueHeads * headDim, keyValueHeads * headDim, headDim, 1]
         ).contiguous()
-        outs.append(
-          scaledDotProductAttention((1.0 / Float(headDim).squareRoot()) * query, key, value))
+        outs.append(scaledDotProductAttention(query, key, value))
         offset += segment
       }
       let concat = Concat(axis: 1)
       concat.flags = .disableOpt
       attention = concat(outs).reshaped([batchSize, queryLength, hiddenSize])
     } else {
-      attention = scaledDotProductAttention(
-        (1.0 / Float(headDim).squareRoot()) * queries, keys, values
-      ).reshaped([batchSize, queryLength, hiddenSize])
+      attention = scaledDotProductAttention(queries, keys, values).reshaped([
+        batchSize, queryLength, hiddenSize,
+      ])
     }
   case .scaleMerged, .quantized:
+    let attentionScale: Float
+    if usesFlashAttention == .quantized && !configuration.testing {
+      let queryKeyScale = 1.0 / Float(headDim).squareRoot().squareRoot()
+      queries = queryKeyScale * queries
+      keys = queryKeyScale * keys
+      attentionScale = 1
+    } else {
+      attentionScale = 1.0 / Float(headDim).squareRoot()
+    }
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(headDim).squareRoot(),
+      scale: attentionScale,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     if segments.count > 1 {
       var offset = 0
@@ -1160,7 +1186,8 @@ public func LoRAKrea2(
   let imgIn = LoRADense(count: 6_144, configuration: LoRAConfiguration, index: 0, name: "img_in")
   let imageOut = imgIn(packedImage)
   var out = Functional.concat(axis: 1, imageOut, text).to(.Float32)
-  let rotResized = rot.reshaped([1, tokenLength, 1, 128])
+  let rotaryHeads = LoRAConfiguration.testing ? 1 : 48
+  let rotResized = rot.reshaped([1, tokenLength, rotaryHeads, 128])
   let prescaleMod = Input()
   let preshiftMod = Input()
   let pregateMod = Input()

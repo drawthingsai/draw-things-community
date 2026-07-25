@@ -256,6 +256,12 @@ extension LoRATrainerCheckpoint {
             return ($0, $0)
           })
         modelName = "dit"
+      case .krea2:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<28).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
       case .sd3Large:
         UNetMapping = [Int: Int](
           uniqueKeysWithValues: (0..<38).map {
@@ -288,7 +294,7 @@ extension LoRATrainerCheckpoint {
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
         .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4, .krea2:
+        .seedvr2_7b, .ideogram4:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B
@@ -457,6 +463,12 @@ extension LoRATrainerCheckpoint {
             return ($0, $0)
           })
         modelName = "dit"
+      case .krea2:
+        UNetMapping = [Int: Int](
+          uniqueKeysWithValues: (0..<28).map {
+            return ($0, $0)
+          })
+        modelName = "dit"
       case .sd3Large:
         UNetMapping = [Int: Int](
           uniqueKeysWithValues: (0..<38).map {
@@ -489,7 +501,7 @@ extension LoRATrainerCheckpoint {
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
         .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4, .krea2:
+        .seedvr2_7b, .ideogram4:
         fatalError()
       case .ssd1b:
         UNetMapping = LoRAMapping.SDUNetXLSSD1B

@@ -4,11 +4,11 @@ public enum FeaturesMatrix {
   public static func supportsLoRATraining(_ version: ModelVersion) -> Bool {
     switch version {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .flux1, .zImage, .qwenImage, .ernieImage,
-      .flux2_4b, .flux2_9b, .cosmos2_5_2b:
+      .flux2_4b, .flux2_9b, .krea2, .cosmos2_5_2b:
       return true
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .wan22_5b,
-      .flux2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .flux2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
       .longcatVideoAvatar1_5:
       return false
     }

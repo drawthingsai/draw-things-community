@@ -3743,7 +3743,7 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
     }
   case .flux1:
     tokenizerStack = [tokenizers.tokenizerV2, tokenizers.tokenizerT5]
-  case .flux2_9b, .flux2_4b:
+  case .flux2_9b, .flux2_4b, .krea2:
     tokenizerStack = [tokenizers.tokenizerQwen3]
   case .qwenImage:
     tokenizerStack = [tokenizers.tokenizerQwen25]
@@ -3789,6 +3789,9 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
       layerIndices: requestedLayerIndices)
   case .qwenImage:
     trainableKeys = qwenImageTrainableKeys(
+      trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
+  case .krea2:
+    trainableKeys = krea2TrainableKeys(
       trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
   case .zImage:
     trainableKeys = zImageTrainableKeys(
@@ -5306,6 +5309,29 @@ private func qwenImageTrainableKeys(
   .flatMap { $0 }
   let indices = layerIndices.isEmpty ? Array(0..<60) : layerIndices
   for layerIndex in indices where layerIndex >= 0 && layerIndex < 60 {
+    keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
+  }
+  return keys
+}
+
+private func krea2TrainableKeys(
+  trainableLayers: Set<LoRATrainableLayer> = [], layerIndices: [Int] = []
+) -> [String] {
+  let trainableLayers =
+    trainableLayers.isEmpty ? Set(LoRATrainableLayer.allCases) : trainableLayers
+  var keys = [String]()
+  // Krea 2 i8x produces zero LoRA updates when img_in, to_q, or to_k are trainable.
+  if trainableLayers.contains(.projectOut) {
+    keys.append("final_linear-0-")
+  }
+  let layerKeys = [
+    trainableLayers.contains(.qkv) ? ["to_v"] : [],
+    trainableLayers.contains(.out) ? ["to_gate", "to_out"] : [],
+    trainableLayers.contains(.feedForward) ? ["gate", "up", "down"] : [],
+  ]
+  .flatMap { $0 }
+  let indices = layerIndices.isEmpty ? Array(0..<28) : layerIndices
+  for layerIndex in indices where layerIndex >= 0 && layerIndex < 28 {
     keys.append(contentsOf: layerKeys.map { "\($0)-\(layerIndex)-" })
   }
   return keys
