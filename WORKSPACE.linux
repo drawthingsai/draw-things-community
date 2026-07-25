@@ -1,6 +1,12 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_archive(
+    name = "rules_rust",
+    integrity = "sha256-r09Wyq5QqZpov845sUG1Cd1oVIyCBLmKt6HK/JTVuwI=",
+    urls = ["https://github.com/bazelbuild/rules_rust/releases/download/0.54.1/rules_rust-v0.54.1.tar.gz"],
+)
+
 # rules_go >= v0.60.0 loads @rules_cc//cc/common:cc_common.bzl.
 # Pinning this early avoids older transitive rules_cc pins that don't expose
 # cc/common as a package.
@@ -44,6 +50,14 @@ load(
 )
 
 apple_support_dependencies()
+
+load("//Vendors/Ripgrep:repositories.bzl", "ripgrep_repositories")
+
+ripgrep_repositories()
+
+load("@ripgrep_crates//:defs.bzl", "crate_repositories")
+
+crate_repositories()
 
 git_repository(
     name = "rules_xcodeproj",
