@@ -19,7 +19,9 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 ASPECT_ORDER = ["1x1", "1x2", "2x1", "3x4", "4x3"]
 SPECIAL_DIRECTORIES = {"Scores", "EditTest"}
 CATEGORY_DIRECTORY_PATTERN = re.compile(r"^C\d+_.+")
-SCORES_FILENAME_PATTERN = re.compile(r"^opus_4\.6_scores(?:_(1x2|2x1|3x4|4x3))?\.csv$")
+SCORES_FILENAME_PATTERN = re.compile(
+    r"^(?:opus_4\.6_scores|gpt_5_4_scores|gpt_5_5_polished_scores)(?:_(1x2|2x1|3x4|4x3))?\.csv$"
+)
 
 
 @dataclass(frozen=True)
@@ -98,10 +100,11 @@ def parse_scores(csv_path: Path) -> dict[str, dict[str, Any]]:
             if not model:
                 continue
             score_text = (row.get("score") or "").strip()
-            score: int | None
+            score: int | float | None
             if score_text:
                 try:
-                    score = int(score_text)
+                    score_value = float(score_text)
+                    score = int(score_value) if score_value.is_integer() else score_value
                 except ValueError:
                     score = None
             else:
@@ -115,7 +118,7 @@ def parse_scores(csv_path: Path) -> dict[str, dict[str, Any]]:
 
 def parse_scores_by_aspect(category_dir: Path) -> dict[str, dict[str, dict[str, Any]]]:
     result: dict[str, dict[str, dict[str, Any]]] = {}
-    for csv_path in sorted(category_dir.glob("opus_4.6_scores*.csv")):
+    for csv_path in sorted(category_dir.glob("*scores*.csv")):
         match = SCORES_FILENAME_PATTERN.match(csv_path.name)
         if not match:
             continue
@@ -129,6 +132,22 @@ def read_prompt(category_dir: Path) -> str:
     if not prompt_path.exists():
         return ""
     return prompt_path.read_text(encoding="utf-8").strip()
+
+
+def read_optional_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def load_metadata(category_dir: Path) -> dict[str, Any]:
+    metadata_path = category_dir / "metadata.json"
+    if not metadata_path.exists():
+        return {}
+    try:
+        return json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def load_data_json(source: Path) -> dict[str, dict[str, str]]:
@@ -206,11 +225,20 @@ def build_manifest(source: Path, output: Path, copy_images: bool, skip_thumbnail
     prompt_overrides = load_data_json(source)
     for category_dir in iter_category_dirs(source):
         category_id = category_dir.name
+        metadata = load_metadata(category_dir)
         prompt = read_prompt(category_dir)
         prompt_override = prompt_overrides.get(category_id, {})
         if prompt_override.get("prompt"):
             prompt = prompt_override["prompt"]
-        prompt_zh = prompt_override.get("promptZh", "")
+        elif not prompt:
+            prompt = str(metadata.get("prompt") or "").strip()
+        prompt_zh = (
+            prompt_override.get("promptZh")
+            or read_optional_text(category_dir / "prompt_zh.txt")
+            or str(metadata.get("prompt_zh") or "").strip()
+        )
+        level = str(metadata.get("level") or "").strip()
+        title = str(metadata.get("title") or "").strip() or display_title(category_id)
         scores_by_aspect = parse_scores_by_aspect(category_dir)
         image_groups = collect_images(category_dir)
 
@@ -264,7 +292,8 @@ def build_manifest(source: Path, output: Path, copy_images: bool, skip_thumbnail
         categories.append(
             {
                 "id": category_id,
-                "title": display_title(category_id),
+                "title": title,
+                "level": level,
                 "prompt": prompt,
                 "promptZh": prompt_zh,
                 "models": models,
