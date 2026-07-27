@@ -1,3 +1,5 @@
+common --enable_bzlmod=false
+
 common:mps --define=enable_mps=true
 
 common --disk_cache=~/.cache/bazel
