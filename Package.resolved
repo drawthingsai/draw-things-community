@@ -240,9 +240,9 @@
     {
       "identity" : "swift-package-support-sentencepiece",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/weiyanlin117/swift-package-support-sentencepiece",
+      "location" : "https://github.com/liuliu/swift-package-support-sentencepiece",
       "state" : {
-        "revision" : "a39a5be0b3e3ad9bcb19b085af7dd891c00aa3d2"
+        "revision" : "48f1241971c19dc79c314e5a9c5b9c38cbf25a53"
       }
     },
     {
@@ -266,7 +266,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/liuliu/swift-sentencepiece",
       "state" : {
-        "revision" : "8d17bf2e017c97563e8805545d676be9739b6c0e"
+        "revision" : "4c8baf1b03569428ab38dda7fdecf27886a16c1f"
       }
     },
     {

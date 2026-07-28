@@ -143,9 +143,9 @@ swift_fickling_deps()
 
 git_repository(
     name = "swift-sentencepiece",
-    commit = "8d17bf2e017c97563e8805545d676be9739b6c0e",
+    commit = "4c8baf1b03569428ab38dda7fdecf27886a16c1f",
     remote = "https://github.com/liuliu/swift-sentencepiece.git",
-    shallow_since = "1771957042 -0800",
+    shallow_since = "1785202705 -0400",
 )
 
 load("@swift-sentencepiece//:deps.bzl", "swift_sentencepiece_deps")
