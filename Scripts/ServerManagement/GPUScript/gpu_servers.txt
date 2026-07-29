@@ -11,8 +11,6 @@
 
 root@dt-thpc-001
 root@dt-thpc-002
-root@dfw-141-005
-root@dfw-099-006
 root@dfw-100-007
 root@dfw-049-008
 root@dfw-242-009
