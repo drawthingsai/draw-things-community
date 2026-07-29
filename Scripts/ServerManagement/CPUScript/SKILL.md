@@ -10,7 +10,8 @@ Use this workflow from `Scripts/ServerManagement/CPUScript`.
 ## Files
 
 - `InitCPUServer.sh`: install/update Docker, install Tailscale, run `tailscale up --ssh`, lock the root password, and pull `drawthingsai/draw-things-proxy-server-cli:latest` plus `envoyproxy/envoy:v1.28-latest`.
-- `InitCertificate.sh`: request a Let's Encrypt cert for `compute.drawthings.ai` with standalone certbot on port 80.
+- `InitCertificate.sh`: request a Let's Encrypt cert for `compute.drawthings.ai` with standalone certbot on port 80, set the permissions required by the non-root proxy container, and install the renewal deploy hook.
+- `restart-drawthings-tls.sh`: Certbot deploy hook that repairs renewed certificate permissions and restarts `proxy_service` and `envoy_grpc_web_proxy` so both processes load the renewed certificate.
 - `LaunchCPUServer.sh`: start `proxy_service` on public `443` and Tailscale control port `TS_IP:50002`.
 - `LaunchEnvoyServer.sh`: start `envoy_grpc_web_proxy` with host networking and the provided Envoy config.
 - `model-list`: mounted through its containing directory as `/app/Documents/<filename>` so host-side edits and control-panel writes target the same file.
@@ -42,7 +43,7 @@ Install the CPUScript files on the new server:
 
 ```bash
 ssh root@<new-ts-ip> 'mkdir -p /root/CPUScript'
-scp InitCertificate.sh InitCPUServer.sh LaunchCPUServer.sh LaunchEnvoyServer.sh envoy-config.yaml model-list root@<new-ts-ip>:/root/CPUScript/
+scp InitCertificate.sh InitCPUServer.sh LaunchCPUServer.sh LaunchEnvoyServer.sh restart-drawthings-tls.sh envoy-config.yaml model-list root@<new-ts-ip>:/root/CPUScript/
 ssh root@<new-ts-ip> 'chmod +x /root/CPUScript/*.sh; wc -l /root/CPUScript/model-list; ls -la /root/CPUScript'
 ```
 
@@ -106,12 +107,62 @@ rm -f /private/tmp/cpu-cert-transfer/fullchain.pem /private/tmp/cpu-cert-transfe
 
 Use `0644` for `privkey.pem` with the current Docker launch because the proxy process inside the container may not run as root. If `proxy_service` logs `Permission denied` opening `privkey.pem`, fix permissions and recreate the container.
 
+### Automatic Renewal and TLS Reload
+
+Copying only `fullchain.pem` and `privkey.pem` creates usable TLS files but does not migrate Certbot renewal ownership. A managed certificate must appear in `certbot certificates` and have all of:
+
+```text
+/etc/letsencrypt/renewal/compute.drawthings.ai.conf
+/etc/letsencrypt/archive/compute.drawthings.ai/
+/etc/letsencrypt/live/compute.drawthings.ai/ -> ../../archive/compute.drawthings.ai/
+```
+
+`InitCertificate.sh` installs this executable deploy hook:
+
+```text
+/etc/letsencrypt/renewal-hooks/deploy/restart-drawthings-tls.sh
+```
+
+Certbot normally creates `/etc/letsencrypt/archive` as root-only and creates each renewed private key as mode `0600`. The proxy runs as `appuser`, so following the `live` symlink fails unless the archive directories are searchable and the private key is readable. The hook reapplies:
+
+```bash
+chmod 0711 /etc/letsencrypt/archive
+chmod 0755 /etc/letsencrypt/archive/compute.drawthings.ai
+chmod 0644 /etc/letsencrypt/live/compute.drawthings.ai/privkey.pem
+```
+
+The proxy and the statically configured Envoy listener load the certificate into memory at process startup. After a successful renewal, the deploy hook restarts both containers so they load the new certificate:
+
+```bash
+/usr/bin/docker restart proxy_service
+/usr/bin/docker restart envoy_grpc_web_proxy
+```
+
+Verify the snap timer and the complete renewal-to-reload path:
+
+```bash
+systemctl is-enabled snap.certbot.renew.timer
+systemctl is-active snap.certbot.renew.timer
+certbot renew --dry-run --run-deploy-hooks
+docker ps --filter name=proxy_service
+docker ps --filter name=envoy_grpc_web_proxy
+```
+
+Expected results are `enabled`, `active`, `Congratulations, all simulated renewals succeeded`, and both containers returning to `Up`. `--run-deploy-hooks` is needed only to make a dry run execute deploy hooks; a real successful renewal automatically executes every executable in `/etc/letsencrypt/renewal-hooks/deploy`.
+
+Confirm that ports 443 and 8443 serve the same renewed certificate:
+
+```bash
+openssl s_client -connect 127.0.0.1:443 -servername compute.drawthings.ai </dev/null 2>/dev/null | openssl x509 -noout -dates -serial
+openssl s_client -connect 127.0.0.1:8443 -servername compute.drawthings.ai </dev/null 2>/dev/null | openssl x509 -noout -dates -serial
+```
+
 ## Launch Services
 
 Launch the CPU proxy first. Any extra arguments after the model-list path are passed through to `ProxyServiceCLI`, including `-g` GPU worker ranges:
 
 ```bash
-ssh root@<new-ts-ip> 'cd /root/CPUScript && ./LaunchCPUServer.sh "<DATADOG_API_KEY>" /root/CPUScript/model-list -g 100.70.225.70:40001-40008:1 -g 100.111.187.6:40001-40008:1 -g 100.115.89.107:40001-40008:1 -g 100.112.144.13:40001-40008:1 -g 100.121.197.14:40001-40008:1 -g 100.110.198.32:40001-40008:1'
+ssh root@<new-ts-ip> 'cd /root/CPUScript && ./LaunchCPUServer.sh "<DATADOG_API_KEY>" /root/CPUScript/model-list -g 100.70.225.70:40001-40008:1 -g 100.115.89.107:40001-40008:1 -g 100.83.253.70:40001-40008:1 -g 100.64.66.84:40001-40008:1 -g 100.121.197.14:40001-40008:1 -g 100.110.198.32:40001-40008:1'
 ```
 
 `LaunchCPUServer.sh` mounts the directory containing the model list as `/app/Documents` and passes `--model-list-path /app/Documents/<filename>`. It also makes that directory and file writable by the container's non-root `appuser`; this is required because `update-model-list` writes atomically by creating a temporary file in the same directory.
