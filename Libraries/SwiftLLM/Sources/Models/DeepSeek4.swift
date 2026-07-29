@@ -152,10 +152,10 @@ private func DeepSeek4StoreUsesBareTensorName(_ name: String) -> Bool {
 
 public func DeepSeek4StoreReader(
   storeKey: String = "text_model",
-  configuration: DeepSeek4ModelConfiguration = .deepSeekV4Flash
+  configuration _: DeepSeek4ModelConfiguration = .deepSeekV4Flash
 ) -> (String, DataType, TensorFormat, TensorShape) -> DynamicGraph.Store.ModelReaderResult {
   let keyPrefix = "__\(storeKey)__["
-  return { name, _, _, shape in
+  return { name, _, _, _ in
     guard name.hasPrefix(keyPrefix), name.hasSuffix("]") else {
       return .fail
     }
@@ -167,18 +167,24 @@ public func DeepSeek4StoreReader(
     if let range = tensorName.range(of: #"-\d+-\d+$"#, options: .regularExpression) {
       tensorName.removeSubrange(range)
     }
-    if tensorName.hasSuffix(".ffn.pair_to_token") {
-      let pairs = shape[0]
-      let routedExperts = configuration.routedExperts
-      precondition(pairs.isMultiple(of: routedExperts))
-      return .final(
-        Tensor<Int32>(
-          (0..<pairs).map { Int32($0 / routedExperts) }, .CPU, .C(pairs)))
-    }
     let storeTensorName = DeepSeek4StoreUsesBareTensorName(tensorName)
       ? tensorName : "\(tensorName).weight"
     return .continue("__\(storeKey)__[\(storeTensorName)]")
   }
+}
+
+public func DeepSeek4PairToToken(
+  tokenLength: Int, configuration: DeepSeek4ModelConfiguration = .deepSeekV4Flash
+) -> Tensor<Int32> {
+  var tokenIndices = [Int32]()
+  tokenIndices.reserveCapacity(tokenLength * configuration.routedExperts)
+  for tokenIndex in 0..<tokenLength {
+    tokenIndices.append(
+      contentsOf: repeatElement(
+        Int32(tokenIndex), count: configuration.routedExperts))
+  }
+  return Tensor<Int32>(
+    tokenIndices, .CPU, .C(tokenLength * configuration.routedExperts))
 }
 
 private func DeepSeek4RopeYarnRamp(low: Double, high: Double, index: Int) -> Double {
@@ -423,62 +429,43 @@ private func DeepSeek4SparseIndexedAttention(
   let attentionQuery = query.to(.Float16)
   let rawAttentionKV = rawKV.to(.Float16)
   let compressedAttentionKV = compressedKV.to(.Float16)
+  let compressedAttentionKVInput =
+    compressedRows == 0
+    ? compressedAttentionKV.reshaped([0])
+    : compressedAttentionKV.reshaped([1, compressedRows, 1, headDim], format: .NHWC)
   let attention = SparseIndexedAttention(
     scale: 1.0 / Float(headDim).squareRoot(),
     isCausal: true, hasAttentionSinks: true,
     slidingWindow: configuration.rawWindow)
   return attention(
-    attentionQuery.reshaped([tokenLength, configuration.attentionHeads, headDim]),
-    rawAttentionKV.reshaped([tokenLength, headDim]),
-    rawAttentionKV.reshaped([tokenLength, headDim]),
-    compressedAttentionKV.reshaped([compressedRows, headDim]),
-    compressedAttentionKV.reshaped([compressedRows, headDim]),
-    selectedCompressedRows.reshaped([tokenLength, selectedRowCount]),
-    sinks.reshaped([configuration.attentionHeads]).to(of: attentionQuery)
+    attentionQuery.reshaped(
+      .NHWC(1, tokenLength, configuration.attentionHeads, headDim)),
+    rawAttentionKV.reshaped(.NHWC(1, tokenLength, 1, headDim)),
+    rawAttentionKV.reshaped(.NHWC(1, tokenLength, 1, headDim)),
+    compressedAttentionKVInput,
+    compressedAttentionKVInput,
+    selectedCompressedRows.reshaped(
+      [tokenLength, selectedRowCount], format: .NHWC),
+    sinks.reshaped(.NHWC(1, 1, configuration.attentionHeads, 1)).to(of: attentionQuery)
   ).reshaped([tokenLength, configuration.attentionHeads * headDim])
 }
 
-private func DeepSeek4IndexedUsesDenseAttention(
-  tokenLength: Int, compressionRatio: Int, configuration: DeepSeek4ModelConfiguration
-) -> Bool {
-  return tokenLength / compressionRatio <= configuration.indexerTopK
-}
-
-private func DeepSeek4UsesCausalCompressedIndices(
-  layerIndex: Int, tokenLength: Int, configuration: DeepSeek4ModelConfiguration
-) -> Bool {
-  switch configuration.attentionKind(layerIndex: layerIndex) {
-  case .compressed(let compressionRatio):
-    return tokenLength / compressionRatio > 0
-  case .indexed(let compressionRatio):
-    return tokenLength / compressionRatio > 0 && DeepSeek4IndexedUsesDenseAttention(
-      tokenLength: tokenLength, compressionRatio: compressionRatio, configuration: configuration)
-  case .raw:
-    return false
-  }
-}
-
 private func DeepSeek4CausalCompressedIndicesInput(
-  layerIndex: Int, tokenLength: Int, configuration: DeepSeek4ModelConfiguration,
+  layerIndex: Int, configuration: DeepSeek4ModelConfiguration,
   inputs: inout [Input], indices: inout [Int: Input]
 ) -> Input? {
-  guard DeepSeek4UsesCausalCompressedIndices(
-    layerIndex: layerIndex, tokenLength: tokenLength, configuration: configuration)
-  else { return nil }
-  let compressionRatio: Int
   switch configuration.attentionKind(layerIndex: layerIndex) {
-  case .compressed(let ratio), .indexed(let ratio):
-    compressionRatio = ratio
-  case .raw:
-    preconditionFailure("raw attention does not use compressed row indices")
+  case .compressed(let compressionRatio):
+    if let existing = indices[compressionRatio] {
+      return existing
+    }
+    let input = Input()
+    indices[compressionRatio] = input
+    inputs.append(input)
+    return input
+  case .raw, .indexed:
+    return nil
   }
-  if let existing = indices[compressionRatio] {
-    return existing
-  }
-  let input = Input()
-  indices[compressionRatio] = input
-  inputs.append(input)
-  return input
 }
 
 private func DeepSeek4FP8KVRoundTrip(
@@ -519,43 +506,28 @@ private func DeepSeek4Ratio4RollingPool(
     [windowCount, compressionRatio, headDim], offset: [0, 0, headDim],
     strides: [rowWidth, width, 1]
   ).transposed(1, 2).contiguous()
-  let zeroKV = primaryKV.reshaped(
-    [1, headDim, compressionRatio], offset: [0, 0, 0],
-    strides: [headDim * compressionRatio, compressionRatio, 1]) * 0
-  let negInfScore = primaryScore.reshaped(
-    [1, headDim, compressionRatio], offset: [0, 0, 0],
-    strides: [headDim * compressionRatio, compressionRatio, 1]) * 0 - 1.0e4
-  let previousKV: Model.IO
-  let previousScore: Model.IO
-  if windowCount == 1 {
-    previousKV = zeroKV
-    previousScore = negInfScore
-  } else {
-    previousKV = Concat(axis: 0)([
-      zeroKV,
-      primaryKV.reshaped(
-        [windowCount - 1, headDim, compressionRatio], offset: [0, 0, 0],
-        strides: [headDim * compressionRatio, compressionRatio, 1]),
-    ])
-    previousScore = Concat(axis: 0)([
-      negInfScore,
-      primaryScore.reshaped(
-        [windowCount - 1, headDim, compressionRatio], offset: [0, 0, 0],
-        strides: [headDim * compressionRatio, compressionRatio, 1]),
-    ])
-  }
+  let zeroKV = ape.reshaped([1, compressionRatio, width]).reshaped(
+    [1, compressionRatio, headDim], offset: [0, 0, 0],
+    strides: [rowWidth, width, 1]
+  ).transposed(1, 2).contiguous() * 0
+  let negInfScore = zeroKV - 1.0e4
+  let previousKV = Concat(axis: 0)([zeroKV, primaryKV])
+  let previousScore = Concat(axis: 0)([negInfScore, primaryScore])
+  let currentKV = Concat(axis: 0)([companionKV, zeroKV])
+  let currentScore = Concat(axis: 0)([companionScore, negInfScore])
+  let paddedKV = Concat(axis: 2)([previousKV, currentKV])
+  let paddedScore = Concat(axis: 2)([previousScore, currentScore])
+  let pooledWidth = 2 * compressionRatio
+  let allKV = paddedKV.reshaped(
+    [windowCount, headDim, pooledWidth], offset: [0, 0, 0],
+    strides: [headDim * pooledWidth, pooledWidth, 1])
+  let allScore = paddedScore.reshaped(
+    [windowCount, headDim, pooledWidth], offset: [0, 0, 0],
+    strides: [headDim * pooledWidth, pooledWidth, 1])
   let rows = windowCount * headDim
-  let allKV = Concat(axis: 1)([
-    previousKV.reshaped([rows, compressionRatio]),
-    companionKV.reshaped([rows, compressionRatio]),
-  ]).reshaped([windowCount, headDim, 2 * compressionRatio])
-  let allScore = Concat(axis: 1)([
-    previousScore.reshaped([rows, compressionRatio]),
-    companionScore.reshaped([rows, compressionRatio]),
-  ]).reshaped([windowCount, headDim, 2 * compressionRatio])
-  let weights = allScore.reshaped([rows, 2 * compressionRatio])
+  let weights = allScore.reshaped([rows, pooledWidth])
     .softmax()
-    .reshaped([windowCount, headDim, 2 * compressionRatio])
+    .reshaped([windowCount, headDim, pooledWidth])
   return (weights .* allKV).reduced(.sum, axis: [2]).reshaped([windowCount, headDim])
 }
 
@@ -565,7 +537,6 @@ private func DeepSeek4Compressor<FloatType: TensorNumeric>(
   of dataType: FloatType.Type
 ) -> Model.IO {
   let windowCount = tokenLength / compressionRatio
-  precondition(windowCount > 0)
   let tokenRows = windowCount * compressionRatio
   let width = (compressionRatio == 4 ? 2 : 1) * headDim
   let kv = Dense(count: width, noBias: true, name: "\(prefix).wkv")
@@ -690,8 +661,9 @@ private func DeepSeek4NormalizeRouterWeights(
 
 private func DeepSeek4RoutedMoE<FloatType: TensorNumeric>(
   prefix: String, x: Model.IO, routerInput: Model.IO, selectedExpertOverride: Model.IO?,
-  selectedProbabilityIndexOverride: Model.IO?, tokenLength: Int, routerKind: DeepSeek4RouterKind,
-  configuration: DeepSeek4ModelConfiguration, of dataType: FloatType.Type
+  selectedProbabilityIndexOverride: Model.IO?, pairToToken: Model.IO, tokenLength: Int,
+  routerKind: DeepSeek4RouterKind, configuration: DeepSeek4ModelConfiguration,
+  of dataType: FloatType.Type
 ) -> Model.IO {
   let router = Dense(count: configuration.expertCount, noBias: true, name: "\(prefix).gate")
   let routerBias = Parameter<FloatType>(
@@ -732,9 +704,7 @@ private func DeepSeek4RoutedMoE<FloatType: TensorNumeric>(
   let sortedExperts = sorted[0]
   let sortIndices = sorted[1]
   let sortedWeights = IndexSelect()(routerWeights.reshaped([pairs]), sortIndices)
-  let pairToToken = Parameter<Int32>(
-    .GPU(0), .C(pairs), trainable: false, name: "\(prefix).pair_to_token")
-  let sortedTokenIndices = IndexSelect()(pairToToken, sortIndices)
+  let sortedTokenIndices = IndexSelect()(pairToToken.reshaped([pairs]), sortIndices)
   let gathered = IndexSelect()(x.reshaped([tokenLength, configuration.hiddenSize]), sortedTokenIndices)
   let groupedExpertIds = sortedExperts.uniqueConsecutive(count: configuration.expertCount)
   let gate = SegmentedDense(
@@ -776,7 +746,7 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
   prefix: String, layerIndex: Int, residualHC: Model.IO, rotary: Model.IO,
   attentionOutputGroupCounts: Model.IO, causalCompressedIndices: Model.IO?,
   selectedExpertOverride: Model.IO?,
-  selectedProbabilityIndexOverride: Model.IO?, tokenLength: Int,
+  selectedProbabilityIndexOverride: Model.IO?, pairToToken: Model.IO, tokenLength: Int,
   configuration: DeepSeek4ModelConfiguration, of dataType: FloatType.Type
 ) -> Model.IO {
   let attentionKind = configuration.attentionKind(layerIndex: layerIndex)
@@ -824,74 +794,45 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
       configuration: configuration)
   case .compressed(let compressionRatio):
     let compressedRows = tokenLength / compressionRatio
-    if compressedRows == 0 {
-      heads = DeepSeek4RawAttention(
-        query: projection.query, rawKV: rawKV, sinks: sinks, tokenLength: tokenLength,
-        configuration: configuration)
-    } else {
-      let compressed = DeepSeek4FP8KVRoundTrip(
-        DeepSeek4Compressor(
-          prefix: "\(prefix).attn.compressor", x: attnBranch, rotary: rotary,
-          tokenLength: tokenLength, compressionRatio: compressionRatio,
-          headDim: configuration.attentionHeadDim, emitIndexerWHT: false,
-          configuration: configuration, of: dataType),
-        rowCount: compressedRows, headDim: configuration.attentionHeadDim,
-        rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip)
-      precondition(causalCompressedIndices != nil)
-      heads = DeepSeek4SparseIndexedAttention(
-        query: projection.query, rawKV: rawKV, compressedKV: compressed,
-        selectedCompressedRows: causalCompressedIndices!, sinks: sinks, tokenLength: tokenLength,
-        compressedRows: compressedRows, selectedRowCount: compressedRows,
-        configuration: configuration)
-    }
+    let compressed = DeepSeek4FP8KVRoundTrip(
+      DeepSeek4Compressor(
+        prefix: "\(prefix).attn.compressor", x: attnBranch, rotary: rotary,
+        tokenLength: tokenLength, compressionRatio: compressionRatio,
+        headDim: configuration.attentionHeadDim, emitIndexerWHT: false,
+        configuration: configuration, of: dataType),
+      rowCount: compressedRows, headDim: configuration.attentionHeadDim,
+      rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip)
+    precondition(causalCompressedIndices != nil)
+    heads = DeepSeek4SparseIndexedAttention(
+      query: projection.query, rawKV: rawKV, compressedKV: compressed,
+      selectedCompressedRows: causalCompressedIndices!, sinks: sinks, tokenLength: tokenLength,
+      compressedRows: compressedRows, selectedRowCount: max(compressedRows, 1),
+      configuration: configuration)
   case .indexed(let compressionRatio):
     let compressedRows = tokenLength / compressionRatio
-    if compressedRows == 0 {
-      heads = DeepSeek4RawAttention(
-        query: projection.query, rawKV: rawKV, sinks: sinks, tokenLength: tokenLength,
-        configuration: configuration)
-    } else if DeepSeek4IndexedUsesDenseAttention(
-      tokenLength: tokenLength, compressionRatio: compressionRatio, configuration: configuration)
-    {
-      let compressed = DeepSeek4FP8KVRoundTrip(
-        DeepSeek4Compressor(
-          prefix: "\(prefix).attn.compressor", x: attnBranch, rotary: rotary,
-          tokenLength: tokenLength, compressionRatio: compressionRatio,
-          headDim: configuration.attentionHeadDim, emitIndexerWHT: false,
-          configuration: configuration, of: dataType),
-        rowCount: compressedRows, headDim: configuration.attentionHeadDim,
-        rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip)
-      precondition(causalCompressedIndices != nil)
-      heads = DeepSeek4SparseIndexedAttention(
-        query: projection.query, rawKV: rawKV, compressedKV: compressed,
-        selectedCompressedRows: causalCompressedIndices!, sinks: sinks, tokenLength: tokenLength,
-        compressedRows: compressedRows, selectedRowCount: compressedRows,
-        configuration: configuration)
-    } else {
-      let compressed = DeepSeek4FP8KVRoundTrip(
-        DeepSeek4Compressor(
-          prefix: "\(prefix).attn.compressor", x: attnBranch, rotary: rotary,
-          tokenLength: tokenLength, compressionRatio: compressionRatio,
-          headDim: configuration.attentionHeadDim, emitIndexerWHT: false,
-          configuration: configuration, of: dataType),
-        rowCount: compressedRows, headDim: configuration.attentionHeadDim,
-        rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip)
-      let indexer = DeepSeek4Compressor(
-        prefix: "\(prefix).attn.indexer.compressor", x: attnBranch, rotary: rotary,
+    let compressed = DeepSeek4FP8KVRoundTrip(
+      DeepSeek4Compressor(
+        prefix: "\(prefix).attn.compressor", x: attnBranch, rotary: rotary,
         tokenLength: tokenLength, compressionRatio: compressionRatio,
-        headDim: configuration.indexerHeadDim, emitIndexerWHT: true,
-        configuration: configuration, of: dataType)
-      let selectedRows = DeepSeek4IndexerSelection(
-        prefix: "\(prefix).attn", queryRank: projection.queryRank, attnNorm: attnBranch,
-        rotary: rotary, indexerKV: indexer, tokenLength: tokenLength,
-        compressionRatio: compressionRatio, compressedRows: compressedRows,
-        configuration: configuration, of: dataType)
-      heads = DeepSeek4SparseIndexedAttention(
-        query: projection.query, rawKV: rawKV, compressedKV: compressed,
-        selectedCompressedRows: selectedRows, sinks: sinks, tokenLength: tokenLength,
-        compressedRows: compressedRows, selectedRowCount: configuration.indexerTopK,
-        configuration: configuration)
-    }
+        headDim: configuration.attentionHeadDim, emitIndexerWHT: false,
+        configuration: configuration, of: dataType),
+      rowCount: compressedRows, headDim: configuration.attentionHeadDim,
+      rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip)
+    let indexer = DeepSeek4Compressor(
+      prefix: "\(prefix).attn.indexer.compressor", x: attnBranch, rotary: rotary,
+      tokenLength: tokenLength, compressionRatio: compressionRatio,
+      headDim: configuration.indexerHeadDim, emitIndexerWHT: true,
+      configuration: configuration, of: dataType)
+    let selectedRows = DeepSeek4IndexerSelection(
+      prefix: "\(prefix).attn", queryRank: projection.queryRank, attnNorm: attnBranch,
+      rotary: rotary, indexerKV: indexer, tokenLength: tokenLength,
+      compressionRatio: compressionRatio, compressedRows: compressedRows,
+      configuration: configuration, of: dataType)
+    heads = DeepSeek4SparseIndexedAttention(
+      query: projection.query, rawKV: rawKV, compressedKV: compressed,
+      selectedCompressedRows: selectedRows, sinks: sinks, tokenLength: tokenLength,
+      compressedRows: compressedRows, selectedRowCount: configuration.indexerTopK,
+      configuration: configuration)
   }
   let attnOutput = DeepSeek4AttentionOutput(
     prefix: "\(prefix).attn", heads: heads, rotary: rotary,
@@ -917,8 +858,8 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
   let routed = DeepSeek4RoutedMoE(
     prefix: "\(prefix).ffn", x: ffnBranch, routerInput: ffnNorm,
     selectedExpertOverride: selectedExpertOverride,
-    selectedProbabilityIndexOverride: selectedProbabilityIndexOverride, tokenLength: tokenLength,
-    routerKind: routerKind, configuration: configuration, of: dataType)
+    selectedProbabilityIndexOverride: selectedProbabilityIndexOverride, pairToToken: pairToToken,
+    tokenLength: tokenLength, routerKind: routerKind, configuration: configuration, of: dataType)
   let shared = DeepSeek4SharedFFN(
     prefix: "\(prefix).ffn", x: ffnBranch, tokenLength: tokenLength, configuration: configuration)
   let ffnBlock = routed + shared
@@ -984,6 +925,8 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
   }
   let attentionOutputGroupCounts = Input()
   inputs.append(attentionOutputGroupCounts)
+  let pairToToken = Input()
+  inputs.append(pairToToken)
   var out = DeepSeek4Embedding(
     Float16.self, tokens: tokens, tokenLength: tokenLength, configuration: configuration
   ).to(.Float32)
@@ -1000,7 +943,7 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
       layerRotary = compressedRotary!
     }
     let layerCausalCompressedIndices = DeepSeek4CausalCompressedIndicesInput(
-      layerIndex: layerIndex, tokenLength: tokenLength, configuration: configuration,
+      layerIndex: layerIndex, configuration: configuration,
       inputs: &inputs, indices: &causalCompressedIndices)
     let selectedExperts: Input?
     let selectedProbabilityIndices: Input?
@@ -1018,8 +961,8 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
       attentionOutputGroupCounts: attentionOutputGroupCounts,
       causalCompressedIndices: layerCausalCompressedIndices,
       selectedExpertOverride: selectedExperts,
-      selectedProbabilityIndexOverride: selectedProbabilityIndices, tokenLength: tokenLength,
-      configuration: configuration, of: dataType)
+      selectedProbabilityIndexOverride: selectedProbabilityIndices, pairToToken: pairToToken,
+      tokenLength: tokenLength, configuration: configuration, of: dataType)
     out = layer.to(.Float32).copied()
   }
 
