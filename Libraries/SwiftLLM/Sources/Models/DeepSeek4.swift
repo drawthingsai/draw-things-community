@@ -881,14 +881,14 @@ private func DeepSeek4RoutedMoE<FloatType: TensorNumeric>(
   of dataType: FloatType.Type
 ) -> Model.IO {
   let router = Dense(count: configuration.expertCount, noBias: true, name: "\(prefix).gate")
-  let routerBias = Parameter<FloatType>(
-    .GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.bias")
   let logits = router(routerInput.reshaped([tokenLength, configuration.hiddenSize]).to(.Float32))
   let probs = logits.softplus().squareRoot().reshaped([tokenLength, configuration.expertCount])
   let selected: Model.IO
   let routerWeights: Model.IO
   switch routerKind {
   case .standard:
+    let routerBias = Parameter<FloatType>(
+      .GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.bias")
     let route = (probs + routerBias.reshaped([1, configuration.expertCount]).to(of: probs))
       .partitioned(kth: configuration.routedExperts, axis: 1, descending: true)
     // This follows the HiDream partitioned-router shape: route[0] is the selected score tensor
