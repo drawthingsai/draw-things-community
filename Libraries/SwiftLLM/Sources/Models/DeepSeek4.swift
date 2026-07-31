@@ -100,6 +100,20 @@ public struct DeepSeek4ModelConfiguration: Sendable {
     precondition(layerIndex >= 0 && layerIndex < layers)
     return layerRouterKinds[layerIndex]
   }
+
+  /// Compression ratios used by the configured attention layers.
+  public var compressionRatios: [Int] {
+    var ratios = Set<Int>()
+    for attentionKind in layerAttentionKinds {
+      switch attentionKind {
+      case .raw:
+        break
+      case .compressed(let compressionRatio), .indexed(let compressionRatio):
+        ratios.insert(compressionRatio)
+      }
+    }
+    return ratios.sorted()
+  }
 }
 
 extension DeepSeek4ModelConfiguration {
@@ -129,8 +143,73 @@ extension DeepSeek4ModelConfiguration {
     ropeYarnBetaSlow: 1,
     layerAttentionKinds: [
       .raw, .raw, .indexed(compressionRatio: 4), .compressed(compressionRatio: 128),
-    ] + (4..<43).map { $0.isMultiple(of: 2) ? .indexed(compressionRatio: 4) : .compressed(compressionRatio: 128) },
+    ]
+      + (4..<43).map {
+        $0.isMultiple(of: 2) ? .indexed(compressionRatio: 4) : .compressed(compressionRatio: 128)
+      },
     layerRouterKinds: (0..<43).map { $0 < 3 ? .tokenHash : .standard })
+}
+
+/// Describes the compressor rows and retained state for one continuation step.
+public struct DeepSeek4CompressionPlan: Sendable, Equatable {
+  public let compressionRatio: Int
+  public let existingRowCount: Int
+  public let totalRowCount: Int
+  public let emittedRowCount: Int
+  public let compressorTokenOffset: Int
+  public let compressorTokenCount: Int
+  public let compressorOutputRowOffset: Int
+  public let stateCount: Int
+  public let nextStateCount: Int
+  public let nextStateOffset: Int
+
+  public init(cachedTokenLength: Int, tokenLength: Int, compressionRatio: Int) {
+    precondition(cachedTokenLength >= 0)
+    precondition(tokenLength > 0)
+    precondition(compressionRatio > 0)
+    let existingRowCount = cachedTokenLength / compressionRatio
+    let cachedRemainder = cachedTokenLength % compressionRatio
+    let keepsPreviousWindow = compressionRatio == 4 && existingRowCount > 0
+    let stateCount = cachedRemainder + (keepsPreviousWindow ? compressionRatio : 0)
+    let compressorTokenOffset = cachedTokenLength - stateCount
+    let totalTokenLength = cachedTokenLength + tokenLength
+    let totalRowCount = totalTokenLength / compressionRatio
+    let emittedRowCount = totalRowCount - existingRowCount
+    let compressorOutputRowOffset =
+      compressionRatio == 4 && existingRowCount > 0 && emittedRowCount > 0 ? 1 : 0
+    let compressorTokenCount =
+      (compressorOutputRowOffset + emittedRowCount) * compressionRatio
+    let nextRemainder = totalTokenLength % compressionRatio
+    let nextStateCount =
+      nextRemainder
+      + (compressionRatio == 4 && totalRowCount > 0 ? compressionRatio : 0)
+    let nextStateTokenOffset =
+      compressionRatio == 4 && totalRowCount > 0
+      ? (totalRowCount - 1) * compressionRatio
+      : totalRowCount * compressionRatio
+    let nextStateOffset = nextStateTokenOffset - compressorTokenOffset
+    precondition(nextStateOffset >= 0)
+    precondition(nextStateOffset + nextStateCount <= stateCount + tokenLength)
+    self.compressionRatio = compressionRatio
+    self.existingRowCount = existingRowCount
+    self.totalRowCount = totalRowCount
+    self.emittedRowCount = emittedRowCount
+    self.compressorTokenOffset = compressorTokenOffset
+    self.compressorTokenCount = compressorTokenCount
+    self.compressorOutputRowOffset = compressorOutputRowOffset
+    self.stateCount = stateCount
+    self.nextStateCount = nextStateCount
+    self.nextStateOffset = nextStateOffset
+  }
+
+  public var stateCapacity: Int {
+    DeepSeek4CompressorStateCapacity(compressionRatio: compressionRatio)
+  }
+}
+
+public func DeepSeek4CompressorStateCapacity(compressionRatio: Int) -> Int {
+  precondition(compressionRatio > 0)
+  return compressionRatio == 4 ? compressionRatio * 2 - 1 : compressionRatio - 1
 }
 
 private func DeepSeek4StoreUsesBareTensorName(_ name: String) -> Bool {
@@ -167,7 +246,8 @@ public func DeepSeek4StoreReader(
     if let range = tensorName.range(of: #"-\d+-\d+$"#, options: .regularExpression) {
       tensorName.removeSubrange(range)
     }
-    let storeTensorName = DeepSeek4StoreUsesBareTensorName(tensorName)
+    let storeTensorName =
+      DeepSeek4StoreUsesBareTensorName(tensorName)
       ? tensorName : "\(tensorName).weight"
     return .continue("__\(storeKey)__[\(storeTensorName)]")
   }
@@ -264,8 +344,9 @@ private func DeepSeek4RotaryRowsForHeadDim(
   let prefix = rotary.reshaped([rowCount, nNope], offset: [0, 0], strides: [fullHeadDim, 1])
   let tail = rotary.reshaped(
     [rowCount, configuration.rotaryDim],
-    offset: [0, fullHeadDim - configuration.rotaryDim],
-    strides: [fullHeadDim, 1]).copied()
+    offset: [0, rowCount > 0 ? fullHeadDim - configuration.rotaryDim : 0],
+    strides: [fullHeadDim, 1]
+  ).copied()
   return Concat(axis: 1)([prefix, tail])
 }
 
@@ -287,8 +368,7 @@ private func DeepSeek4CompressedRotaryRows(
 ) -> Model.IO {
   precondition(windowCount * compressionRatio <= tokenLength)
   let fullHeadDim = configuration.attentionHeadDim
-  let rotaryRows = rotary.reshaped([tokenLength, fullHeadDim])
-  let fullRows = rotaryRows.reshaped(
+  let fullRows = rotary.reshaped(
     [windowCount, fullHeadDim], offset: [0, 0],
     strides: [compressionRatio * fullHeadDim, 1]
   ).copied()
@@ -400,7 +480,8 @@ private func DeepSeek4AttentionOutput(
 }
 
 private func DeepSeek4RawAttention(
-  query: Model.IO, rawKV: Model.IO, sinks: ModelIOConvertible, tokenLength: Int,
+  query: Model.IO, rawKV: Model.IO, sinks: ModelIOConvertible, queryLength: Int,
+  rawRowCount: Int,
   configuration: DeepSeek4ModelConfiguration
 ) -> Model.IO {
   let headDim = configuration.attentionHeadDim
@@ -413,16 +494,43 @@ private func DeepSeek4RawAttention(
     slidingWindow: configuration.rawWindow,
     name: "DeepSeek4RawAttention")
   return attention(
-    attentionQuery.reshaped(.NHWC(1, tokenLength, configuration.attentionHeads, headDim)),
-    kv.reshaped(.NHWC(1, tokenLength, 1, headDim)),
-    kv.reshaped(.NHWC(1, tokenLength, 1, headDim)),
+    attentionQuery.reshaped(.NHWC(1, queryLength, configuration.attentionHeads, headDim)),
+    kv.reshaped(.NHWC(1, rawRowCount, 1, headDim)),
+    kv.reshaped(.NHWC(1, rawRowCount, 1, headDim)),
     sinks.reshaped(.NHWC(1, 1, configuration.attentionHeads, 1)).to(of: attentionQuery)
-  ).reshaped([tokenLength, configuration.attentionHeads * headDim])
+  ).reshaped([queryLength, configuration.attentionHeads * headDim])
+}
+
+private func DeepSeek4RawCachedAttention(
+  query: Model.IO, currentRawKV: Model.IO, sinks: ModelIOConvertible, cache: Model.IO,
+  cachedTokenLength: Int, tokenLength: Int,
+  configuration: DeepSeek4ModelConfiguration
+) -> Model.IO {
+  let queryInput = Input()
+  let currentRawKVInput = Input()
+  let sinksInput = Input()
+  let cacheInput = Input()
+  let cacheOutput = DeepSeek4CacheAppend(
+    currentRawKVInput, to: cacheInput, rowOffset: cachedTokenLength,
+    rowCount: tokenLength, width: configuration.attentionHeadDim)
+  let totalTokenLength = cachedTokenLength + tokenLength
+  let attentionKeyValue = cacheInput.reshaped(
+    [totalTokenLength, configuration.attentionHeadDim])
+  let heads = DeepSeek4RawAttention(
+    query: queryInput, rawKV: attentionKeyValue, sinks: sinksInput,
+    queryLength: tokenLength, rawRowCount: totalTokenLength,
+    configuration: configuration)
+  heads.add(dependencies: [cacheOutput])
+  return Model(
+    [queryInput, currentRawKVInput, sinksInput, cacheInput], [heads]
+  )(query, currentRawKV, sinks, cache)
 }
 
 private func DeepSeek4SparseIndexedAttention(
-  query: Model.IO, rawKV: Model.IO, compressedKV: Model.IO, selectedCompressedRows: Model.IO,
-  sinks: ModelIOConvertible, tokenLength: Int, compressedRows: Int, selectedRowCount: Int,
+  query: Model.IO, rawKV: Model.IO, compressedKV: Model.IO,
+  selectedCompressedRows: Model.IO,
+  sinks: ModelIOConvertible, queryLength: Int, rawRowCount: Int, compressedRows: Int,
+  selectedRowCount: Int,
   configuration: DeepSeek4ModelConfiguration
 ) -> Model.IO {
   let headDim = configuration.attentionHeadDim
@@ -437,17 +545,19 @@ private func DeepSeek4SparseIndexedAttention(
     scale: 1.0 / Float(headDim).squareRoot(),
     isCausal: true, hasAttentionSinks: true,
     slidingWindow: configuration.rawWindow)
-  return attention(
-    attentionQuery.reshaped(
-      .NHWC(1, tokenLength, configuration.attentionHeads, headDim)),
-    rawAttentionKV.reshaped(.NHWC(1, tokenLength, 1, headDim)),
-    rawAttentionKV.reshaped(.NHWC(1, tokenLength, 1, headDim)),
-    compressedAttentionKVInput,
-    compressedAttentionKVInput,
+  let attentionQueryInput = attentionQuery.reshaped(
+    .NHWC(1, queryLength, configuration.attentionHeads, headDim))
+  let rawAttentionKVInput = rawAttentionKV.reshaped(.NHWC(1, rawRowCount, 1, headDim))
+  let sinksInput = sinks.reshaped(
+    .NHWC(1, 1, configuration.attentionHeads, 1)
+  ).to(of: attentionQuery)
+  let heads = attention(
+    attentionQueryInput, rawAttentionKVInput, rawAttentionKVInput,
+    compressedAttentionKVInput, compressedAttentionKVInput,
     selectedCompressedRows.reshaped(
-      [tokenLength, selectedRowCount], format: .NHWC),
-    sinks.reshaped(.NHWC(1, 1, configuration.attentionHeads, 1)).to(of: attentionQuery)
-  ).reshaped([tokenLength, configuration.attentionHeads * headDim])
+      [queryLength, selectedRowCount], format: .NHWC),
+    sinksInput)
+  return heads.reshaped([queryLength, configuration.attentionHeads * headDim])
 }
 
 private func DeepSeek4CausalCompressedIndicesInput(
@@ -466,6 +576,93 @@ private func DeepSeek4CausalCompressedIndicesInput(
   case .raw, .indexed:
     return nil
   }
+}
+
+private struct DeepSeek4LayerCacheInputs {
+  let rawKeyValue: Input
+  let compressedKeyValue: Input?
+  let compressorState: Input?
+  let nextCompressorState: Input?
+  let indexerKeyValue: Input?
+}
+
+private struct DeepSeek4PreparedCompressorInput {
+  let input: Model.IO
+  let stateUpdate: Model.IO
+  let plan: DeepSeek4CompressionPlan
+}
+
+private func DeepSeek4CompressorStateBarrier(
+  _ value: Model.IO, stateUpdate: Model.IO
+) -> Model.IO {
+  // Keep the ping-pong state write in the dataflow before the caller swaps the buffers.
+  let stateDependency = stateUpdate.reshaped([1], offset: [0], strides: [1])
+    .to(of: value)
+  return value + stateDependency * 0
+}
+
+private func DeepSeek4CacheAppend(
+  _ value: Model.IO, to cache: Model.IO, rowOffset: Int, rowCount: Int, width: Int
+) -> Model.IO {
+  let destination = cache.reshaped(
+    [rowCount, width], offset: [rowOffset, 0], strides: [width, 1])
+  return value.reshaped([rowCount, width]).moved(to: destination)
+}
+
+private func DeepSeek4ComposeCache(
+  _ current: Model.IO, cache: Model.IO, existingRowCount: Int,
+  currentRowCount: Int, width: Int
+) -> Model.IO {
+  let currentInput = Input()
+  let cacheInput = Input()
+  let output = DeepSeek4CacheAppend(
+    currentInput, to: cacheInput, rowOffset: existingRowCount,
+    rowCount: currentRowCount, width: width)
+  let composed = cacheInput.reshaped(
+    [existingRowCount + currentRowCount, width],
+    offset: [0, 0], strides: [width, 1])
+  composed.add(dependencies: [output])
+  return Model([currentInput, cacheInput], [composed])(current, cache)
+}
+
+private func DeepSeek4UpdateFixedCapacityCache(
+  _ current: Model.IO, cache: Model.IO, rowCount: Int, capacity: Int, width: Int
+) -> Model.IO {
+  let currentInput = Input()
+  let cacheInput = Input()
+  let output = DeepSeek4CacheAppend(
+    currentInput, to: cacheInput, rowOffset: 0, rowCount: rowCount, width: width)
+  let updatedCache = cacheInput.reshaped(
+    [capacity, width], offset: [0, 0], strides: [width, 1])
+  updatedCache.add(dependencies: [output])
+  return Model([currentInput, cacheInput], [updatedCache])(current, cache)
+}
+
+private func DeepSeek4PrepareCompressorInput(
+  _ x: Model.IO, state: Model.IO, nextStateCache: Model.IO,
+  cachedTokenLength: Int, tokenLength: Int,
+  compressionRatio: Int, configuration: DeepSeek4ModelConfiguration
+) -> DeepSeek4PreparedCompressorInput {
+  let plan = DeepSeek4CompressionPlan(
+    cachedTokenLength: cachedTokenLength, tokenLength: tokenLength,
+    compressionRatio: compressionRatio)
+  let hidden = configuration.hiddenSize
+  let stateRows = state.reshaped(
+    [plan.stateCount, hidden], offset: [0, 0], strides: [hidden, 1])
+  let combined = Concat(axis: 0)([
+    stateRows,
+    x.reshaped([tokenLength, hidden]),
+  ])
+  let compressorInput = combined.reshaped(
+    [plan.compressorTokenCount, hidden], offset: [0, 0], strides: [hidden, 1])
+  let nextState = combined.reshaped(
+    [plan.nextStateCount, hidden], offset: [plan.nextStateOffset, 0],
+    strides: [hidden, 1])
+  let updatedState = DeepSeek4UpdateFixedCapacityCache(
+    nextState.to(of: nextStateCache), cache: nextStateCache,
+    rowCount: plan.nextStateCount, capacity: plan.stateCapacity, width: hidden)
+  return DeepSeek4PreparedCompressorInput(
+    input: compressorInput, stateUpdate: updatedState, plan: plan)
 }
 
 private func DeepSeek4FP8KVRoundTrip(
@@ -487,10 +684,10 @@ private func DeepSeek4Ratio4RollingPool(
   let compressionRatio = 4
   let width = 2 * headDim
   let rowWidth = width * compressionRatio
-  let kv = kvProjected.reshaped([windowCount, compressionRatio, width])
-  let score = scoreProjected.reshaped([windowCount, compressionRatio, width])
+  let score =
+    scoreProjected.reshaped([windowCount, compressionRatio, width])
     + ape.reshaped([1, compressionRatio, width]).to(of: scoreProjected)
-  let primaryKV = kv.reshaped(
+  let primaryKV = kvProjected.reshaped(
     [windowCount, compressionRatio, headDim], offset: [0, 0, 0],
     strides: [rowWidth, width, 1]
   ).transposed(1, 2).contiguous()
@@ -498,37 +695,51 @@ private func DeepSeek4Ratio4RollingPool(
     [windowCount, compressionRatio, headDim], offset: [0, 0, 0],
     strides: [rowWidth, width, 1]
   ).transposed(1, 2).contiguous()
-  let companionKV = kv.reshaped(
-    [windowCount, compressionRatio, headDim], offset: [0, 0, headDim],
+  let companionKV = kvProjected.reshaped(
+    [windowCount, compressionRatio, headDim],
+    offset: [0, 0, windowCount > 0 ? headDim : 0],
     strides: [rowWidth, width, 1]
   ).transposed(1, 2).contiguous()
   let companionScore = score.reshaped(
-    [windowCount, compressionRatio, headDim], offset: [0, 0, headDim],
+    [windowCount, compressionRatio, headDim],
+    offset: [0, 0, windowCount > 0 ? headDim : 0],
     strides: [rowWidth, width, 1]
   ).transposed(1, 2).contiguous()
-  let zeroKV = ape.reshaped([1, compressionRatio, width]).reshaped(
-    [1, compressionRatio, headDim], offset: [0, 0, 0],
-    strides: [rowWidth, width, 1]
-  ).transposed(1, 2).contiguous() * 0
+  let zeroKV =
+    ape.reshaped(
+      [1, compressionRatio, headDim], offset: [0, 0, 0],
+      strides: [rowWidth, width, 1]
+    ).transposed(1, 2).contiguous() * 0
   let negInfScore = zeroKV - 1.0e4
-  let previousKV = Concat(axis: 0)([zeroKV, primaryKV])
-  let previousScore = Concat(axis: 0)([negInfScore, primaryScore])
-  let currentKV = Concat(axis: 0)([companionKV, zeroKV])
-  let currentScore = Concat(axis: 0)([companionScore, negInfScore])
-  let paddedKV = Concat(axis: 2)([previousKV, currentKV])
-  let paddedScore = Concat(axis: 2)([previousScore, currentScore])
-  let pooledWidth = 2 * compressionRatio
-  let allKV = paddedKV.reshaped(
-    [windowCount, headDim, pooledWidth], offset: [0, 0, 0],
-    strides: [headDim * pooledWidth, pooledWidth, 1])
-  let allScore = paddedScore.reshaped(
-    [windowCount, headDim, pooledWidth], offset: [0, 0, 0],
-    strides: [headDim * pooledWidth, pooledWidth, 1])
+  let prefixWindowCount = min(windowCount, 1)
+  let previousWindowCount = max(windowCount - 1, 0)
+  let zeroPrefix = zeroKV.reshaped(
+    [prefixWindowCount, headDim, compressionRatio], offset: [0, 0, 0],
+    strides: [headDim * compressionRatio, compressionRatio, 1])
+  let negInfPrefix = negInfScore.reshaped(
+    [prefixWindowCount, headDim, compressionRatio], offset: [0, 0, 0],
+    strides: [headDim * compressionRatio, compressionRatio, 1])
+  let previousPrimaryKV = primaryKV.reshaped(
+    [previousWindowCount, headDim, compressionRatio], offset: [0, 0, 0],
+    strides: [headDim * compressionRatio, compressionRatio, 1])
+  let previousPrimaryScore = primaryScore.reshaped(
+    [previousWindowCount, headDim, compressionRatio], offset: [0, 0, 0],
+    strides: [headDim * compressionRatio, compressionRatio, 1])
+  let previousKV = Concat(axis: 0)([zeroPrefix, previousPrimaryKV])
+  let previousScore = Concat(axis: 0)([negInfPrefix, previousPrimaryScore])
   let rows = windowCount * headDim
-  let weights = allScore.reshaped([rows, pooledWidth])
+  let paddedKV = Concat(axis: 1)([
+    previousKV.reshaped([rows, compressionRatio]),
+    companionKV.reshaped([rows, compressionRatio]),
+  ]).reshaped([windowCount, headDim, 2 * compressionRatio])
+  let paddedScore = Concat(axis: 1)([
+    previousScore.reshaped([rows, compressionRatio]),
+    companionScore.reshaped([rows, compressionRatio]),
+  ]).reshaped([windowCount, headDim, 2 * compressionRatio])
+  let weights = paddedScore.reshaped([rows, 2 * compressionRatio])
     .softmax()
-    .reshaped([windowCount, headDim, pooledWidth])
-  return (weights .* allKV).reduced(.sum, axis: [2]).reshaped([windowCount, headDim])
+    .reshaped([windowCount, headDim, 2 * compressionRatio])
+  return (weights .* paddedKV).reduced(.sum, axis: [2]).reshaped([windowCount, headDim])
 }
 
 private func DeepSeek4Compressor<FloatType: TensorNumeric>(
@@ -545,8 +756,8 @@ private func DeepSeek4Compressor<FloatType: TensorNumeric>(
   let xWindow = x.reshaped(
     [tokenRows, configuration.hiddenSize], offset: [0, 0],
     strides: [configuration.hiddenSize, 1])
-  let kvProjected = kv(xWindow).reshaped([tokenRows, width])
-  let scoreProjected = gate(xWindow).reshaped([tokenRows, width])
+  let kvProjected = kv(xWindow)
+  let scoreProjected = gate(xWindow)
   let pooled: Model.IO
   if compressionRatio == 4 {
     pooled = DeepSeek4Ratio4RollingPool(
@@ -554,7 +765,8 @@ private func DeepSeek4Compressor<FloatType: TensorNumeric>(
       windowCount: windowCount, headDim: headDim)
   } else {
     let kvRows = kvProjected.reshaped([windowCount, compressionRatio, headDim])
-    let scores = scoreProjected.reshaped([windowCount, compressionRatio, headDim])
+    let scores =
+      scoreProjected.reshaped([windowCount, compressionRatio, headDim])
       + ape.reshaped([1, compressionRatio, headDim]).to(of: scoreProjected)
     let weights = scores.transposed(1, 2)
       .reshaped([windowCount * headDim, compressionRatio])
@@ -570,7 +782,7 @@ private func DeepSeek4Compressor<FloatType: TensorNumeric>(
     rotary, tokenLength: tokenLength, windowCount: windowCount,
     compressionRatio: compressionRatio, headDim: headDim, configuration: configuration)
   let compressed = Functional.cmul(
-    left: normed.reshaped([windowCount, headDim]),
+    left: normed,
     right: rotaryRows.reshaped([windowCount, headDim]))
   if emitIndexerWHT {
     return DeepSeek4IndexerWHT(
@@ -617,7 +829,8 @@ private func DeepSeek4IndexerSelection<FloatType: TensorNumeric>(
   let indexQ = DeepSeek4IndexerQAT(
     prefix: prefix, indexRows, rowCount: tokenLength * configuration.indexerHeads,
     configuration: configuration, of: dataType)
-  let indexWeights = indexerWeightsProj(attnNorm.reshaped([tokenLength, configuration.hiddenSize]))
+  let indexWeights =
+    indexerWeightsProj(attnNorm.reshaped([tokenLength, configuration.hiddenSize]))
     .reshaped([tokenLength, configuration.indexerHeads])
     * (1.0 / Float(configuration.indexerHeadDim).squareRoot()
       / Float(configuration.indexerHeads).squareRoot())
@@ -655,7 +868,9 @@ private func DeepSeek4SharedFFN(
 private func DeepSeek4NormalizeRouterWeights(
   _ selectedProbs: Model.IO, tokenLength: Int, configuration: DeepSeek4ModelConfiguration
 ) -> Model.IO {
-  return (selectedProbs .* selectedProbs.reduced(.sum, axis: [1]).reshaped([tokenLength, 1])
+  return
+    (selectedProbs
+    .* selectedProbs.reduced(.sum, axis: [1]).reshaped([tokenLength, 1])
     .reciprocal()) * 1.5
 }
 
@@ -705,7 +920,8 @@ private func DeepSeek4RoutedMoE<FloatType: TensorNumeric>(
   let sortIndices = sorted[1]
   let sortedWeights = IndexSelect()(routerWeights.reshaped([pairs]), sortIndices)
   let sortedTokenIndices = IndexSelect()(pairToToken.reshaped([pairs]), sortIndices)
-  let gathered = IndexSelect()(x.reshaped([tokenLength, configuration.hiddenSize]), sortedTokenIndices)
+  let gathered = IndexSelect()(
+    x.reshaped([tokenLength, configuration.hiddenSize]), sortedTokenIndices)
   let groupedExpertIds = sortedExperts.uniqueConsecutive(count: configuration.expertCount)
   let gate = SegmentedDense(
     segments: configuration.expertCount, count: configuration.expertIntermediateSize,
@@ -718,7 +934,8 @@ private func DeepSeek4RoutedMoE<FloatType: TensorNumeric>(
     noBias: true, name: "\(prefix).experts.w2")
   let sortedGate = gate(gathered, groupedExpertIds).clamped(...10.0)
   let sortedUp = up(gathered, groupedExpertIds).clamped((-10.0)...10.0)
-  let hidden = Functional.swishMul(value: sortedUp, gate: sortedGate)
+  let hidden =
+    Functional.swishMul(value: sortedUp, gate: sortedGate)
     .* sortedWeights.reshaped([pairs, 1]).to(of: sortedGate)
   let sortedOut = down(hidden, groupedExpertIds)
   let out = Functional.scatterAdd(
@@ -732,7 +949,8 @@ private func DeepSeek4Embedding<FloatType: TensorNumeric>(
   configuration: DeepSeek4ModelConfiguration
 ) -> Model.IO {
   let embed = Embedding(
-    FloatType.self, vocabularySize: configuration.vocabularySize, embeddingSize: configuration.hiddenSize,
+    FloatType.self, vocabularySize: configuration.vocabularySize,
+    embeddingSize: configuration.hiddenSize,
     name: "embed")
   let tokenEmbedding = embed(tokens).reshaped([tokenLength, 1, configuration.hiddenSize])
   let hcBroadcast = Parameter<FloatType>(
@@ -744,9 +962,11 @@ private func DeepSeek4Embedding<FloatType: TensorNumeric>(
 
 private func DeepSeek4Layer<FloatType: TensorNumeric>(
   prefix: String, layerIndex: Int, residualHC: Model.IO, rotary: Model.IO,
+  compressorRotary: Model.IO?,
   attentionOutputGroupCounts: Model.IO, causalCompressedIndices: Model.IO?,
   selectedExpertOverride: Model.IO?,
   selectedProbabilityIndexOverride: Model.IO?, pairToToken: Model.IO, tokenLength: Int,
+  cachedTokenLength: Int, cacheInputs: DeepSeek4LayerCacheInputs?,
   configuration: DeepSeek4ModelConfiguration, of dataType: FloatType.Type
 ) -> Model.IO {
   let attentionKind = configuration.attentionKind(layerIndex: layerIndex)
@@ -759,7 +979,8 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
   let attnHC = Dense(count: mixDim, noBias: true, name: "\(prefix).hc_attn_fn")
   let attnScale = Parameter<Float>(.GPU(0), .C(3), name: "\(prefix).hc_attn_scale")
   let attnBase = Parameter<Float>(.GPU(0), .C(mixDim), name: "\(prefix).hc_attn_base")
-  let sinks = Parameter<Float>(.GPU(0), .C(configuration.attentionHeads), name: "\(prefix).attn.attn_sink")
+  let sinks = Parameter<Float>(
+    .GPU(0), .C(configuration.attentionHeads), name: "\(prefix).attn.attn_sink")
 
   let ffnHC = Dense(count: mixDim, noBias: true, name: "\(prefix).hc_ffn_fn")
   let ffnScale = Parameter<Float>(.GPU(0), .C(3), name: "\(prefix).hc_ffn_scale")
@@ -786,53 +1007,181 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
     kvRope, rowCount: tokenLength, headDim: configuration.attentionHeadDim,
     rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip
   ).reshaped([tokenLength, configuration.attentionHeadDim])
-  let heads: Model.IO
+  let rawRows: Int
+  let attentionRawKV: Model.IO
+  if let cacheInputs = cacheInputs {
+    let totalRawRows = cachedTokenLength + tokenLength
+    switch attentionKind {
+    case .raw:
+      rawRows = totalRawRows
+      attentionRawKV = cacheInputs.rawKeyValue
+    case .compressed, .indexed:
+      let composed = DeepSeek4ComposeCache(
+        rawKV.to(.Float16), cache: cacheInputs.rawKeyValue,
+        existingRowCount: cachedTokenLength, currentRowCount: tokenLength,
+        width: configuration.attentionHeadDim)
+      rawRows = totalRawRows
+      attentionRawKV = composed.reshaped(
+        [rawRows, configuration.attentionHeadDim])
+    }
+  } else {
+    rawRows = tokenLength
+    attentionRawKV = rawKV
+  }
+
+  let preparedCompressor: DeepSeek4PreparedCompressorInput?
   switch attentionKind {
   case .raw:
-    heads = DeepSeek4RawAttention(
-      query: projection.query, rawKV: rawKV, sinks: sinks, tokenLength: tokenLength,
-      configuration: configuration)
-  case .compressed(let compressionRatio):
-    let compressedRows = tokenLength / compressionRatio
-    let compressed = DeepSeek4FP8KVRoundTrip(
+    preparedCompressor = nil
+  case .compressed(let compressionRatio), .indexed(let compressionRatio):
+    if let cacheInputs = cacheInputs {
+      guard let compressorState = cacheInputs.compressorState,
+        let nextCompressorState = cacheInputs.nextCompressorState
+      else {
+        preconditionFailure("Compressed attention requires compressor state caches.")
+      }
+      let prepared = DeepSeek4PrepareCompressorInput(
+        attnBranch, state: compressorState,
+        nextStateCache: nextCompressorState,
+        cachedTokenLength: cachedTokenLength, tokenLength: tokenLength,
+        compressionRatio: compressionRatio, configuration: configuration)
+      preparedCompressor = prepared
+    } else {
+      preparedCompressor = nil
+    }
+  }
+
+  func emitCompressedRows(
+    prefix: String, compressionRatio: Int, headDim: Int, emitIndexerWHT: Bool
+  ) -> (
+    rows: Model.IO, existingRowCount: Int, totalRowCount: Int, emittedRowCount: Int
+  ) {
+    if let preparedCompressor = preparedCompressor {
+      guard let compressorRotary = compressorRotary else {
+        preconditionFailure("Cached compression requires rotary inputs.")
+      }
+      let plan = preparedCompressor.plan
+      let sourceRows = DeepSeek4Compressor(
+        prefix: prefix, x: preparedCompressor.input, rotary: compressorRotary,
+        tokenLength: plan.compressorTokenCount, compressionRatio: compressionRatio,
+        headDim: headDim, emitIndexerWHT: emitIndexerWHT,
+        configuration: configuration, of: dataType)
+      let emittedRows = sourceRows.reshaped(
+        [plan.emittedRowCount, headDim],
+        offset: [plan.compressorOutputRowOffset, 0],
+        strides: [headDim, 1])
+      return (
+        emittedRows, plan.existingRowCount, plan.totalRowCount, plan.emittedRowCount
+      )
+    }
+    let rowCount = tokenLength / compressionRatio
+    return (
       DeepSeek4Compressor(
-        prefix: "\(prefix).attn.compressor", x: attnBranch, rotary: rotary,
+        prefix: prefix, x: attnBranch, rotary: rotary,
         tokenLength: tokenLength, compressionRatio: compressionRatio,
-        headDim: configuration.attentionHeadDim, emitIndexerWHT: false,
+        headDim: headDim, emitIndexerWHT: emitIndexerWHT,
         configuration: configuration, of: dataType),
-      rowCount: compressedRows, headDim: configuration.attentionHeadDim,
+      0, rowCount, rowCount
+    )
+  }
+
+  var heads: Model.IO
+  switch attentionKind {
+  case .raw:
+    if let cacheInputs = cacheInputs {
+      heads = DeepSeek4RawCachedAttention(
+        query: projection.query, currentRawKV: rawKV.to(.Float16), sinks: sinks,
+        cache: cacheInputs.rawKeyValue, cachedTokenLength: cachedTokenLength,
+        tokenLength: tokenLength, configuration: configuration)
+    } else {
+      heads = DeepSeek4RawAttention(
+        query: projection.query, rawKV: attentionRawKV, sinks: sinks,
+        queryLength: tokenLength, rawRowCount: rawRows,
+        configuration: configuration)
+    }
+  case .compressed(let compressionRatio):
+    let emitted = emitCompressedRows(
+      prefix: "\(prefix).attn.compressor", compressionRatio: compressionRatio,
+      headDim: configuration.attentionHeadDim, emitIndexerWHT: false)
+    let emittedCompressed = DeepSeek4FP8KVRoundTrip(
+      emitted.rows, rowCount: emitted.emittedRowCount,
+      headDim: configuration.attentionHeadDim,
       rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip)
-    precondition(causalCompressedIndices != nil)
+    let attentionCompressed: Model.IO
+    if let cacheInputs = cacheInputs {
+      guard let compressedKeyValue = cacheInputs.compressedKeyValue else {
+        preconditionFailure("Compressed attention requires a compressed KV cache.")
+      }
+      let composed = DeepSeek4ComposeCache(
+        emittedCompressed.to(.Float16), cache: compressedKeyValue,
+        existingRowCount: emitted.existingRowCount,
+        currentRowCount: emitted.emittedRowCount,
+        width: configuration.attentionHeadDim)
+      attentionCompressed = composed
+    } else {
+      attentionCompressed = emittedCompressed
+    }
+    guard let causalCompressedIndices = causalCompressedIndices else {
+      preconditionFailure("Compressed attention requires causal compressed indices.")
+    }
     heads = DeepSeek4SparseIndexedAttention(
-      query: projection.query, rawKV: rawKV, compressedKV: compressed,
-      selectedCompressedRows: causalCompressedIndices!, sinks: sinks, tokenLength: tokenLength,
-      compressedRows: compressedRows, selectedRowCount: max(compressedRows, 1),
+      query: projection.query, rawKV: attentionRawKV, compressedKV: attentionCompressed,
+      selectedCompressedRows: causalCompressedIndices, sinks: sinks,
+      queryLength: tokenLength, rawRowCount: rawRows,
+      compressedRows: emitted.totalRowCount,
+      selectedRowCount: max(emitted.totalRowCount, 1),
       configuration: configuration)
   case .indexed(let compressionRatio):
-    let compressedRows = tokenLength / compressionRatio
-    let compressed = DeepSeek4FP8KVRoundTrip(
-      DeepSeek4Compressor(
-        prefix: "\(prefix).attn.compressor", x: attnBranch, rotary: rotary,
-        tokenLength: tokenLength, compressionRatio: compressionRatio,
-        headDim: configuration.attentionHeadDim, emitIndexerWHT: false,
-        configuration: configuration, of: dataType),
-      rowCount: compressedRows, headDim: configuration.attentionHeadDim,
+    let emitted = emitCompressedRows(
+      prefix: "\(prefix).attn.compressor", compressionRatio: compressionRatio,
+      headDim: configuration.attentionHeadDim, emitIndexerWHT: false)
+    let emittedCompressed = DeepSeek4FP8KVRoundTrip(
+      emitted.rows, rowCount: emitted.emittedRowCount,
+      headDim: configuration.attentionHeadDim,
       rotaryDim: configuration.rotaryDim, enabled: configuration.enableFP8KVRoundTrip)
-    let indexer = DeepSeek4Compressor(
-      prefix: "\(prefix).attn.indexer.compressor", x: attnBranch, rotary: rotary,
-      tokenLength: tokenLength, compressionRatio: compressionRatio,
-      headDim: configuration.indexerHeadDim, emitIndexerWHT: true,
-      configuration: configuration, of: dataType)
+    let emittedIndexer = emitCompressedRows(
+      prefix: "\(prefix).attn.indexer.compressor", compressionRatio: compressionRatio,
+      headDim: configuration.indexerHeadDim, emitIndexerWHT: true)
+    let attentionCompressed: Model.IO
+    let attentionIndexer: Model.IO
+    if let cacheInputs = cacheInputs {
+      guard let compressedKeyValue = cacheInputs.compressedKeyValue,
+        let indexerKeyValue = cacheInputs.indexerKeyValue
+      else {
+        preconditionFailure("Indexed attention requires compressed and indexer KV caches.")
+      }
+      let compressedComposition = DeepSeek4ComposeCache(
+        emittedCompressed.to(.Float16), cache: compressedKeyValue,
+        existingRowCount: emitted.existingRowCount,
+        currentRowCount: emitted.emittedRowCount,
+        width: configuration.attentionHeadDim)
+      let indexerComposition = DeepSeek4ComposeCache(
+        emittedIndexer.rows.to(.Float32), cache: indexerKeyValue,
+        existingRowCount: emittedIndexer.existingRowCount,
+        currentRowCount: emittedIndexer.emittedRowCount,
+        width: configuration.indexerHeadDim)
+      attentionCompressed = compressedComposition
+      attentionIndexer = indexerComposition
+    } else {
+      attentionCompressed = emittedCompressed
+      attentionIndexer = emittedIndexer.rows
+    }
     let selectedRows = DeepSeek4IndexerSelection(
       prefix: "\(prefix).attn", queryRank: projection.queryRank, attnNorm: attnBranch,
-      rotary: rotary, indexerKV: indexer, tokenLength: tokenLength,
-      compressionRatio: compressionRatio, compressedRows: compressedRows,
+      rotary: rotary, indexerKV: attentionIndexer, tokenLength: tokenLength,
+      compressionRatio: compressionRatio, compressedRows: emittedIndexer.totalRowCount,
       configuration: configuration, of: dataType)
     heads = DeepSeek4SparseIndexedAttention(
-      query: projection.query, rawKV: rawKV, compressedKV: compressed,
-      selectedCompressedRows: selectedRows, sinks: sinks, tokenLength: tokenLength,
-      compressedRows: compressedRows, selectedRowCount: configuration.indexerTopK,
+      query: projection.query, rawKV: attentionRawKV, compressedKV: attentionCompressed,
+      selectedCompressedRows: selectedRows, sinks: sinks,
+      queryLength: tokenLength, rawRowCount: rawRows,
+      compressedRows: emitted.totalRowCount,
+      selectedRowCount: configuration.indexerTopK,
       configuration: configuration)
+  }
+  if let preparedCompressor = preparedCompressor {
+    heads = DeepSeek4CompressorStateBarrier(
+      heads, stateUpdate: preparedCompressor.stateUpdate)
   }
   let attnOutput = DeepSeek4AttentionOutput(
     prefix: "\(prefix).attn", heads: heads, rotary: rotary,
@@ -890,7 +1239,8 @@ private func DeepSeek4OutputHead<FloatType: TensorNumeric>(
     outputFlatInput
   ).reshaped([outputTokenCount, hcDim])
   let mix = hcFn(flat).reshaped([outputTokenCount, hc])
-  let weights = (mix .* hcScale.reshaped([1, 1]).to(of: mix) + hcBase.reshaped([1, hc]).to(of: mix))
+  let weights =
+    (mix .* hcScale.reshaped([1, 1]).to(of: mix) + hcBase.reshaped([1, hc]).to(of: mix))
     .sigmoid() + 1.0e-6
   let hiddenState = (outputInput .* weights.reshaped([outputTokenCount, hc, 1]))
     .reduced(.sum, axis: [1])
@@ -908,10 +1258,12 @@ private func DeepSeek4OutputHead<FloatType: TensorNumeric>(
 
 private func DeepSeek4Prefix<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int,
-  configuration: DeepSeek4ModelConfiguration
+  configuration: DeepSeek4ModelConfiguration, useKVCache: Bool
 ) -> (inputs: [Input], hidden: Model.IO) {
   precondition(tokenLength > 0)
-  precondition(cachedTokenLength == 0, "The initial DeepSeek4 prefill draft handles fresh prefill only.")
+  precondition(
+    cachedTokenLength == 0 || useKVCache,
+    "DeepSeek4 continuation requires KV-cache inputs.")
   let tokens = Input()
   let rawRotary = Input()
   let usesCompressedRotary = configuration.layerAttentionKinds.contains {
@@ -922,6 +1274,14 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
   var inputs: [Input] = [tokens, rawRotary]
   if let compressedRotary = compressedRotary {
     inputs.append(compressedRotary)
+  }
+  var compressorRotaries = [Int: Input]()
+  if useKVCache {
+    for compressionRatio in configuration.compressionRatios {
+      let compressorRotary = Input()
+      compressorRotaries[compressionRatio] = compressorRotary
+      inputs.append(compressorRotary)
+    }
   }
   let attentionOutputGroupCounts = Input()
   inputs.append(attentionOutputGroupCounts)
@@ -940,29 +1300,82 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
     case .raw:
       layerRotary = rawRotary
     case .compressed, .indexed:
-      layerRotary = compressedRotary!
+      guard let compressedRotary = compressedRotary else {
+        preconditionFailure("Compressed attention requires rotary inputs.")
+      }
+      layerRotary = compressedRotary
     }
     let layerCausalCompressedIndices = DeepSeek4CausalCompressedIndicesInput(
       layerIndex: layerIndex, configuration: configuration,
       inputs: &inputs, indices: &causalCompressedIndices)
+    let layerCompressorRotary: Input?
+    switch attentionKind {
+    case .raw:
+      layerCompressorRotary = nil
+    case .compressed(let compressionRatio), .indexed(let compressionRatio):
+      layerCompressorRotary = compressorRotaries[compressionRatio]
+    }
+    let layerCacheInputs: DeepSeek4LayerCacheInputs?
+    if useKVCache {
+      let rawKeyValue = Input()
+      inputs.append(rawKeyValue)
+      switch attentionKind {
+      case .raw:
+        layerCacheInputs = DeepSeek4LayerCacheInputs(
+          rawKeyValue: rawKeyValue, compressedKeyValue: nil,
+          compressorState: nil, nextCompressorState: nil,
+          indexerKeyValue: nil)
+      case .compressed:
+        let compressedKeyValue = Input()
+        let compressorState = Input()
+        let nextCompressorState = Input()
+        inputs.append(contentsOf: [
+          compressedKeyValue, compressorState, nextCompressorState,
+        ])
+        layerCacheInputs = DeepSeek4LayerCacheInputs(
+          rawKeyValue: rawKeyValue, compressedKeyValue: compressedKeyValue,
+          compressorState: compressorState,
+          nextCompressorState: nextCompressorState, indexerKeyValue: nil)
+      case .indexed:
+        let compressedKeyValue = Input()
+        let compressorState = Input()
+        let nextCompressorState = Input()
+        let indexerKeyValue = Input()
+        inputs.append(contentsOf: [
+          compressedKeyValue, compressorState, nextCompressorState,
+          indexerKeyValue,
+        ])
+        layerCacheInputs = DeepSeek4LayerCacheInputs(
+          rawKeyValue: rawKeyValue, compressedKeyValue: compressedKeyValue,
+          compressorState: compressorState,
+          nextCompressorState: nextCompressorState,
+          indexerKeyValue: indexerKeyValue)
+      }
+    } else {
+      layerCacheInputs = nil
+    }
     let selectedExperts: Input?
     let selectedProbabilityIndices: Input?
     if configuration.routerKind(layerIndex: layerIndex) == .tokenHash {
-      selectedExperts = Input()
-      selectedProbabilityIndices = Input()
-      inputs.append(selectedExperts!)
-      inputs.append(selectedProbabilityIndices!)
+      let selectedExpertsInput = Input()
+      let selectedProbabilityIndicesInput = Input()
+      selectedExperts = selectedExpertsInput
+      selectedProbabilityIndices = selectedProbabilityIndicesInput
+      inputs.append(selectedExpertsInput)
+      inputs.append(selectedProbabilityIndicesInput)
     } else {
       selectedExperts = nil
       selectedProbabilityIndices = nil
     }
     let layer = DeepSeek4Layer(
       prefix: prefix, layerIndex: layerIndex, residualHC: out, rotary: layerRotary,
+      compressorRotary: layerCompressorRotary,
       attentionOutputGroupCounts: attentionOutputGroupCounts,
       causalCompressedIndices: layerCausalCompressedIndices,
       selectedExpertOverride: selectedExperts,
       selectedProbabilityIndexOverride: selectedProbabilityIndices, pairToToken: pairToToken,
-      tokenLength: tokenLength, configuration: configuration, of: dataType)
+      tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
+      cacheInputs: layerCacheInputs, configuration: configuration, of: dataType)
     out = layer.to(.Float32).copied()
   }
 
@@ -972,11 +1385,12 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
 public func DeepSeek4CausalLM<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
   configuration: DeepSeek4ModelConfiguration = .deepSeekV4Flash,
-  includeLogits: Bool = true, lastTokenOnly: Bool = false
+  includeLogits: Bool = true, lastTokenOnly: Bool = false,
+  useKVCache: Bool = false
 ) -> Model {
   let prefix = DeepSeek4Prefix(
     dataType, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-    configuration: configuration)
+    configuration: configuration, useKVCache: useKVCache)
   let output = DeepSeek4OutputHead(
     x: prefix.hidden, tokenLength: tokenLength, configuration: configuration,
     includeLogits: includeLogits, lastTokenOnly: lastTokenOnly, of: dataType
@@ -986,10 +1400,11 @@ public func DeepSeek4CausalLM<FloatType: TensorNumeric>(
 
 public func DeepSeek4PrefixHiddenState<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
-  configuration: DeepSeek4ModelConfiguration = .deepSeekV4Flash
+  configuration: DeepSeek4ModelConfiguration = .deepSeekV4Flash,
+  useKVCache: Bool = false
 ) -> Model {
   let prefix = DeepSeek4Prefix(
     dataType, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-    configuration: configuration)
+    configuration: configuration, useKVCache: useKVCache)
   return Model(prefix.inputs, [prefix.hidden])
 }
