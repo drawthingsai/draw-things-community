@@ -12,6 +12,12 @@ public enum BinaryResources {
   public static let vocab_16e6_json = Data(
     bytesNoCopy: C_Resources.vocab_16e6_json()!, count: C_Resources.vocab_16e6_json_size,
     deallocator: .none)
+  public static let merges_deepseek4_txt = Data(
+    bytesNoCopy: C_Resources.merges_deepseek4_txt()!,
+    count: C_Resources.merges_deepseek4_txt_size, deallocator: .none)
+  public static let vocab_deepseek4_json = Data(
+    bytesNoCopy: C_Resources.vocab_deepseek4_json()!,
+    count: C_Resources.vocab_deepseek4_json_size, deallocator: .none)
   public static let chatglm3_spiece_model = Data(
     bytesNoCopy: C_Resources.chatglm3_spiece_model()!,
     count: C_Resources.chatglm3_spiece_model_size,
