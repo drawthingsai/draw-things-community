@@ -243,7 +243,13 @@ public func DeepSeek4StoreReader(
       return .fail
     }
     tensorName.removeFirst(2)
-    if let range = tensorName.range(of: #"-\d+-\d+$"#, options: .regularExpression) {
+    if tensorName.hasSuffix(".experts-0-0") {
+      tensorName.removeLast(4)
+      tensorName.append(".w1")
+    } else if tensorName.hasSuffix(".experts-0-1") {
+      tensorName.removeLast(4)
+      tensorName.append(".w3")
+    } else if let range = tensorName.range(of: #"-\d+-\d+$"#, options: .regularExpression) {
       tensorName.removeSubrange(range)
     }
     let storeTensorName =
@@ -251,20 +257,6 @@ public func DeepSeek4StoreReader(
       ? tensorName : "\(tensorName).weight"
     return .continue("__\(storeKey)__[\(storeTensorName)]")
   }
-}
-
-public func DeepSeek4PairToToken(
-  tokenLength: Int, configuration: DeepSeek4ModelConfiguration = .deepSeekV4Flash
-) -> Tensor<Int32> {
-  var tokenIndices = [Int32]()
-  tokenIndices.reserveCapacity(tokenLength * configuration.routedExperts)
-  for tokenIndex in 0..<tokenLength {
-    tokenIndices.append(
-      contentsOf: repeatElement(
-        Int32(tokenIndex), count: configuration.routedExperts))
-  }
-  return Tensor<Int32>(
-    tokenIndices, .CPU, .C(tokenLength * configuration.routedExperts))
 }
 
 private func DeepSeek4RopeYarnRamp(low: Double, high: Double, index: Int) -> Double {
@@ -858,90 +850,52 @@ private func DeepSeek4SharedFFN(
     name: "\(prefix).shared_experts.w3")
   let down = Dense(
     count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")
-  let mid = Functional.swishMul(
-    value: up(x).clamped((-10.0)...10.0), gate: gate(x).clamped(...10.0))
+  let mid = Functional.swishMul(value: up(x), gate: gate(x), clamp: 10)
   return down(mid).reshaped([
     tokenLength, configuration.hiddenSize,
   ])
 }
 
-private func DeepSeek4NormalizeRouterWeights(
-  _ selectedProbs: Model.IO, tokenLength: Int, configuration: DeepSeek4ModelConfiguration
-) -> Model.IO {
-  return
-    (selectedProbs
-    .* selectedProbs.reduced(.sum, axis: [1]).reshaped([tokenLength, 1])
-    .reciprocal()) * 1.5
-}
-
-private func DeepSeek4RoutedMoE<FloatType: TensorNumeric>(
+private func DeepSeek4RoutedMoE(
   prefix: String, x: Model.IO, routerInput: Model.IO, selectedExpertOverride: Model.IO?,
-  selectedProbabilityIndexOverride: Model.IO?, pairToToken: Model.IO, tokenLength: Int,
-  routerKind: DeepSeek4RouterKind, configuration: DeepSeek4ModelConfiguration,
-  of dataType: FloatType.Type
+  tokenLength: Int, routerKind: DeepSeek4RouterKind,
+  configuration: DeepSeek4ModelConfiguration
 ) -> Model.IO {
   let router = Dense(count: configuration.expertCount, noBias: true, name: "\(prefix).gate")
-  let logits = router(routerInput.reshaped([tokenLength, configuration.hiddenSize]).to(.Float32))
-  let probs = logits.softplus().squareRoot().reshaped([tokenLength, configuration.expertCount])
-  let selected: Model.IO
-  let routerWeights: Model.IO
+  let logits = router(
+    routerInput.reshaped([tokenLength, configuration.hiddenSize])
+  ).reshaped([tokenLength, configuration.expertCount])
+  let route: Model.IO
   switch routerKind {
   case .standard:
-    let routerBias = Parameter<FloatType>(
-      .GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.bias")
-    let route = (probs + routerBias.reshaped([1, configuration.expertCount]).to(of: probs))
-      .partitioned(kth: configuration.routedExperts, axis: 1, descending: true)
-    // This follows the HiDream partitioned-router shape: route[0] is the selected score tensor
-    // and route[1] is the selected expert id tensor.
-    let selectedScores = route[0].reshaped([tokenLength, configuration.routedExperts])
-    selected = route[1].reshaped([tokenLength, configuration.routedExperts])
-    let selectedBias = IndexSelect()(
-      routerBias.reshaped([configuration.expertCount]).to(of: selectedScores),
-      selected.reshaped([tokenLength * configuration.routedExperts])
-    ).reshaped([tokenLength, configuration.routedExperts])
-    let selectedProbs = selectedScores - selectedBias
-    routerWeights = DeepSeek4NormalizeRouterWeights(
-      selectedProbs, tokenLength: tokenLength, configuration: configuration)
+    route = Parameter<Float>(
+      .GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.bias"
+    ).reshaped([configuration.expertCount])
   case .tokenHash:
     precondition(selectedExpertOverride != nil)
-    precondition(selectedProbabilityIndexOverride != nil)
-    selected = selectedExpertOverride!.reshaped([tokenLength, configuration.routedExperts])
-    let selectedProbs = IndexSelect()(
-      probs.reshaped([tokenLength * configuration.expertCount]),
-      selectedProbabilityIndexOverride!.reshaped([tokenLength * configuration.routedExperts])
-    ).reshaped([tokenLength, configuration.routedExperts])
-    routerWeights = DeepSeek4NormalizeRouterWeights(
-      selectedProbs, tokenLength: tokenLength, configuration: configuration)
+    route = selectedExpertOverride!.reshaped([
+      tokenLength, configuration.routedExperts,
+    ])
   }
   let pairs = tokenLength * configuration.routedExperts
-  let selectedFlat = selected.reshaped([pairs])
-  let sorted = selectedFlat.sorted(axis: 0, descending: false)
-  let sortedExperts = sorted[0]
-  let sortIndices = sorted[1]
-  let sortedWeights = IndexSelect()(routerWeights.reshaped([pairs]), sortIndices)
-  let sortedTokenIndices = IndexSelect()(pairToToken.reshaped([pairs]), sortIndices)
-  let gathered = IndexSelect()(
-    x.reshaped([tokenLength, configuration.hiddenSize]), sortedTokenIndices)
-  let groupedExpertIds = sortedExperts.uniqueConsecutive(count: configuration.expertCount)
-  let gate = SegmentedDense(
+  let prepared = MoERouting(
+    kth: configuration.routedExperts, weightScale: 1.5,
+    preselected: routerKind == .tokenHash, singleInputToken: true,
+    name: "\(prefix).routing"
+  )(logits, route, x.reshaped([tokenLength, configuration.hiddenSize]))
+  let hidden = SegmentedSwiGLU(
     segments: configuration.expertCount, count: configuration.expertIntermediateSize,
-    noBias: true, name: "\(prefix).experts.w1")
-  let up = SegmentedDense(
-    segments: configuration.expertCount, count: configuration.expertIntermediateSize,
-    noBias: true, name: "\(prefix).experts.w3")
+    clamp: 10, name: "\(prefix).experts"
+  )([
+    prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+  ])
   let down = SegmentedDense(
     segments: configuration.expertCount, count: configuration.hiddenSize,
     noBias: true, name: "\(prefix).experts.w2")
-  let sortedGate = gate(gathered, groupedExpertIds).clamped(...10.0)
-  let sortedUp = up(gathered, groupedExpertIds).clamped((-10.0)...10.0)
-  let hidden =
-    Functional.swishMul(value: sortedUp, gate: sortedGate)
-    .* sortedWeights.reshaped([pairs, 1]).to(of: sortedGate)
-  let sortedOut = down(hidden, groupedExpertIds)
-  let out = Functional.scatterAdd(
-    count: tokenLength, sortedOut, index: sortedTokenIndices
+  let routed = down(hidden, prepared[3], prepared[4])
+  return Functional.scatterAdd(
+    count: tokenLength, routed, index: prepared[2]
   ).reshaped([tokenLength, configuration.hiddenSize])
-  return out
 }
 
 private func DeepSeek4Embedding<FloatType: TensorNumeric>(
@@ -965,8 +919,7 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
   compressorRotary: Model.IO?,
   attentionOutputGroupCounts: Model.IO, causalCompressedIndices: Model.IO?,
   selectedExpertOverride: Model.IO?,
-  selectedProbabilityIndexOverride: Model.IO?, pairToToken: Model.IO, tokenLength: Int,
-  cachedTokenLength: Int, cacheInputs: DeepSeek4LayerCacheInputs?,
+  tokenLength: Int, cachedTokenLength: Int, cacheInputs: DeepSeek4LayerCacheInputs?,
   configuration: DeepSeek4ModelConfiguration, of dataType: FloatType.Type
 ) -> Model.IO {
   let attentionKind = configuration.attentionKind(layerIndex: layerIndex)
@@ -1206,9 +1159,8 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
 
   let routed = DeepSeek4RoutedMoE(
     prefix: "\(prefix).ffn", x: ffnBranch, routerInput: ffnNorm,
-    selectedExpertOverride: selectedExpertOverride,
-    selectedProbabilityIndexOverride: selectedProbabilityIndexOverride, pairToToken: pairToToken,
-    tokenLength: tokenLength, routerKind: routerKind, configuration: configuration, of: dataType)
+    selectedExpertOverride: selectedExpertOverride, tokenLength: tokenLength,
+    routerKind: routerKind, configuration: configuration)
   let shared = DeepSeek4SharedFFN(
     prefix: "\(prefix).ffn", x: ffnBranch, tokenLength: tokenLength, configuration: configuration)
   let ffnBlock = routed + shared
@@ -1285,8 +1237,6 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
   }
   let attentionOutputGroupCounts = Input()
   inputs.append(attentionOutputGroupCounts)
-  let pairToToken = Input()
-  inputs.append(pairToToken)
   var out = DeepSeek4Embedding(
     Float16.self, tokens: tokens, tokenLength: tokenLength, configuration: configuration
   ).to(.Float32)
@@ -1355,17 +1305,12 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
       layerCacheInputs = nil
     }
     let selectedExperts: Input?
-    let selectedProbabilityIndices: Input?
     if configuration.routerKind(layerIndex: layerIndex) == .tokenHash {
       let selectedExpertsInput = Input()
-      let selectedProbabilityIndicesInput = Input()
       selectedExperts = selectedExpertsInput
-      selectedProbabilityIndices = selectedProbabilityIndicesInput
       inputs.append(selectedExpertsInput)
-      inputs.append(selectedProbabilityIndicesInput)
     } else {
       selectedExperts = nil
-      selectedProbabilityIndices = nil
     }
     let layer = DeepSeek4Layer(
       prefix: prefix, layerIndex: layerIndex, residualHC: out, rotary: layerRotary,
@@ -1373,7 +1318,6 @@ private func DeepSeek4Prefix<FloatType: TensorNumeric>(
       attentionOutputGroupCounts: attentionOutputGroupCounts,
       causalCompressedIndices: layerCausalCompressedIndices,
       selectedExpertOverride: selectedExperts,
-      selectedProbabilityIndexOverride: selectedProbabilityIndices, pairToToken: pairToToken,
       tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
       cacheInputs: layerCacheInputs, configuration: configuration, of: dataType)
     out = layer.to(.Float32).copied()
