@@ -25,6 +25,7 @@ swift_test(
         "Tests/TiktokenIncrementalDecoderTests.swift",
     ],
     deps = [
+        "//Libraries/BinaryResources",
         ":Tokenizer",
     ],
 )

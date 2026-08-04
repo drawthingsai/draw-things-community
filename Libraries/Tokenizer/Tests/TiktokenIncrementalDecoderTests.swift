@@ -1,3 +1,4 @@
+import BinaryResources
 import Foundation
 import XCTest
 
@@ -48,5 +49,31 @@ final class TiktokenIncrementalDecoderTests: XCTestCase {
     var decoder = tokenizer.makeTokenStreamer()
     XCTAssertEqual(decoder.append([1]), "")
     XCTAssertEqual(decoder.finish(), tokenizer.decode([1]))
+  }
+
+  func testJoyAIPretokenizationMatchesDeepSeekReference() {
+    let tokenizer = TiktokenTokenizer(
+      vocabulary: BinaryResources.vocab_deepseek4_json,
+      merges: BinaryResources.merges_deepseek4_txt,
+      specialTokens: [
+        "<｜begin▁of▁sentence｜>": 0,
+        "<｜end▁of▁sentence｜>": 1,
+        "<｜▁pad▁｜>": 2,
+      ],
+      unknownToken: "<｜▁pad▁｜>", startToken: "<｜begin▁of▁sentence｜>",
+      endToken: "<｜end▁of▁sentence｜>", pretokenizer: .joyAI)
+
+    let text = "    int x = 1234;\n中文かなABC\nfoo_bar?!\n"
+    XCTAssertEqual(
+      tokenizer.tokenize(text: text).0,
+      [
+        361, 688, 1_527, 438, 223, 6_895, 22, 510, 21_134, 49_534, 29_080, 201, 40_897,
+        100_869, 33, 8_567,
+      ])
+    XCTAssertEqual(
+      tokenizer.tokenize(
+        text: "<｜begin▁of▁sentence｜>OK<｜end▁of▁sentence｜>"
+      ).0,
+      [0, 11_932, 1])
   }
 }

@@ -1,6 +1,11 @@
 import Foundation
 
 public struct TiktokenTokenizer {
+  public enum Pretokenizer: Equatable {
+    case llama3
+    case joyAI
+  }
+
   private struct Pair: Hashable, Equatable {
     var first: Data
     var second: Data
@@ -18,11 +23,12 @@ public struct TiktokenTokenizer {
   public let startToken: Int32
   public let endToken: Int32
   private let specialTokensRegex: Any?
+  private let pretokenizer: Pretokenizer
 
   public init(
     vocabulary: Data, merges: Data, specialTokens: [String: Int32] = [:],
     unknownToken: String = "<|endoftext|>", startToken: String = "<|endoftext|>",
-    endToken: String = "<|endoftext|>"
+    endToken: String = "<|endoftext|>", pretokenizer: Pretokenizer = .llama3
   ) {
     let jsonVocabulary = try! JSONDecoder().decode([String: Int32].self, from: vocabulary)
     var decoder = [Int32: Data]()
@@ -85,6 +91,7 @@ public struct TiktokenTokenizer {
     specialTokens.insert(startToken)
     specialTokens.insert(endToken)
     self.specialTokens = Array(specialTokens)
+    self.pretokenizer = pretokenizer
   }
 
   public func decode(_ tokens: [Int32], specialTokens: [Int32: String] = [:]) -> String {
@@ -334,7 +341,7 @@ public struct TiktokenTokenizer {
     return tokens
   }
 
-  private static let tokenRegex: Any? = {
+  private static let llama3TokenRegex: Any? = {
     if #available(iOS 16.0, macOS 13.0, *) {
       return try? Regex(
         #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"#
@@ -343,9 +350,25 @@ public struct TiktokenTokenizer {
     return nil
   }()
 
+  private static let joyAITokenRegex: Any? = {
+    if #available(iOS 16.0, macOS 13.0, *) {
+      return try? Regex(
+        ##"\p{N}{1,3}|[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+|[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"##
+      )
+    }
+    return nil
+  }()
+
   private func pretokenize(_ text: String) -> [Substring] {
     if #available(iOS 16.0, macOS 13.0, *) {
-      if let tokenRegex = Self.tokenRegex as? Regex<AnyRegexOutput> {
+      let tokenRegex: Any?
+      switch pretokenizer {
+      case .llama3:
+        tokenRegex = Self.llama3TokenRegex
+      case .joyAI:
+        tokenRegex = Self.joyAITokenRegex
+      }
+      if let tokenRegex = tokenRegex as? Regex<AnyRegexOutput> {
         if let specialTokensRegex = specialTokensRegex as? Regex<AnyRegexOutput> {
           var lastIndex = text.startIndex
           var tokens: [Substring] = []
@@ -381,16 +404,23 @@ public struct TiktokenTokenizer {
   public func tokenize(text: String, addSpecialTokens: Bool = false)
     -> ([Int32], [String])
   {
-    var fixText = text.split(separator: " ").joined(separator: " ")
-    if text.hasPrefix(" ") {
-      fixText = " " + fixText
-    }
-    if text.hasSuffix(" ") {
-      fixText = fixText + " "
+    let tokenizableText: String
+    switch pretokenizer {
+    case .llama3:
+      var normalizedText = text.split(separator: " ").joined(separator: " ")
+      if text.hasPrefix(" ") {
+        normalizedText = " " + normalizedText
+      }
+      if text.hasSuffix(" ") {
+        normalizedText += " "
+      }
+      tokenizableText = normalizedText
+    case .joyAI:
+      tokenizableText = text
     }
     // Logic for r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+\r?\n*|\s*\r?\n+|\s+(?!\S)|\s+"""
     // Implement this with for loop rather than regex so it is applicable with Swift 5.6.x
-    let tokens = pretokenize(fixText)
+    let tokens = pretokenize(tokenizableText)
     // token should match the token before sending to bpe mapping. Now do bpe merge.
     let bpeTokens = tokens.flatMap { token -> [Data] in
       guard let token = token.data(using: .utf8) else { return [] }
