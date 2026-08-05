@@ -16,34 +16,25 @@ public struct SogouSearch {
   }
 
   /// Searches Sogou and calls `completion` with normalized, de-duplicated results.
+  @discardableResult
   public func search(
     query: String,
     options: SogouSearchOptions = SogouSearchOptions(),
     completion: @escaping (Result<[SearchResult], Error>) -> Void
-  ) {
+  ) -> Task<Void, Never> {
     Task {
       do {
-        completion(.success(try await searchAsync(query: query, options: options)))
+        completion(.success(try await search(query: query, options: options)))
       } catch {
         completion(.failure(error))
       }
     }
   }
 
-  /// Searches Sogou with async/await by wrapping the completion-handler API.
+  /// Searches Sogou with async/await.
   public func search(query: String, options: SogouSearchOptions = SogouSearchOptions())
     async throws -> [SearchResult]
   {
-    try await withCheckedThrowingContinuation { continuation in
-      search(query: query, options: options) { result in
-        continuation.resume(with: result)
-      }
-    }
-  }
-
-  private func searchAsync(
-    query: String, options: SogouSearchOptions = SogouSearchOptions()
-  ) async throws -> [SearchResult] {
     let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedQuery.isEmpty else {
       return []

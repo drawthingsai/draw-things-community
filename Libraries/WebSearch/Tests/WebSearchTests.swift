@@ -14,8 +14,9 @@ private struct StubHttpTransport: HttpTransport {
   func data(
     for request: URLRequest,
     completion: @escaping (Result<(Data, HTTPURLResponse), Error>) -> Void
-  ) {
+  ) -> (() -> Void)? {
     completion(handler(request))
+    return nil
   }
 }
 
