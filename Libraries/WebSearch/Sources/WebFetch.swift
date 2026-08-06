@@ -14,12 +14,25 @@ public struct WebFetch {
     self.httpTransport = httpTransport
   }
 
-  /// Fetches one HTTP(S) URL.
+  /// Fetches one HTTP(S) URL with async/await by wrapping the completion-handler API.
   public func fetch(url: URL, options: WebFetchOptions = WebFetchOptions()) async throws
     -> WebFetchResult
   {
+    try await withCheckedThrowingContinuation { continuation in
+      fetch(url: url, options: options) { result in
+        continuation.resume(with: result)
+      }
+    }
+  }
+  /// Fetches one HTTP(S) URL and calls `completion` with converted output.
+  public func fetch(
+    url: URL,
+    options: WebFetchOptions = WebFetchOptions(),
+    completion: @escaping (Result<WebFetchResult, Error>) -> Void
+  ) {
     guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
-      throw WebSearchError.unsupportedScheme(url.scheme ?? "")
+      completion(.failure(WebSearchError.unsupportedScheme(url.scheme ?? "")))
+      return
     }
 
     var request = URLRequest(url: url)
@@ -31,55 +44,47 @@ public struct WebFetch {
     request.setValue(options.format.acceptHeader, forHTTPHeaderField: "Accept")
 
     let start = Date()
-    let (data, response) = try await httpTransport.data(for: request)
-    let elapsed = Date().timeIntervalSince(start)
-    guard (200..<300).contains(response.statusCode) else {
-      throw WebSearchError.httpStatus(
-        response.statusCode, response.url, body: DuckDuckGoSearch.decodeBody(data),
-        headers: response.allHeaderFields.reduce(into: [String: String]()) {
-          guard let key = $1.key as? String else { return }
-          $0[key] = String(describing: $1.value)
-        }, byteCount: data.count)
-    }
-    guard data.count <= options.maxBytes else {
-      throw WebSearchError.responseTooLarge(data.count, options.maxBytes)
-    }
-    let contentType = response.value(forHTTPHeaderField: "Content-Type")
-    guard let body = DuckDuckGoSearch.decodeBody(data) else {
-      throw WebSearchError.bodyDecodingFailed(response.url)
-    }
-
-    let finalURL = response.url ?? url
-    let output = try Self.renderOutput(
-      body: body, contentType: contentType, format: options.format, baseURL: finalURL)
-    let metadata = WebFetchMetadata(
-      url: url,
-      finalURL: finalURL,
-      contentType: contentType,
-      statusCode: response.statusCode,
-      elapsedSeconds: elapsed,
-      byteCount: data.count,
-      format: options.format)
-    return WebFetchResult(
-      title: "\(finalURL.absoluteString) (\(contentType ?? ""))", metadata: metadata,
-      output: output)
-  }
-
-  /// Fetches one HTTP(S) URL and calls `completion` with converted output.
-  @discardableResult
-  public func fetch(
-    url: URL,
-    options: WebFetchOptions = WebFetchOptions(),
-    completion: @escaping (Result<WebFetchResult, Error>) -> Void
-  ) -> (() -> Void)? {
-    let task = Task {
+    httpTransport.data(for: request) { result in
       do {
-        completion(.success(try await fetch(url: url, options: options)))
-      } catch {
+        let (data, response) = try result.get()
+        let elapsed = Date().timeIntervalSince(start)
+        guard (200..<300).contains(response.statusCode) else {
+          throw WebSearchError.httpStatus(
+            response.statusCode, response.url, body: DuckDuckGoSearch.decodeBody(data),
+            headers: response.allHeaderFields.reduce(into: [String: String]()) {
+              guard let key = $1.key as? String else { return }
+              $0[key] = String(describing: $1.value)
+            }, byteCount: data.count)
+        }
+        guard data.count <= options.maxBytes else {
+          throw WebSearchError.responseTooLarge(data.count, options.maxBytes)
+        }
+        let contentType = response.value(forHTTPHeaderField: "Content-Type")
+        guard let body = DuckDuckGoSearch.decodeBody(data) else {
+          throw WebSearchError.bodyDecodingFailed(response.url)
+        }
+
+        let finalURL = response.url ?? url
+        let output = try Self.renderOutput(
+          body: body, contentType: contentType, format: options.format, baseURL: finalURL)
+        let metadata = WebFetchMetadata(
+          url: url,
+          finalURL: finalURL,
+          contentType: contentType,
+          statusCode: response.statusCode,
+          elapsedSeconds: elapsed,
+          byteCount: data.count,
+          format: options.format)
+        completion(
+          .success(
+            WebFetchResult(
+              title: "\(finalURL.absoluteString) (\(contentType ?? ""))",
+              metadata: metadata,
+              output: output)))
+      } catch let error {
         completion(.failure(error))
       }
     }
-    return { task.cancel() }
   }
 
   static func renderOutput(

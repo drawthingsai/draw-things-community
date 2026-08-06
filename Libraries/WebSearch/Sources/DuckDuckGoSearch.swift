@@ -16,25 +16,34 @@ public struct DuckDuckGoSearch {
   }
 
   /// Searches DuckDuckGo and calls `completion` with normalized, de-duplicated results.
-  @discardableResult
   public func search(
     query: String,
     options: DuckDuckGoSearchOptions = DuckDuckGoSearchOptions(),
     completion: @escaping (Result<[SearchResult], Error>) -> Void
-  ) -> Task<Void, Never> {
+  ) {
     Task {
       do {
-        completion(.success(try await search(query: query, options: options)))
+        completion(.success(try await searchAsync(query: query, options: options)))
       } catch {
         completion(.failure(error))
       }
     }
   }
 
-  /// Searches DuckDuckGo with async/await.
+  /// Searches DuckDuckGo with async/await by wrapping the completion-handler API.
   public func search(query: String, options: DuckDuckGoSearchOptions = DuckDuckGoSearchOptions())
     async throws -> [SearchResult]
   {
+    try await withCheckedThrowingContinuation { continuation in
+      search(query: query, options: options) { result in
+        continuation.resume(with: result)
+      }
+    }
+  }
+
+  private func searchAsync(
+    query: String, options: DuckDuckGoSearchOptions = DuckDuckGoSearchOptions()
+  ) async throws -> [SearchResult] {
     let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedQuery.isEmpty else {
       return []
