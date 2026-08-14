@@ -6,22 +6,22 @@ public struct LLMZoo: DownloadZoo {
     public let name: String
     public let file: String
     public let version: LLMVersion
+    public let deprecated: Bool?
 
-    public init(name: String, file: String, version: LLMVersion) {
+    public init(name: String, file: String, version: LLMVersion, deprecated: Bool? = nil) {
       self.name = name
       self.file = file
       self.version = version
+      self.deprecated = deprecated
     }
   }
 
-  public static let defaultSpecification = Specification(
-    name: "Qwen 3.6 27B (4-bit S)", file: "qwen_3.6_27b_i4x.ckpt",
-    version: .qwen_3_5_27b)
-
   public static let builtinSpecifications: [Specification] = [
-    defaultSpecification,
     Specification(
-      name: "Qwen 3.6 27B (8-bit S)", file: "qwen_3.6_27b_i8x.ckpt",
+      name: "Qwen 3.8 27B (4-bit S)", file: "qwen_3.8_27b_i4x.ckpt",
+      version: .qwen_3_5_27b),
+    Specification(
+      name: "Qwen 3.8 27B (8-bit S)", file: "qwen_3.8_27b_i8x.ckpt",
       version: .qwen_3_5_27b),
     Specification(
       name: "Qwen 3.5 9B (5-bit S)", file: "qwen_3.5_9b_i5x.ckpt",
@@ -32,6 +32,12 @@ public struct LLMZoo: DownloadZoo {
     Specification(
       name: "DeepSeek 4 Flash 0731 (2-bit S)", file: "deepseek_4_flash_0731_i2x.ckpt",
       version: .deepseek_4_flash),
+    Specification(
+      name: "Qwen 3.6 27B (4-bit S)", file: "qwen_3.6_27b_i4x.ckpt",
+      version: .qwen_3_5_27b, deprecated: true),
+    Specification(
+      name: "Qwen 3.6 27B (8-bit S)", file: "qwen_3.6_27b_i8x.ckpt",
+      version: .qwen_3_5_27b, deprecated: true),
   ]
 
   private static let fileSHA256: [String: String] = [
@@ -73,11 +79,9 @@ public struct LLMZoo: DownloadZoo {
     return specification.name
   }
 
-  public static func versionForModel(_ name: String) -> LLMVersion {
-    guard let specification = specificationForModel(name) else {
-      return defaultSpecification.version
-    }
-    return specification.version
+  public static func isModelDeprecated(_ name: String) -> Bool {
+    guard let specification = specificationForModel(name) else { return false }
+    return specification.deprecated ?? false
   }
 
   public static func fileSHA256ForModelDownloaded(_ name: String) -> String? {
