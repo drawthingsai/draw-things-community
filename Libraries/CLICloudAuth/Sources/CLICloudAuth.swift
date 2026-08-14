@@ -1,5 +1,4 @@
 import Foundation
-
 #if canImport(FoundationNetworking)
   import FoundationNetworking
 #endif
@@ -71,14 +70,12 @@ public struct CLICloudCredentialsStore {
   private var credentialsDirectoryURL: URL {
     let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
     #if os(macOS)
-      return
-        home
+      return home
         .appendingPathComponent("Library", isDirectory: true)
         .appendingPathComponent("Application Support", isDirectory: true)
         .appendingPathComponent(applicationName, isDirectory: true)
     #else
-      return
-        home
+      return home
         .appendingPathComponent(".config", isDirectory: true)
         .appendingPathComponent(applicationName, isDirectory: true)
     #endif
@@ -386,8 +383,7 @@ public struct CLICloudAuthClient {
         return
       }
       do {
-        result = .success(
-          try JSONDecoder().decode(AuthenticationResponse.self, from: data).gRPCToken)
+        result = .success(try JSONDecoder().decode(AuthenticationResponse.self, from: data).gRPCToken)
       } catch {
         result = .failure(error)
       }
@@ -1061,8 +1057,7 @@ public enum CLICloudGoogleOAuthDesktopFlow {
         let errorMessage = String(data: errorData, encoding: .utf8)?
           .trimmingCharacters(in: .whitespacesAndNewlines)
         let detail =
-          errorMessage?.isEmpty == false
-          ? errorMessage! : "exit status \(process.terminationStatus)"
+          errorMessage?.isEmpty == false ? errorMessage! : "exit status \(process.terminationStatus)"
         throw CLICloudAuthError.browserLaunchFailed(detail)
       }
     }

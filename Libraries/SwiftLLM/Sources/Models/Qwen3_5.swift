@@ -56,7 +56,7 @@ public struct Qwen3_5ModelConfiguration: Sendable {
 }
 
 extension Qwen3_5ModelConfiguration {
-  public static let qwen3_6_27B = Qwen3_5ModelConfiguration(
+  public static let qwen3_5_27B = Qwen3_5ModelConfiguration(
     vocabularySize: 248_320, hiddenSize: 5_120, intermediateSize: 17_408,
     layers: 64, fullAttentionInterval: 4, attentionHeads: 24,
     keyValueHeads: 4, attentionHeadDim: 256, rotaryDim: 64,

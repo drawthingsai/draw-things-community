@@ -1,4 +1,4 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_test")
 
 swift_library(
     name = "SwiftLLM",
@@ -8,6 +8,15 @@ swift_library(
     deps = [
         "//Libraries/Tokenizer",
         "@ccv//lib:ccv",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
+    name = "DeepSeek4RotaryEmbeddingTests",
+    srcs = ["Tests/DeepSeek4RotaryEmbeddingTests.swift"],
+    deps = [
+        ":SwiftLLM",
         "@s4nnc//nnc",
     ],
 )

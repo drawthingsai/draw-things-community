@@ -260,8 +260,8 @@ def append_rows(rows, compact_rows, tensor, component, mappings, imatrix, source
             "source_file": source_file,
         }
         rows.append(row)
-        if component == "text":
-            compact_rows.append((store_key, gguf_type, imatrix_payload))
+        if component == "text" and gguf_name not in compact_rows:
+            compact_rows[gguf_name] = (gguf_name, gguf_type, imatrix_payload)
 
 
 def add_reference_only_rows(rows, compact_rows, reference_keys, already_mapped):
@@ -287,7 +287,6 @@ def add_reference_only_rows(rows, compact_rows, reference_keys, already_mapped):
                 "source_file": "official_safetensors",
             }
         )
-        compact_rows.append((store_key, datatype, ""))
 
 
 def write_compact(path, rows):
@@ -336,7 +335,7 @@ def write_audit(path, reference_keys, mapped_keys):
 
 def generate_for_model(gguf_path, mmproj_path, imatrix, reference_keys, output_prefix, gguf_py):
     rows = []
-    compact_rows = []
+    compact_rows = {}
     main_reader = load_gguf_reader(str(gguf_path), gguf_py)
     for tensor in main_reader.tensors:
         mappings = map_text_tensor(tensor.name)
@@ -351,7 +350,7 @@ def generate_for_model(gguf_path, mmproj_path, imatrix, reference_keys, output_p
     mapped_keys = {row["store_key"] for row in rows}
     add_reference_only_rows(rows, compact_rows, reference_keys, mapped_keys)
     mapped_keys = {row["store_key"] for row in rows}
-    write_compact(f"{output_prefix}_quantization.csv", compact_rows)
+    write_compact(f"{output_prefix}_quantization.csv", compact_rows.values())
     write_map(f"{output_prefix}_tensor_map.csv", rows)
     write_audit(f"{output_prefix}_store_key_audit.txt", reference_keys, mapped_keys)
     return rows, compact_rows, mapped_keys

@@ -1,6 +1,24 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Keep this ahead of swift_rules_dependencies() so its fallback protobuf pin does not win.
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "3ad017543e502ffaa9cd1f4bd4fe96cf117ce7175970f191705fa0518aff80cd",
+    strip_prefix = "protobuf-32.0",
+    urls = [
+        "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v32.0.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "rules_java",
+    sha256 = "c5bc17e17bb62290b1fd8fdd847a2396d3459f337a7e07da7769b869b488ec26",
+    urls = [
+        "https://github.com/bazelbuild/rules_java/releases/download/8.6.1/rules_java-8.6.1.tar.gz",
+    ],
+)
+
 http_archive(
     name = "rules_rust",
     integrity = "sha256-X/2f8fby8U8gV7fLqpGl5qzZpMve1ayB2tm+s2hZYB4=",
@@ -99,12 +117,12 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "e96e31183d6ed5811c68eeb8dbe4f6215ef5fc95",
+    commit = "36c6ddb0e70e544789cbcb2a73ad4c8afb239b1a",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1785891952 -0400",
+    shallow_since = "1786659699 -0400",
 )
 
-load("@s4nnc//:deps.bzl", "s4nnc_deps")
+load("@s4nnc//:deps.bzl", "s4nnc_deps", "s4nnc_extra_deps")
 
 s4nnc_deps()
 
@@ -125,9 +143,9 @@ ccv_setting(
     have_libjpeg = True,
     have_libpng = True,
     have_nccl = False,
-    use_dispatch = True,
-    use_openmp = False,
     have_pthread = True,
+    use_dispatch = False,
+    use_openmp = True,
 )
 
 git_repository(
@@ -155,16 +173,16 @@ swift_sentencepiece_deps()
 new_git_repository(
     name = "SwiftNumerics",
     build_file = "swift-numerics.BUILD",
-    remote = "https://github.com/apple/swift-numerics.git",
     commit = "1e5cbc4e2142677d6695036a748344c8edb83e5c",
+    remote = "https://github.com/apple/swift-numerics.git",
     shallow_since = "1630424082 -0400",
 )
 
 new_git_repository(
     name = "SwiftAlgorithms",
     build_file = "swift-algorithms.BUILD",
-    remote = "https://github.com/apple/swift-algorithms.git",
     commit = "195e0316d7ba71e134d0f6c677f64b4db6160c46",
+    remote = "https://github.com/apple/swift-algorithms.git",
     shallow_since = "1645643239 -0600",
 )
 
@@ -219,8 +237,8 @@ new_git_repository(
 new_git_repository(
     name = "SwiftCrypto",
     build_file = "swift-crypto.BUILD",
-    remote = "https://github.com/apple/swift-crypto.git",
     commit = "81bee98e706aee68d39ed5996db069ef2b313d62",
+    remote = "https://github.com/apple/swift-crypto.git",
 )
 
 new_git_repository(
@@ -317,16 +335,16 @@ new_git_repository(
 new_git_repository(
     name = "SwiftGuaka",
     build_file = "swift-guaka.BUILD",
-    remote = "https://github.com/nsomar/Guaka",
     commit = "e52eb523b152e04fa5dff56bed01e805062ce0ff",
+    remote = "https://github.com/nsomar/Guaka",
     shallow_since = "1570439330 +0900",
 )
 
 new_git_repository(
     name = "SwiftStringScanner",
     build_file = "swift-string-scanner.BUILD",
-    remote = "https://github.com/getGuaka/StringScanner",
     commit = "de1685ad202cb586d626ed52d6de904dd34189f3",
+    remote = "https://github.com/getGuaka/StringScanner",
     shallow_since = "1558131110 +0900",
 )
 
@@ -345,8 +363,6 @@ new_git_repository(
     remote = "https://github.com/jagreenwood/swift-log-datadog",
     shallow_since = "1643657017 -0500",
 )
-
-load("@s4nnc//:deps.bzl", "s4nnc_extra_deps")
 
 s4nnc_extra_deps()
 
@@ -373,8 +389,6 @@ new_git_repository(
     remote = "https://github.com/adam-fowler/jmespath.swift.git",
     shallow_since = "1734034260 +0000",
 )
-
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "rules_oci",
@@ -415,14 +429,15 @@ oci_pull(
 
 http_archive(
     name = "rules_pkg",
+    sha256 = "8f9ee2dc10c1ae514ee599a8b42ed99fa262b757058f65ad3c384289ff70c4b8",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.9.1/rules_pkg-0.9.1.tar.gz",
         "https://github.com/bazelbuild/rules_pkg/releases/download/0.9.1/rules_pkg-0.9.1.tar.gz",
     ],
-    sha256 = "8f9ee2dc10c1ae514ee599a8b42ed99fa262b757058f65ad3c384289ff70c4b8",
 )
 
 load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
+
 rules_pkg_dependencies()
 
 # The following buildifier-related dependencies must come at the top of the file or buildifier can break
@@ -452,18 +467,13 @@ load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
 gazelle_dependencies()
 
-http_archive(
-    name = "com_google_protobuf",
-    sha256 = "616bb3536ac1fff3fb1a141450fa28b875e985712170ea7f1bfe5e5fc41e2cd8",
-    strip_prefix = "protobuf-24.4",
-    urls = [
-        "https://github.com/protocolbuffers/protobuf/archive/v24.4.tar.gz",
-    ],
-)
-
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
+
+load("@rules_java//java:rules_java_deps.bzl", "rules_java_dependencies")
+
+rules_java_dependencies()
 
 http_archive(
     name = "com_github_bazelbuild_buildtools",

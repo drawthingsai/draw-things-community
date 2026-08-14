@@ -1,6 +1,15 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
-
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Keep this ahead of swift_rules_dependencies() so its fallback protobuf pin does not win.
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "3ad017543e502ffaa9cd1f4bd4fe96cf117ce7175970f191705fa0518aff80cd",
+    strip_prefix = "protobuf-32.0",
+    urls = [
+        "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v32.0.tar.gz",
+    ],
+)
 
 http_archive(
     name = "rules_rust",
@@ -102,12 +111,12 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "e96e31183d6ed5811c68eeb8dbe4f6215ef5fc95",
+    commit = "36c6ddb0e70e544789cbcb2a73ad4c8afb239b1a",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1785891952 -0400",
+    shallow_since = "1786659699 -0400",
 )
 
-load("@s4nnc//:deps.bzl", "s4nnc_deps")
+load("@s4nnc//:deps.bzl", "s4nnc_deps", "s4nnc_extra_deps")
 
 s4nnc_deps()
 
@@ -153,16 +162,16 @@ swift_sentencepiece_deps()
 new_git_repository(
     name = "SwiftNumerics",
     build_file = "swift-numerics.BUILD",
-    remote = "https://github.com/apple/swift-numerics.git",
     commit = "1e5cbc4e2142677d6695036a748344c8edb83e5c",
+    remote = "https://github.com/apple/swift-numerics.git",
     shallow_since = "1630424082 -0400",
 )
 
 new_git_repository(
     name = "SwiftAlgorithms",
     build_file = "swift-algorithms.BUILD",
-    remote = "https://github.com/apple/swift-algorithms.git",
     commit = "195e0316d7ba71e134d0f6c677f64b4db6160c46",
+    remote = "https://github.com/apple/swift-algorithms.git",
     shallow_since = "1645643239 -0600",
 )
 
@@ -217,8 +226,8 @@ new_git_repository(
 new_git_repository(
     name = "SwiftCrypto",
     build_file = "swift-crypto.BUILD",
-    remote = "https://github.com/apple/swift-crypto.git",
     commit = "81bee98e706aee68d39ed5996db069ef2b313d62",
+    remote = "https://github.com/apple/swift-crypto.git",
 )
 
 new_git_repository(
@@ -315,16 +324,16 @@ new_git_repository(
 new_git_repository(
     name = "SwiftGuaka",
     build_file = "swift-guaka.BUILD",
-    remote = "https://github.com/nsomar/Guaka",
     commit = "e52eb523b152e04fa5dff56bed01e805062ce0ff",
+    remote = "https://github.com/nsomar/Guaka",
     shallow_since = "1570439330 +0900",
 )
 
 new_git_repository(
     name = "SwiftStringScanner",
     build_file = "swift-string-scanner.BUILD",
-    remote = "https://github.com/getGuaka/StringScanner",
     commit = "de1685ad202cb586d626ed52d6de904dd34189f3",
+    remote = "https://github.com/getGuaka/StringScanner",
     shallow_since = "1558131110 +0900",
 )
 
@@ -343,8 +352,6 @@ new_git_repository(
     remote = "https://github.com/jagreenwood/swift-log-datadog",
     shallow_since = "1643657017 -0500",
 )
-
-load("@s4nnc//:deps.bzl", "s4nnc_extra_deps")
 
 s4nnc_extra_deps()
 
@@ -399,18 +406,13 @@ load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
 gazelle_dependencies()
 
-http_archive(
-    name = "com_google_protobuf",
-    sha256 = "616bb3536ac1fff3fb1a141450fa28b875e985712170ea7f1bfe5e5fc41e2cd8",
-    strip_prefix = "protobuf-24.4",
-    urls = [
-        "https://github.com/protocolbuffers/protobuf/archive/v24.4.tar.gz",
-    ],
-)
-
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
+
+load("@rules_java//java:rules_java_deps.bzl", "rules_java_dependencies")
+
+rules_java_dependencies()
 
 http_archive(
     name = "com_github_bazelbuild_buildtools",

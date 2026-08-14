@@ -45,7 +45,7 @@ public struct Qwen3_5VisionConfiguration: Sendable {
 extension Qwen3_5VisionConfiguration {
   public static let qwen3_5_4B = Qwen3_5VisionConfiguration()
 
-  public static let qwen3_6_27B = Qwen3_5VisionConfiguration(
+  public static let qwen3_5_27B = Qwen3_5VisionConfiguration(
     hiddenSize: 1_152, intermediateSize: 4_304, outputHiddenSize: 5_120,
     layers: 27, heads: 16, patchSize: 16, temporalPatchSize: 2,
     spatialMergeSize: 2, positionEmbeddings: 2_304, layerNormEpsilon: 1e-6)

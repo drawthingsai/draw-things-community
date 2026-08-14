@@ -29,6 +29,9 @@ public struct LLMZoo: DownloadZoo {
     Specification(
       name: "Qwen 3.5 4B (8-bit S)", file: "qwen_3.5_4b_i8x.ckpt",
       version: .qwen_3_5_4b),
+    Specification(
+      name: "DeepSeek 4 Flash 0731 (2-bit S)", file: "deepseek_4_flash_0731_i2x.ckpt",
+      version: .deepseek_4_flash),
   ]
 
   private static let fileSHA256: [String: String] = [
