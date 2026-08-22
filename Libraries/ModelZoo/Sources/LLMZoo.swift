@@ -45,6 +45,10 @@ public struct LLMZoo: DownloadZoo {
     "qwen_3.6_27b_i8x.ckpt": "1cd4b97a358a11dd795326e549e210d88f0aff6d91ebee8adc40eda6f36f7f4d",
     "qwen_3.5_9b_i5x.ckpt": "559d41f5e6721b4edb5a661c42b6f328a243876c2637cad36cf9937fb0d453c1",
     "qwen_3.5_4b_i8x.ckpt": "9e07b480a4e093d1d304ee59a625fc3169a53dc3a597d17f69a2dc167958ee9c",
+    "qwen_3.8_27b_i4x.ckpt": "49f442f9b784e4866d4ed209feec2213762fd5729d1b9980b64b83dd8dd69a0e",
+    "qwen_3.8_27b_i8x.ckpt": "f208994678a8244c2a6a5c1178f2ca5b31a8543200013938a1462ee79413866e",
+    "deepseek_4_flash_0731_i2x.ckpt":
+      "8975e02dd1a02e565b0de9a0250eea92e595c49304c63c773ee6a4f07db3e447",
   ]
 
   private static var specificationMapping: [String: Specification] = {
