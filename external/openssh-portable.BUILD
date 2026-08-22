@@ -10,6 +10,7 @@ config_setting(
 COMMON_COPTS = [
     "-DHAVE_CONFIG_H",
     "-DIOS_SYSTEM_OPENSSH=1",
+    "-D__progname=openssh_progname",
     "-Dxasprintf=openssh_xasprintf",
     "-include",
     "OpenSSHPort.h",
