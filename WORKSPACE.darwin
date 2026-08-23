@@ -12,16 +12,6 @@ http_archive(
 )
 
 http_archive(
-    name = "oils_for_unix",
-    build_file = "//Vendors/OSH:BUILD.oils",
-    patch_args = ["-p1"],
-    patches = ["//Vendors/OSH:osh-ios.patch"],
-    sha256 = "f4d41d20a0523dbcfbd4ba231f82edf25b08d4965d65bc71fcb56666d6743000",
-    strip_prefix = "oils-for-unix-0.37.0",
-    urls = ["https://oils.pub/download/oils-for-unix-0.37.0.tar.gz"],
-)
-
-http_archive(
     name = "rules_rust",
     integrity = "sha256-X/2f8fby8U8gV7fLqpGl5qzZpMve1ayB2tm+s2hZYB4=",
     urls = ["https://github.com/bazelbuild/rules_rust/releases/download/0.70.0/rules_rust-0.70.0.tar.gz"],
@@ -387,6 +377,16 @@ new_git_repository(
     commit = "c722898bdfc72cdeb4a8431812fdeec0b56e8e1d",
     remote = "https://github.com/adam-fowler/jmespath.swift.git",
     shallow_since = "1734034260 +0000",
+)
+
+http_archive(
+    name = "oils_for_unix",
+    build_file = "//Vendors/OSH:BUILD.oils",
+    patch_args = ["-p1"],
+    patches = ["//Vendors/OSH:osh-ios.patch"],
+    sha256 = "f4d41d20a0523dbcfbd4ba231f82edf25b08d4965d65bc71fcb56666d6743000",
+    strip_prefix = "oils-for-unix-0.37.0",
+    urls = ["https://oils.pub/download/oils-for-unix-0.37.0.tar.gz"],
 )
 
 # The following buildifier-related dependencies must come at the top of the file or buildifier can break
