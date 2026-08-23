@@ -12,6 +12,16 @@ http_archive(
 )
 
 http_archive(
+    name = "oils_for_unix",
+    build_file = "//Vendors/OSH:BUILD.oils",
+    patch_args = ["-p1"],
+    patches = ["//Vendors/OSH:osh-ios.patch"],
+    sha256 = "f4d41d20a0523dbcfbd4ba231f82edf25b08d4965d65bc71fcb56666d6743000",
+    strip_prefix = "oils-for-unix-0.37.0",
+    urls = ["https://oils.pub/download/oils-for-unix-0.37.0.tar.gz"],
+)
+
+http_archive(
     name = "rules_java",
     sha256 = "c5bc17e17bb62290b1fd8fdd847a2396d3459f337a7e07da7769b869b488ec26",
     urls = [
