@@ -21,13 +21,15 @@ public struct DuckDuckGoSearch {
     options: DuckDuckGoSearchOptions = DuckDuckGoSearchOptions(),
     completion: @escaping (Result<[SearchResult], Error>) -> Void
   ) {
-    Task {
-      do {
-        completion(.success(try await searchAsync(query: query, options: options)))
-      } catch {
-        completion(.failure(error))
-      }
+    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedQuery.isEmpty, options.pages > 0, options.maxResults > 0 else {
+      completion(.success([]))
+      return
     }
+
+    searchPage(
+      query: normalizedQuery, options: options, page: 0, nextParameters: nil, results: [],
+      seenURLs: [], completion: completion)
   }
 
   /// Searches DuckDuckGo with async/await by wrapping the completion-handler API.
@@ -41,73 +43,89 @@ public struct DuckDuckGoSearch {
     }
   }
 
-  private func searchAsync(
-    query: String, options: DuckDuckGoSearchOptions = DuckDuckGoSearchOptions()
-  ) async throws -> [SearchResult] {
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalizedQuery.isEmpty else {
-      return []
-    }
-
-    var results = [SearchResult]()
-    var seenURLs = Set<String>()
-    var nextParameters: [(String, String)]? = nil
-    var page = 0
-
-    while page < options.pages && results.count < options.maxResults {
-      let request: URLRequest
+  private func searchPage(
+    query: String,
+    options: DuckDuckGoSearchOptions,
+    page: Int,
+    nextParameters: [(String, String)]?,
+    results: [SearchResult],
+    seenURLs: Set<String>,
+    completion: @escaping (Result<[SearchResult], Error>) -> Void
+  ) {
+    let request: URLRequest
+    do {
       if page == 0 {
         request = try Self.makeInitialRequest(
-          endpoint: Self.endpoint, query: normalizedQuery, options: options)
-      } else if let parameters = nextParameters {
+          endpoint: Self.endpoint, query: query, options: options)
+      } else if let nextParameters {
         request = Self.makeNextRequest(
-          endpoint: Self.endpoint, parameters: parameters, options: options)
+          endpoint: Self.endpoint, parameters: nextParameters, options: options)
       } else {
-        break
+        completion(.success(results))
+        return
       }
-
-      let (data, response) = try await httpTransport.data(for: request)
-      let decodedBody = Self.decodeBody(data)
-      if Self.isAccessChallenge(statusCode: response.statusCode, body: decodedBody) {
-        throw WebSearchError.searchBlocked(
-          "DuckDuckGo returned an access challenge instead of search results.", response.url)
-      }
-      guard (200..<300).contains(response.statusCode) else {
-        throw WebSearchError.httpStatus(
-          response.statusCode, response.url, body: decodedBody,
-          headers: response.allHeaderFields.reduce(into: [String: String]()) {
-            guard let key = $1.key as? String else { return }
-            $0[key] = String(describing: $1.value)
-          }, byteCount: data.count)
-      }
-      guard let html = decodedBody else {
-        throw WebSearchError.bodyDecodingFailed(response.url)
-      }
-
-      let parsed = try DuckDuckGoHTMLParser.parse(html: html, baseURL: Self.endpoint)
-      for result in parsed.results {
-        let key = result.url.absoluteString
-        guard !seenURLs.contains(key) else {
-          continue
-        }
-        seenURLs.insert(key)
-        results.append(
-          SearchResult(
-            rank: results.count + 1,
-            title: result.title,
-            url: result.url,
-            displayURL: result.displayURL,
-            snippet: result.snippet,
-            source: result.source))
-        if results.count >= options.maxResults {
-          break
-        }
-      }
-      nextParameters = parsed.nextParameters
-      page += 1
+    } catch {
+      completion(.failure(error))
+      return
     }
 
-    return results
+    httpTransport.data(for: request) { result in
+      do {
+        let (data, response) = try result.get()
+        let decodedBody = Self.decodeBody(data)
+        if Self.isAccessChallenge(statusCode: response.statusCode, body: decodedBody) {
+          throw WebSearchError.searchBlocked(
+            "DuckDuckGo returned an access challenge instead of search results.", response.url)
+        }
+        guard (200..<300).contains(response.statusCode) else {
+          throw WebSearchError.httpStatus(
+            response.statusCode, response.url, body: decodedBody,
+            headers: response.allHeaderFields.reduce(into: [String: String]()) {
+              guard let key = $1.key as? String else { return }
+              $0[key] = String(describing: $1.value)
+            }, byteCount: data.count)
+        }
+        guard let html = decodedBody else {
+          throw WebSearchError.bodyDecodingFailed(response.url)
+        }
+
+        let parsed = try DuckDuckGoHTMLParser.parse(html: html, baseURL: Self.endpoint)
+        var updatedResults = results
+        var updatedSeenURLs = seenURLs
+        for result in parsed.results {
+          let key = result.url.absoluteString
+          guard !updatedSeenURLs.contains(key) else {
+            continue
+          }
+          updatedSeenURLs.insert(key)
+          updatedResults.append(
+            SearchResult(
+              rank: updatedResults.count + 1,
+              title: result.title,
+              url: result.url,
+              displayURL: result.displayURL,
+              snippet: result.snippet,
+              source: result.source))
+          if updatedResults.count >= options.maxResults {
+            break
+          }
+        }
+
+        let nextPage = page + 1
+        guard nextPage < options.pages, updatedResults.count < options.maxResults,
+          parsed.nextParameters != nil
+        else {
+          completion(.success(updatedResults))
+          return
+        }
+        self.searchPage(
+          query: query, options: options, page: nextPage,
+          nextParameters: parsed.nextParameters, results: updatedResults,
+          seenURLs: updatedSeenURLs, completion: completion)
+      } catch {
+        completion(.failure(error))
+      }
+    }
   }
 
   static func makeInitialRequest(

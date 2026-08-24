@@ -219,7 +219,7 @@ final class WebSearchTests: XCTestCase {
     XCTAssertTrue(json.contains("\"output\""))
   }
 
-  func testDuckDuckGoSearchCompletionAPIUsesAsyncImplementation() {
+  func testDuckDuckGoSearchCompletionAPIUsesTransportDirectly() {
     let html = """
       <html><body>
         <div class="result results_links results_links_deep web-result">
@@ -238,7 +238,7 @@ final class WebSearchTests: XCTestCase {
       headerFields: ["Content-Type": "text/html"])!
     let search = DuckDuckGoSearch(
       httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) })
-    let finished = expectation(description: "search completion")
+    var didComplete = false
 
     search.search(query: "example") { result in
       switch result {
@@ -248,10 +248,42 @@ final class WebSearchTests: XCTestCase {
       case .failure(let error):
         XCTFail("Unexpected error: \(error)")
       }
-      finished.fulfill()
+      didComplete = true
     }
 
-    wait(for: [finished], timeout: 1)
+    XCTAssertTrue(didComplete)
+  }
+
+  func testSogouSearchCompletionAPIUsesTransportDirectly() {
+    let html = """
+      <html><body>
+        <div class="vrwrap">
+          <h3 class="vr-title"><a href="https://example.com/doc">Example Doc</a></h3>
+          <div class="fz-mid">A useful result.</div>
+        </div>
+      </body></html>
+      """
+    let response = HTTPURLResponse(
+      url: URL(string: "https://www.sogou.com/web")!,
+      statusCode: 200,
+      httpVersion: nil,
+      headerFields: ["Content-Type": "text/html"])!
+    let search = SogouSearch(
+      httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) })
+    var didComplete = false
+
+    search.search(query: "example", options: SogouSearchOptions(pages: 1)) { result in
+      switch result {
+      case .success(let results):
+        XCTAssertEqual(results.first?.title, "Example Doc")
+        XCTAssertEqual(results.first?.url.absoluteString, "https://example.com/doc")
+      case .failure(let error):
+        XCTFail("Unexpected error: \(error)")
+      }
+      didComplete = true
+    }
+
+    XCTAssertTrue(didComplete)
   }
 
   func testWebFetchAsyncAPIWrapsCompletionTransport() async throws {

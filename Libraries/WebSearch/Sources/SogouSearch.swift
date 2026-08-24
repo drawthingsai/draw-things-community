@@ -21,13 +21,15 @@ public struct SogouSearch {
     options: SogouSearchOptions = SogouSearchOptions(),
     completion: @escaping (Result<[SearchResult], Error>) -> Void
   ) {
-    Task {
-      do {
-        completion(.success(try await searchAsync(query: query, options: options)))
-      } catch {
-        completion(.failure(error))
-      }
+    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedQuery.isEmpty, options.pages > 0, options.maxResults > 0 else {
+      completion(.success([]))
+      return
     }
+
+    searchPage(
+      query: normalizedQuery, options: options, page: 1, results: [], seenURLs: [],
+      completion: completion)
   }
 
   /// Searches Sogou with async/await by wrapping the completion-handler API.
@@ -41,62 +43,76 @@ public struct SogouSearch {
     }
   }
 
-  private func searchAsync(
-    query: String, options: SogouSearchOptions = SogouSearchOptions()
-  ) async throws -> [SearchResult] {
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalizedQuery.isEmpty else {
-      return []
+  private func searchPage(
+    query: String,
+    options: SogouSearchOptions,
+    page: Int,
+    results: [SearchResult],
+    seenURLs: Set<String>,
+    completion: @escaping (Result<[SearchResult], Error>) -> Void
+  ) {
+    let request: URLRequest
+    do {
+      request = try Self.makeRequest(
+        endpoint: Self.endpoint, query: query, page: page, options: options)
+    } catch {
+      completion(.failure(error))
+      return
     }
 
-    var results = [SearchResult]()
-    var seenURLs = Set<String>()
-    var page = 1
-
-    while page <= options.pages && results.count < options.maxResults {
-      let request = try Self.makeRequest(
-        endpoint: Self.endpoint, query: normalizedQuery, page: page, options: options)
-      let (data, response) = try await httpTransport.data(for: request)
-      let decodedBody = DuckDuckGoSearch.decodeBody(data)
-      if Self.isAccessChallenge(statusCode: response.statusCode, body: decodedBody) {
-        throw WebSearchError.searchBlocked(
-          "Sogou returned an access challenge instead of search results.", response.url)
-      }
-      guard (200..<300).contains(response.statusCode) else {
-        throw WebSearchError.httpStatus(
-          response.statusCode, response.url, body: decodedBody,
-          headers: response.allHeaderFields.reduce(into: [String: String]()) {
-            guard let key = $1.key as? String else { return }
-            $0[key] = String(describing: $1.value)
-          }, byteCount: data.count)
-      }
-      guard let html = decodedBody else {
-        throw WebSearchError.bodyDecodingFailed(response.url)
-      }
-
-      let parsed = try SogouHTMLParser.parse(html: html, baseURL: Self.endpoint)
-      for result in parsed.results {
-        let key = result.url.absoluteString
-        guard !seenURLs.contains(key) else {
-          continue
+    httpTransport.data(for: request) { result in
+      do {
+        let (data, response) = try result.get()
+        let decodedBody = DuckDuckGoSearch.decodeBody(data)
+        if Self.isAccessChallenge(statusCode: response.statusCode, body: decodedBody) {
+          throw WebSearchError.searchBlocked(
+            "Sogou returned an access challenge instead of search results.", response.url)
         }
-        seenURLs.insert(key)
-        results.append(
-          SearchResult(
-            rank: results.count + 1,
-            title: result.title,
-            url: result.url,
-            displayURL: result.displayURL,
-            snippet: result.snippet,
-            source: result.source))
-        if results.count >= options.maxResults {
-          break
+        guard (200..<300).contains(response.statusCode) else {
+          throw WebSearchError.httpStatus(
+            response.statusCode, response.url, body: decodedBody,
+            headers: response.allHeaderFields.reduce(into: [String: String]()) {
+              guard let key = $1.key as? String else { return }
+              $0[key] = String(describing: $1.value)
+            }, byteCount: data.count)
         }
+        guard let html = decodedBody else {
+          throw WebSearchError.bodyDecodingFailed(response.url)
+        }
+
+        let parsed = try SogouHTMLParser.parse(html: html, baseURL: Self.endpoint)
+        var updatedResults = results
+        var updatedSeenURLs = seenURLs
+        for result in parsed.results {
+          let key = result.url.absoluteString
+          guard !updatedSeenURLs.contains(key) else {
+            continue
+          }
+          updatedSeenURLs.insert(key)
+          updatedResults.append(
+            SearchResult(
+              rank: updatedResults.count + 1,
+              title: result.title,
+              url: result.url,
+              displayURL: result.displayURL,
+              snippet: result.snippet,
+              source: result.source))
+          if updatedResults.count >= options.maxResults {
+            break
+          }
+        }
+
+        guard page < options.pages, updatedResults.count < options.maxResults else {
+          completion(.success(updatedResults))
+          return
+        }
+        self.searchPage(
+          query: query, options: options, page: page + 1, results: updatedResults,
+          seenURLs: updatedSeenURLs, completion: completion)
+      } catch {
+        completion(.failure(error))
       }
-      page += 1
     }
-
-    return results
   }
 
   static func makeRequest(
