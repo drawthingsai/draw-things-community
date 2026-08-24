@@ -5,7 +5,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-OUTPUT_DIR="$PROJECT_ROOT/Libraries/DataModels/PreGeneratedSPM"
+DATA_MODELS_OUTPUT_DIR="$PROJECT_ROOT/Libraries/DataModels/PreGeneratedSPM"
+TEXT_HISTORY_OUTPUT_DIR="$PROJECT_ROOT/Libraries/History/PreGeneratedSPM"
+PROJECT_HISTORY_OUTPUT_DIR="$PROJECT_ROOT/Libraries/ProjectHistoryManager/PreGeneratedSPM"
 
 cd "$PROJECT_ROOT"
 
@@ -18,21 +20,30 @@ bazel build \
     //Libraries/DataModels:lora_trainer_schema \
     //Libraries/DataModels:dataset_schema \
     //Libraries/DataModels:paint_color_schema \
-    //Libraries/DataModels:peer_connection_id_schema
+    //Libraries/DataModels:peer_connection_id_schema \
+    //Libraries/History:text_history_schema \
+    //Libraries/ProjectHistoryManager:project_history_schema
 
 # Clear and copy generated files
-echo "Copying generated files to $OUTPUT_DIR..."
-rm -rf "$OUTPUT_DIR"
-mkdir -p "$OUTPUT_DIR"
+echo "Copying generated files to the SwiftPM source directories..."
+rm -rf "$DATA_MODELS_OUTPUT_DIR" "$TEXT_HISTORY_OUTPUT_DIR" "$PROJECT_HISTORY_OUTPUT_DIR"
+mkdir -p "$DATA_MODELS_OUTPUT_DIR" "$TEXT_HISTORY_OUTPUT_DIR" "$PROJECT_HISTORY_OUTPUT_DIR"
 
 # Copy all generated Swift files (skip JSON files)
-find bazel-bin/Libraries/DataModels -name "*_generated.swift" -exec cp {} "$OUTPUT_DIR/" \;
+find bazel-bin/Libraries/DataModels -name "*_generated.swift" -exec cp {} "$DATA_MODELS_OUTPUT_DIR/" \;
+find bazel-bin/Libraries/History -name "*_generated.swift" -exec cp {} "$TEXT_HISTORY_OUTPUT_DIR/" \;
+find bazel-bin/Libraries/ProjectHistoryManager -name "*_generated.swift" \
+    -exec cp {} "$PROJECT_HISTORY_OUTPUT_DIR/" \;
 
 echo "Formatting generated Swift files with swift-format..."
 swift_files=()
 while IFS= read -r -d '' file; do
     swift_files+=("$file")
-done < <(find "$OUTPUT_DIR" -name "*.swift" -print0)
+done < <(find \
+    "$DATA_MODELS_OUTPUT_DIR" \
+    "$TEXT_HISTORY_OUTPUT_DIR" \
+    "$PROJECT_HISTORY_OUTPUT_DIR" \
+    -name "*.swift" -print0)
 
 if [[ ${#swift_files[@]} -gt 0 ]]; then
     bazel_swift_format_args=(--compilation_mode=opt)
@@ -46,6 +57,6 @@ if [[ ${#swift_files[@]} -gt 0 ]]; then
 fi
 
 echo "Generated files:"
-ls -la "$OUTPUT_DIR/"
+ls -la "$DATA_MODELS_OUTPUT_DIR/" "$TEXT_HISTORY_OUTPUT_DIR/" "$PROJECT_HISTORY_OUTPUT_DIR/"
 
 echo "Done!"

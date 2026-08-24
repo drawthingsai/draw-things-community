@@ -8,6 +8,7 @@ let package = Package(
   products: [
     .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
     .executable(name: "draw-things-cli", targets: ["DrawThingsCLI"]),
+    .library(name: "LocalCodeApp", targets: ["LocalCodeApp"]),
     .library(name: "_MediaGenerationKit", targets: ["_MediaGenerationKit"]),
   ],
   dependencies: [
@@ -42,6 +43,14 @@ let package = Package(
     .package(
       url: "https://github.com/kelvin13/swift-png",
       revision: "075dfb248ae327822635370e9d4f94a5d3fe93b2"),
+    .package(name: "HighlighterSwift", path: "Vendors/HighlighterSwift"),
+    .package(name: "Nantes", path: "Vendors/Nantes"),
+    .package(name: "SnapKit", path: "Vendors/SnapKit"),
+    .package(name: "SwiftMath", path: "Vendors/SwiftMath"),
+    .package(name: "SwiftSoup", path: "Vendors/SwiftSoup"),
+    .package(
+      url: "https://github.com/jpsim/Yams.git",
+      revision: "948991e19e795cdd7bd310756a97b5fbda559535"),
   ],
   targets: [
     .target(
@@ -511,6 +520,204 @@ let package = Package(
     .target(
       name: "DeviceAttestation",
       path: "Libraries/DeviceAttestation/Sources"
+    ),
+    .target(
+      name: "LinkTimeFlags",
+      path: "Apps/LocalCodeCatalyst/Support/LinkTimeFlags",
+      publicHeadersPath: "include"
+    ),
+    .target(
+      name: "Features",
+      dependencies: ["LinkTimeFlags"],
+      path: "Libraries/Features/Sources",
+      exclude: ["LinkTimeFlags.h"]
+    ),
+    .target(
+      name: "Localization",
+      path: "Libraries/Localization/Sources"
+    ),
+    .target(
+      name: "Style",
+      path: "Libraries/Style/Sources"
+    ),
+    .target(
+      name: "MultiSlider",
+      path: "Vendors/MultiSlider/Sources"
+    ),
+    .target(
+      name: "Nuke",
+      path: "Vendors/Nuke/Sources/Nuke"
+    ),
+    .target(
+      name: "NukeUI",
+      dependencies: ["Nuke"],
+      path: "Vendors/Nuke/Sources/NukeUI"
+    ),
+    .target(
+      name: "FBShimmer",
+      path: "Vendors/FBShimmer/Sources"
+    ),
+    .target(
+      name: "Components",
+      dependencies: [
+        "DataModels",
+        "Features",
+        "Localization",
+        "MultiSlider",
+        "NukeUI",
+        "Style",
+        .product(name: "Dflat", package: "dflat"),
+        .product(name: "Nantes", package: "Nantes"),
+        .product(name: "SnapKit", package: "SnapKit"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+      ],
+      path: "Libraries/Components/Sources"
+    ),
+    .target(
+      name: "TextHistory",
+      dependencies: [
+        .product(name: "Dflat", package: "dflat"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+      ],
+      path: "Libraries/History",
+      exclude: [
+        "BUILD",
+        "Sources/clip.fbs",
+        "Sources/script_session.fbs",
+        "Sources/tensor_data.fbs",
+        "Sources/tensor_history.fbs",
+        "Sources/tensor_moodboard_data.fbs",
+        "Sources/text_history.fbs",
+        "Sources/text_lineage.fbs",
+        "Sources/thumbnail_history.fbs",
+        "Sources/thumbnail_history_half.fbs",
+        "Tests",
+      ],
+      sources: ["Sources/TextHistoryManager.swift", "PreGeneratedSPM"]
+    ),
+    .target(
+      name: "ProjectHistoryManager",
+      dependencies: [
+        .product(name: "Algorithms", package: "swift-algorithms"),
+        .product(name: "Dflat", package: "dflat"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+      ],
+      path: "Libraries/ProjectHistoryManager",
+      exclude: [
+        "BUILD",
+        "Sources/project_history.fbs",
+        "Sources/project_queued_item.fbs",
+        "Sources/project_thread.fbs",
+        "Tests",
+      ],
+      sources: ["Sources/ProjectHistoryManager.swift", "PreGeneratedSPM"]
+    ),
+    .target(
+      name: "RemoteAPI",
+      path: "Libraries/RemoteAPI/Sources"
+    ),
+    .target(
+      name: "WebSearch",
+      dependencies: [
+        .product(name: "SwiftSoup", package: "SwiftSoup")
+      ],
+      path: "Libraries/WebSearch/Sources"
+    ),
+    .target(
+      name: "MarkdownEngine",
+      path: "Vendors/SwiftMarkdownEngine",
+      exclude: ["Package.swift", "Tests", "Sources/MarkdownEngine/MarkdownEngine.docc"],
+      sources: [
+        "Sources/MarkdownEngine/Configuration",
+        "Sources/MarkdownEngine/Diagnostics",
+        "Sources/MarkdownEngine/Extensions",
+        "Sources/MarkdownEngine/Parser",
+        "Sources/MarkdownEngine/Platform",
+        "Sources/MarkdownEngine/Services",
+        "Sources/MarkdownEngine/UIKit",
+        "Sources/MarkdownEngine/TextView/CodeBlockButton.swift",
+        "Sources/MarkdownEngine/TextView/NativeTextViewSelectionTypes.swift",
+      ]
+    ),
+    .target(
+      name: "MarkdownEngineCodeBlocks",
+      dependencies: [
+        "MarkdownEngine",
+        .product(name: "Highlighter", package: "HighlighterSwift"),
+      ],
+      path: "Vendors/SwiftMarkdownEngine/Sources/MarkdownEngineCodeBlocks"
+    ),
+    .target(
+      name: "MarkdownEngineLatex",
+      dependencies: [
+        "MarkdownEngine",
+        .product(name: "SwiftMath", package: "SwiftMath"),
+      ],
+      path: "Vendors/SwiftMarkdownEngine/Sources/MarkdownEngineLatex"
+    ),
+    .target(
+      name: "Ripgrep",
+      path: "Apps/LocalCodeCatalyst/Support/Ripgrep"
+    ),
+    .target(
+      name: "ios_system",
+      path: "Apps/LocalCodeCatalyst/Support/ios_system"
+    ),
+    .target(
+      name: "LocalCodeApp",
+      dependencies: [
+        "BinaryResources",
+        "Components",
+        "DataModels",
+        "Diffusion",
+        "Downloader",
+        "FBShimmer",
+        "LLM",
+        "Localization",
+        "MarkdownEngine",
+        "MarkdownEngineCodeBlocks",
+        "MarkdownEngineLatex",
+        "ModelZoo",
+        "Nuke",
+        "ProjectHistoryManager",
+        "RemoteAPI",
+        "Ripgrep",
+        "SFMT",
+        "Style",
+        "TextHistory",
+        "Tokenizer",
+        "WebSearch",
+        "ZIPFoundation",
+        "ios_system",
+        .product(name: "Atomics", package: "swift-atomics"),
+        .product(name: "Dflat", package: "dflat"),
+        .product(name: "NNC", package: "s4nnc"),
+        .product(name: "SnapKit", package: "SnapKit"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+        .product(name: "Yams", package: "Yams"),
+      ],
+      path: "Apps/LocalCode",
+      exclude: [
+        "BUILD",
+        "CLI",
+        "ContainerizedCommandExecution.md",
+        "DDDoc",
+        "Debug",
+        "DeepSeek4Eval",
+        "DirectoryEnvironment.md",
+        "Eval",
+        "JailedDirectoryStructure.md",
+        "JavaScriptProjectSupport.md",
+        "NodeMobileSupportBundle.md",
+        "ProvisioningFiles",
+        "Resources",
+        "Sources/Features",
+        "StaticInlineNode",
+        "StaticInlinePython",
+        "SupportingFiles",
+      ],
+      sources: ["Sources"],
+      swiftSettings: [.define("LOCALCODE_CATALYST_ASAN")]
     ),
     .target(
       name: "_MediaGenerationKit",
