@@ -206,7 +206,7 @@ objc_library(
 objc_library(
     name = "openbsd_compat",
     srcs = OPENBSD_COMPAT_SRCS,
-    hdrs = glob([
+    textual_hdrs = glob([
         "*.h",
         "openbsd-compat/*.h",
     ]),
