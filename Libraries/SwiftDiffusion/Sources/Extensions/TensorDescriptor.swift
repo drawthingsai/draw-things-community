@@ -17,6 +17,7 @@ public struct Storage {
   var BF16: Bool
   var FP8_E4M3: Bool
   var FP8_E5M2: Bool
+  var scales: [Float] = [1]
 }
 
 public struct TensorDescriptor {
