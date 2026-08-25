@@ -25,10 +25,25 @@ extension HttpTransport {
 
 /// `URLSession`-backed HTTP transport.
 public struct URLSessionHttpTransport: HttpTransport {
+  private static let defaultSession: URLSession = {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.urlCache = nil
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.httpCookieStorage = nil
+    configuration.httpShouldSetCookies = false
+    configuration.urlCredentialStorage = nil
+    return URLSession(configuration: configuration)
+  }()
+
   private let session: URLSession
 
+  /// Creates a transport backed by a shared, uncached ephemeral session.
+  public init() {
+    session = Self.defaultSession
+  }
+
   /// Creates a transport backed by `session`.
-  public init(session: URLSession = .shared) {
+  public init(session: URLSession) {
     self.session = session
   }
 
