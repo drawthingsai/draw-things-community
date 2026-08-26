@@ -24,12 +24,6 @@ public struct LLMZoo: DownloadZoo {
       name: "Qwen 3.8 27B (8-bit S)", file: "qwen_3.8_27b_i8x.ckpt",
       version: .qwen_3_5_27b),
     Specification(
-      name: "Qwen 3.5 9B (5-bit S)", file: "qwen_3.5_9b_i5x.ckpt",
-      version: .qwen_3_5_9b),
-    Specification(
-      name: "Qwen 3.5 4B (8-bit S)", file: "qwen_3.5_4b_i8x.ckpt",
-      version: .qwen_3_5_4b),
-    Specification(
       name: "DeepSeek 4 Flash 0731 (2-bit S)", file: "deepseek_4_flash_0731_i2x.ckpt",
       version: .deepseek_4_flash),
     Specification(
@@ -38,6 +32,12 @@ public struct LLMZoo: DownloadZoo {
     Specification(
       name: "Qwen 3.6 27B (8-bit S)", file: "qwen_3.6_27b_i8x.ckpt",
       version: .qwen_3_5_27b, deprecated: true),
+    Specification(
+      name: "Qwen 3.5 9B (5-bit S)", file: "qwen_3.5_9b_i5x.ckpt",
+      version: .qwen_3_5_9b, deprecated: true),
+    Specification(
+      name: "Qwen 3.5 4B (8-bit S)", file: "qwen_3.5_4b_i8x.ckpt",
+      version: .qwen_3_5_4b, deprecated: true),
   ]
 
   private static let fileSHA256: [String: String] = [
