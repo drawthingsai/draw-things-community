@@ -6,13 +6,49 @@ public let WebSearchDefaultUserAgent =
   + "(KHTML, like Gecko) Chrome/135.0.7049.95 Safari/537.36"
 
 /// Search provider used for web search requests.
-public enum WebSearchProvider: String, Codable, CaseIterable {
+public enum WebSearchProvider: CaseIterable, Equatable {
   /// DuckDuckGo HTML search.
-  case duckDuckGo = "duckduckgo"
+  case duckDuckGo
   /// Sogou web search.
   case sogou
+  /// Kagi Search API.
+  case kagi(apiKey: String)
   /// Web search disabled.
   case disabled
+
+  public static let allCases: [WebSearchProvider] = [
+    .duckDuckGo, .sogou, .kagi(apiKey: ""), .disabled,
+  ]
+
+  /// Creates a provider from its persisted identifier and API key.
+  public init?(identifier: String, apiKey: String) {
+    switch identifier {
+    case "duckduckgo":
+      self = .duckDuckGo
+    case "sogou":
+      self = .sogou
+    case "kagi":
+      self = .kagi(apiKey: apiKey)
+    case "disabled":
+      self = .disabled
+    default:
+      return nil
+    }
+  }
+
+  /// Identifier used by settings persistence and command-line arguments.
+  public var identifier: String {
+    switch self {
+    case .duckDuckGo:
+      return "duckduckgo"
+    case .sogou:
+      return "sogou"
+    case .kagi:
+      return "kagi"
+    case .disabled:
+      return "disabled"
+    }
+  }
 }
 
 /// Safe-search setting passed through to DuckDuckGo's HTML search endpoint.
@@ -36,8 +72,8 @@ public enum DuckDuckGoSafeSearch: String, Codable {
   }
 }
 
-/// Time filter passed through to DuckDuckGo's HTML search endpoint.
-public enum DuckDuckGoTimeFilter: String, Codable {
+/// Freshness filter passed through to web search providers.
+public enum WebSearchTimeFilter: String, Codable {
   /// Results from the past day.
   case day
   /// Results from the past week.
@@ -81,7 +117,7 @@ public struct DuckDuckGoSearchOptions: Codable {
   /// Safe-search filtering mode.
   public var safeSearch: DuckDuckGoSafeSearch
   /// Optional freshness filter.
-  public var timeFilter: DuckDuckGoTimeFilter?
+  public var timeFilter: WebSearchTimeFilter?
   /// Maximum number of unique results to return.
   public var maxResults: Int
   /// Maximum number of DuckDuckGo result pages to request.
@@ -95,7 +131,7 @@ public struct DuckDuckGoSearchOptions: Codable {
   public init(
     region: String = "us-en",
     safeSearch: DuckDuckGoSafeSearch = .moderate,
-    timeFilter: DuckDuckGoTimeFilter? = nil,
+    timeFilter: WebSearchTimeFilter? = nil,
     maxResults: Int = 10,
     pages: Int = 1,
     timeout: TimeInterval = 15,
@@ -114,7 +150,7 @@ public struct DuckDuckGoSearchOptions: Codable {
 /// Options for a Sogou HTML search request.
 public struct SogouSearchOptions: Codable {
   /// Optional freshness filter.
-  public var timeFilter: DuckDuckGoTimeFilter?
+  public var timeFilter: WebSearchTimeFilter?
   /// Maximum number of unique results to return.
   public var maxResults: Int
   /// Maximum number of Sogou result pages to request.
@@ -126,7 +162,7 @@ public struct SogouSearchOptions: Codable {
 
   /// Creates Sogou search options, clamping counts to at least one.
   public init(
-    timeFilter: DuckDuckGoTimeFilter? = nil,
+    timeFilter: WebSearchTimeFilter? = nil,
     maxResults: Int = 10,
     pages: Int = 1,
     timeout: TimeInterval = 15,
@@ -135,6 +171,39 @@ public struct SogouSearchOptions: Codable {
     self.timeFilter = timeFilter
     self.maxResults = max(1, maxResults)
     self.pages = max(1, pages)
+    self.timeout = timeout
+    self.userAgent = userAgent
+  }
+}
+
+/// Options for a Kagi Search API request.
+public struct KagiSearchOptions: Codable {
+  /// Optional freshness filter.
+  public var timeFilter: WebSearchTimeFilter?
+  /// Whether safe search is enabled.
+  public var safeSearch: Bool
+  /// Maximum number of unique results to return.
+  public var maxResults: Int
+  /// Maximum number of Kagi result pages to request.
+  public var pages: Int
+  /// Request timeout in seconds.
+  public var timeout: TimeInterval
+  /// User agent used for Kagi requests.
+  public var userAgent: String
+
+  /// Creates Kagi search options using limits supported by the v1 API.
+  public init(
+    timeFilter: WebSearchTimeFilter? = nil,
+    safeSearch: Bool = true,
+    maxResults: Int = 10,
+    pages: Int = 1,
+    timeout: TimeInterval = 15,
+    userAgent: String = WebSearchDefaultUserAgent
+  ) {
+    self.timeFilter = timeFilter
+    self.safeSearch = safeSearch
+    self.maxResults = min(max(1, maxResults), 1_024)
+    self.pages = min(max(1, pages), 10)
     self.timeout = timeout
     self.userAgent = userAgent
   }

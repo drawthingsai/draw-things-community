@@ -20,10 +20,15 @@ private struct StubHttpTransport: HttpTransport {
 }
 
 final class WebSearchTests: XCTestCase {
-  func testWebSearchProviderCodableIncludesDisabled() throws {
-    let encoded = try JSONEncoder().encode(WebSearchProvider.disabled)
-    XCTAssertEqual(String(decoding: encoded, as: UTF8.self), "\"disabled\"")
-    XCTAssertEqual(try JSONDecoder().decode(WebSearchProvider.self, from: encoded), .disabled)
+  func testWebSearchProviderConstruction() {
+    XCTAssertEqual(WebSearchProvider.duckDuckGo.identifier, "duckduckgo")
+    XCTAssertEqual(WebSearchProvider.sogou.identifier, "sogou")
+    XCTAssertEqual(WebSearchProvider.kagi(apiKey: "test-key").identifier, "kagi")
+    XCTAssertEqual(WebSearchProvider.disabled.identifier, "disabled")
+    XCTAssertEqual(
+      WebSearchProvider(identifier: "kagi", apiKey: "test-key"),
+      .kagi(apiKey: "test-key"))
+    XCTAssertNil(WebSearchProvider(identifier: "unknown", apiKey: "test-key"))
   }
 
   func testDuckDuckGoRedirectDecoding() {
@@ -154,6 +159,163 @@ final class WebSearchTests: XCTestCase {
     XCTAssertEqual(parsed.results[0].displayURL, "https://github.com/h...")
     XCTAssertEqual(parsed.results[0].snippet, "Drop-in replacement for system() in iOS.")
     XCTAssertEqual(parsed.results[0].source, "sogou")
+  }
+
+  func testKagiSearchRequestParameters() throws {
+    let request = try KagiSearch.makeRequest(
+      endpoint: URL(string: "https://kagi.com/api/v1/search")!, apiKey: "test-key",
+      query: "swift urlsession", page: 2, limit: 7,
+      options: KagiSearchOptions(
+        timeFilter: .week, safeSearch: true, maxResults: 10, pages: 2, timeout: 12),
+      now: Date(timeIntervalSince1970: 1_768_521_600))
+    XCTAssertEqual(request.httpMethod, "POST")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
+    XCTAssertEqual(request.timeoutInterval, 12)
+
+    let body = try XCTUnwrap(request.httpBody)
+    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    XCTAssertEqual(json["query"] as? String, "swift urlsession")
+    XCTAssertEqual(json["workflow"] as? String, "search")
+    XCTAssertEqual(json["format"] as? String, "json")
+    XCTAssertEqual(json["page"] as? Int, 2)
+    XCTAssertEqual(json["limit"] as? Int, 7)
+    XCTAssertEqual(json["timeout"] as? Double, 4)
+    XCTAssertEqual(json["safe_search"] as? Bool, true)
+    let filters = try XCTUnwrap(json["filters"] as? [String: Any])
+    XCTAssertEqual(filters["after"] as? String, "2026-01-09")
+  }
+
+  func testKagiSearchCompletionAPIUsesTransportDirectly() {
+    let body =
+      """
+      {
+        "data": {
+          "search": [
+            {
+              "url": "https://example.com/doc",
+              "title": " Example Doc ",
+              "snippet": " A useful result. "
+            }
+          ]
+        }
+      }
+      """
+    let response = HTTPURLResponse(
+      url: URL(string: "https://kagi.com/api/v1/search")!, statusCode: 200,
+      httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+    let search = KagiSearch(
+      apiKey: "test-key",
+      httpTransport: StubHttpTransport { request in
+        XCTAssertEqual(request.httpMethod, "POST")
+        return .success((Data(body.utf8), response))
+      })
+    var didComplete = false
+
+    search.search(query: "example") { result in
+      switch result {
+      case .success(let results):
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].rank, 1)
+        XCTAssertEqual(results[0].title, "Example Doc")
+        XCTAssertEqual(results[0].url.absoluteString, "https://example.com/doc")
+        XCTAssertEqual(results[0].displayURL, "example.com")
+        XCTAssertEqual(results[0].snippet, "A useful result.")
+        XCTAssertEqual(results[0].source, "kagi")
+      case .failure(let error):
+        XCTFail("Unexpected error: \(error)")
+      }
+      didComplete = true
+    }
+
+    XCTAssertTrue(didComplete)
+  }
+
+  func testKagiSearchDoesNotRetryUnauthorizedRequest() {
+    var requestCount = 0
+    let search = KagiSearch(
+      apiKey: "test-key",
+      httpTransport: StubHttpTransport { request in
+        requestCount += 1
+        XCTAssertEqual(request.url?.path, "/api/v1/search")
+        return .success(
+          (
+            Data("{}".utf8),
+            HTTPURLResponse(
+              url: request.url!, statusCode: 401, httpVersion: nil,
+              headerFields: ["Content-Type": "application/json"])!
+          ))
+      })
+    var didComplete = false
+
+    search.search(query: "example") { result in
+      if case .failure(WebSearchError.httpStatus(let status, _, _, _, _)) = result {
+        XCTAssertEqual(status, 401)
+      } else {
+        XCTFail("Expected HTTP 401")
+      }
+      didComplete = true
+    }
+
+    XCTAssertTrue(didComplete)
+    XCTAssertEqual(requestCount, 1)
+  }
+
+  func testKagiSearchRequiresAPIKeyBeforeTransport() {
+    var didRequest = false
+    let search = KagiSearch(
+      apiKey: " ",
+      httpTransport: StubHttpTransport { _ in
+        didRequest = true
+        return .failure(KagiSearchError.missingAPIKey)
+      })
+    var didComplete = false
+
+    search.search(query: "example") { result in
+      if case .failure(KagiSearchError.missingAPIKey) = result {
+        didComplete = true
+      } else {
+        XCTFail("Expected missingAPIKey")
+      }
+    }
+
+    XCTAssertTrue(didComplete)
+    XCTAssertFalse(didRequest)
+  }
+
+  func testKagiLiveSearchWhenAPIKeyIsProvided() throws {
+    guard
+      let apiKey = ProcessInfo.processInfo.environment["KAGI_API_KEY"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !apiKey.isEmpty
+    else {
+      throw XCTSkip("Set KAGI_API_KEY to run the live Kagi smoke test.")
+    }
+    let completionExpectation = expectation(description: "Kagi search completion")
+    var searchResult: Result<[SearchResult], Swift.Error>?
+
+    KagiSearch(apiKey: apiKey).search(
+      query: "Draw Things app",
+      options: KagiSearchOptions(maxResults: 1, pages: 1, timeout: 20)
+    ) { result in
+      searchResult = result
+      completionExpectation.fulfill()
+    }
+
+    wait(for: [completionExpectation], timeout: 30)
+    let results: [SearchResult]
+    do {
+      results = try XCTUnwrap(searchResult).get()
+    } catch WebSearchError.httpStatus(let status, _, let body, _, _) {
+      XCTFail("Kagi returned HTTP \(status): \(body ?? "no response body")")
+      return
+    }
+    XCTAssertEqual(results.count, 1)
+    XCTAssertFalse(results[0].title.isEmpty)
+    XCTAssertFalse(results[0].url.absoluteString.isEmpty)
+    XCTAssertEqual(results[0].source, "kagi")
   }
 
   func testMarkdownConversionPreservesCommonShapes() throws {
