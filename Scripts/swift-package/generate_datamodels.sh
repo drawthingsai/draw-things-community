@@ -8,6 +8,7 @@ PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 DATA_MODELS_OUTPUT_DIR="$PROJECT_ROOT/Libraries/DataModels/PreGeneratedSPM"
 TEXT_HISTORY_OUTPUT_DIR="$PROJECT_ROOT/Libraries/History/PreGeneratedSPM"
 PROJECT_HISTORY_OUTPUT_DIR="$PROJECT_ROOT/Libraries/ProjectHistoryManager/PreGeneratedSPM"
+USER_ACCOUNT_OUTPUT_DIR="$PROJECT_ROOT/Libraries/UserAccount/PreGeneratedSPM"
 
 cd "$PROJECT_ROOT"
 
@@ -22,18 +23,32 @@ bazel build \
     //Libraries/DataModels:paint_color_schema \
     //Libraries/DataModels:peer_connection_id_schema \
     //Libraries/History:text_history_schema \
-    //Libraries/ProjectHistoryManager:project_history_schema
+    //Libraries/ProjectHistoryManager:project_history_schema \
+    //Libraries/UserAccount:account_schema \
+    //Libraries/UserAccount:privacy_pass_schema
 
 # Clear and copy generated files
 echo "Copying generated files to the SwiftPM source directories..."
-rm -rf "$DATA_MODELS_OUTPUT_DIR" "$TEXT_HISTORY_OUTPUT_DIR" "$PROJECT_HISTORY_OUTPUT_DIR"
-mkdir -p "$DATA_MODELS_OUTPUT_DIR" "$TEXT_HISTORY_OUTPUT_DIR" "$PROJECT_HISTORY_OUTPUT_DIR"
+rm -rf \
+    "$DATA_MODELS_OUTPUT_DIR" \
+    "$TEXT_HISTORY_OUTPUT_DIR" \
+    "$PROJECT_HISTORY_OUTPUT_DIR" \
+    "$USER_ACCOUNT_OUTPUT_DIR"
+mkdir -p \
+    "$DATA_MODELS_OUTPUT_DIR" \
+    "$TEXT_HISTORY_OUTPUT_DIR" \
+    "$PROJECT_HISTORY_OUTPUT_DIR" \
+    "$USER_ACCOUNT_OUTPUT_DIR"
 
 # Copy all generated Swift files (skip JSON files)
-find bazel-bin/Libraries/DataModels -name "*_generated.swift" -exec cp {} "$DATA_MODELS_OUTPUT_DIR/" \;
-find bazel-bin/Libraries/History -name "*_generated.swift" -exec cp {} "$TEXT_HISTORY_OUTPUT_DIR/" \;
-find bazel-bin/Libraries/ProjectHistoryManager -name "*_generated.swift" \
+find bazel-bin/Libraries/DataModels -maxdepth 1 -name "*_generated.swift" \
+    -exec cp {} "$DATA_MODELS_OUTPUT_DIR/" \;
+find bazel-bin/Libraries/History -maxdepth 1 -name "*_generated.swift" \
+    -exec cp {} "$TEXT_HISTORY_OUTPUT_DIR/" \;
+find bazel-bin/Libraries/ProjectHistoryManager -maxdepth 1 -name "*_generated.swift" \
     -exec cp {} "$PROJECT_HISTORY_OUTPUT_DIR/" \;
+find bazel-bin/Libraries/UserAccount -maxdepth 1 -name "*_generated.swift" \
+    -exec cp {} "$USER_ACCOUNT_OUTPUT_DIR/" \;
 
 echo "Formatting generated Swift files with swift-format..."
 swift_files=()
@@ -43,6 +58,7 @@ done < <(find \
     "$DATA_MODELS_OUTPUT_DIR" \
     "$TEXT_HISTORY_OUTPUT_DIR" \
     "$PROJECT_HISTORY_OUTPUT_DIR" \
+    "$USER_ACCOUNT_OUTPUT_DIR" \
     -name "*.swift" -print0)
 
 if [[ ${#swift_files[@]} -gt 0 ]]; then
@@ -57,6 +73,10 @@ if [[ ${#swift_files[@]} -gt 0 ]]; then
 fi
 
 echo "Generated files:"
-ls -la "$DATA_MODELS_OUTPUT_DIR/" "$TEXT_HISTORY_OUTPUT_DIR/" "$PROJECT_HISTORY_OUTPUT_DIR/"
+ls -la \
+    "$DATA_MODELS_OUTPUT_DIR/" \
+    "$TEXT_HISTORY_OUTPUT_DIR/" \
+    "$PROJECT_HISTORY_OUTPUT_DIR/" \
+    "$USER_ACCOUNT_OUTPUT_DIR/"
 
 echo "Done!"

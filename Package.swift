@@ -523,6 +523,14 @@ let package = Package(
       path: "Libraries/DeviceAttestation/Sources"
     ),
     .target(
+      name: "PrivacyPassClient",
+      dependencies: [
+        .product(name: "Crypto", package: "swift-crypto"),
+        .product(name: "_CryptoExtras", package: "swift-crypto"),
+      ],
+      path: "Libraries/PrivacyPassClient/Sources/PrivacyPassClient"
+    ),
+    .target(
       name: "LinkTimeFlags",
       path: "Apps/LocalCodeCatalyst/Support/LinkTimeFlags",
       publicHeadersPath: "include"
@@ -614,6 +622,28 @@ let package = Package(
       sources: ["Sources/ProjectHistoryManager.swift", "PreGeneratedSPM"]
     ),
     .target(
+      name: "UserAccount",
+      dependencies: [
+        "DeviceAttestation",
+        "Features",
+        "Localization",
+        "PrivacyPassClient",
+        .product(name: "Atomics", package: "swift-atomics"),
+        .product(name: "Crypto", package: "swift-crypto"),
+        .product(name: "Logging", package: "swift-log"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+      ],
+      path: "Libraries/UserAccount",
+      exclude: [
+        "BUILD",
+        "Sources/account.fbs",
+        "Sources/local_consumable_metadata.fbs",
+        "Sources/privacy_pass.fbs",
+        "Tests",
+      ],
+      sources: ["Sources", "PreGeneratedSPM"]
+    ),
+    .target(
       name: "RemoteAPI",
       path: "Libraries/RemoteAPI/Sources"
     ),
@@ -688,6 +718,7 @@ let package = Package(
         "Style",
         "TextHistory",
         "Tokenizer",
+        "UserAccount",
         "WebSearch",
         "ZIPFoundation",
         "ios_system",
