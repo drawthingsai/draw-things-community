@@ -7,19 +7,24 @@ public struct LLMZoo: DownloadZoo {
     public let file: String
     public let version: LLMVersion
     public let deprecated: Bool?
+    public let huggingFaceLink: String?
 
-    public init(name: String, file: String, version: LLMVersion, deprecated: Bool? = nil) {
+    public init(
+      name: String, file: String, version: LLMVersion, deprecated: Bool? = nil,
+      huggingFaceLink: String? = nil
+    ) {
       self.name = name
       self.file = file
       self.version = version
       self.deprecated = deprecated
+      self.huggingFaceLink = huggingFaceLink
     }
   }
 
   public static let builtinSpecifications: [Specification] = [
     Specification(
       name: "Qwen 3.8 27B (4-bit S)", file: "qwen_3.8_27b_i4x.ckpt",
-      version: .qwen_3_5_27b),
+      version: .qwen_3_5_27b, huggingFaceLink: "Qwen/Qwen3.8-27B"),
     Specification(
       name: "Qwen 3.8 27B (8-bit S)", file: "qwen_3.8_27b_i8x.ckpt",
       version: .qwen_3_5_27b),
