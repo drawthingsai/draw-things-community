@@ -806,16 +806,12 @@ private func DeepSeek4SharedFFN(
   prefix: String, x: Model.IO, tokenLength: Int,
   configuration: DeepSeek4ModelConfiguration
 ) -> Model.IO {
-  let gate = Dense(
-    count: configuration.sharedIntermediateSize, noBias: true,
-    name: "\(prefix).shared_experts.w1")
-  let up = Dense(
-    count: configuration.sharedIntermediateSize, noBias: true,
-    name: "\(prefix).shared_experts.w3")
+  let swiglu = SwiGLU(
+    count: configuration.sharedIntermediateSize, clamp: 10,
+    name: "\(prefix).shared_experts")
   let down = Dense(
     count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")
-  let mid = Functional.swishMul(value: up(x), gate: gate(x), clamp: 10)
-  return down(mid)
+  return down(swiglu(x))
 }
 
 private func DeepSeek4RoutedMoE(
@@ -947,7 +943,7 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
       attentionInputs.compressedKeyValue, attentionInputs.compressorInputCache,
     ]
   }
-  let attnOutput = attention(inputs).to(of: residualHC)
+  let attnOutput = attention(inputs)
   let afterAttn = DeepSeek4HCExpand(
     block: attnOutput, residualHC: residualHC, post: attnParts.post, comb: attnParts.comb,
     tokenLength: tokenLength, configuration: configuration)
