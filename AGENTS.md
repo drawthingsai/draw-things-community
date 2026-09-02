@@ -1,5 +1,13 @@
 # Session Learnings
 
+## Linear Main Branch History
+- Keep `main` strictly linear. Never create a merge commit on `main`; only fast-forward updates are allowed.
+- While on `main`, do not run an ordinary `git merge` or a merge-producing `git pull`. Use `git pull --rebase`, or fetch and then rebase / cherry-pick local commits onto the latest `origin/main`.
+- If local `main` and `origin/main` have diverged, stop and report the divergence. Do not resolve it by merging `origin/main` into `main`.
+- Do not fast-forward a feature branch into `main` when that branch contains merge commits. Rebase it or cherry-pick the required non-merge commits onto the latest `origin/main` first.
+- Before pushing `main`, fetch `origin/main`, verify that `git merge-base --is-ancestor origin/main HEAD` succeeds, and verify that `git rev-list --merges --count origin/main..HEAD` prints `0`.
+- Push `main` without force. Rewriting or force-pushing `main` requires explicit user authorization.
+
 ## Downloader Naming + Compatibility Policy
 - In this repo, prefer one canonical name for a behavior or mode instead of compatibility aliases.
 - For the downloader split, use `SegmentedResumableDownloaderBackend` vs `URLSessionDownloadTaskResumableDownloaderBackend`.
