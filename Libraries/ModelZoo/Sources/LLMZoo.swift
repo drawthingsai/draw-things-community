@@ -30,7 +30,7 @@ public struct LLMZoo: DownloadZoo {
       version: .qwen_3_5_27b),
     Specification(
       name: "DeepSeek 4 Flash 0731 (2-bit S)", file: "deepseek_4_flash_0731_i2x.ckpt",
-      version: .deepseek_4_flash),
+      version: .deepseek_4_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4-Flash-0731"),
     Specification(
       name: "Qwen 3.6 27B (4-bit S)", file: "qwen_3.6_27b_i4x.ckpt",
       version: .qwen_3_5_27b, deprecated: true),
