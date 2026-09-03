@@ -78,6 +78,10 @@ load(
 
 apple_support_dependencies()
 
+load("//Vendors/Z3:repositories.bzl", "z3_repositories")
+
+z3_repositories()
+
 load("//Vendors/Ripgrep:repositories.bzl", "ripgrep_repositories")
 
 ripgrep_repositories()
