@@ -25,6 +25,7 @@ public struct DeepSeek4ModelConfiguration: Sendable {
   public var routedExperts: Int
   public var expertIntermediateSize: Int
   public var sharedIntermediateSize: Int
+  public var expertResidentSlots: [Int]
   public var attentionOutputGroups: Int
   public var attentionLowRank: Int
   public var queryLowRank: Int
@@ -48,10 +49,13 @@ public struct DeepSeek4ModelConfiguration: Sendable {
     ropeTheta: Double, ropeScaleFactor: Double, ropeOriginalContext: Int,
     ropeYarnBetaFast: Double, ropeYarnBetaSlow: Double,
     layerAttentionKinds: [DeepSeek4AttentionKind],
-    layerRouterKinds: [DeepSeek4RouterKind]
+    layerRouterKinds: [DeepSeek4RouterKind], expertResidentSlots: [Int]
   ) {
     precondition(layerAttentionKinds.count == layers)
     precondition(layerRouterKinds.count == layers)
+    precondition(
+      expertResidentSlots.count == layers
+        && expertResidentSlots.allSatisfy { $0 >= routedExperts && $0 <= expertCount })
     self.vocabularySize = vocabularySize
     self.hiddenSize = hiddenSize
     self.layers = layers
@@ -64,6 +68,7 @@ public struct DeepSeek4ModelConfiguration: Sendable {
     self.routedExperts = routedExperts
     self.expertIntermediateSize = expertIntermediateSize
     self.sharedIntermediateSize = sharedIntermediateSize
+    self.expertResidentSlots = expertResidentSlots
     self.attentionOutputGroups = attentionOutputGroups
     self.attentionLowRank = attentionLowRank
     self.queryLowRank = queryLowRank
@@ -149,7 +154,8 @@ extension DeepSeek4ModelConfiguration {
       + (4..<43).map {
         $0.isMultiple(of: 2) ? .indexed(compressionRatio: 4) : .compressed(compressionRatio: 128)
       },
-    layerRouterKinds: (0..<43).map { $0 < 3 ? .tokenHash : .standard })
+    layerRouterKinds: (0..<43).map { $0 < 3 ? .tokenHash : .standard },
+    expertResidentSlots: Array(repeating: 256, count: 43))
 }
 
 /// Describes the compressor rows and retained state for one continuation step.
@@ -804,21 +810,25 @@ private func DeepSeek4CompressedSparseAttention<FloatType: TensorNumeric>(
 
 private func DeepSeek4SharedFFN(
   prefix: String, x: Model.IO, tokenLength: Int,
-  configuration: DeepSeek4ModelConfiguration
+  dependencies: [Model.IO] = [], configuration: DeepSeek4ModelConfiguration
 ) -> Model.IO {
   let swiglu = SwiGLU(
     count: configuration.sharedIntermediateSize, clamp: 10,
     name: "\(prefix).shared_experts")
   let down = Dense(
     count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")
-  return down(swiglu(x))
+  let hidden = swiglu(x)
+  if !dependencies.isEmpty {
+    hidden.add(dependencies: dependencies)
+  }
+  return down(hidden)
 }
 
 private func DeepSeek4RoutedMoE(
   prefix: String, x: Model.IO, routerInput: Model.IO, tokens: Model.IO,
-  tokenLength: Int, routerKind: DeepSeek4RouterKind,
+  layerIndex: Int, tokenLength: Int, routerKind: DeepSeek4RouterKind,
   configuration: DeepSeek4ModelConfiguration
-) -> Model.IO {
+) -> (routed: Model.IO, shared: Model.IO) {
   let router = Dense(count: configuration.expertCount, noBias: true, name: "\(prefix).gate")
   let logits = router(routerInput)
   let route: Model.IO
@@ -842,20 +852,79 @@ private func DeepSeek4RoutedMoE(
     preselected: routerKind == .tokenHash, singleInputToken: true,
     name: "\(prefix).routing"
   )(logits.to(of: x), route, x)
-  let hidden = SegmentedSwiGLU(
-    segments: configuration.expertCount, count: configuration.expertIntermediateSize,
-    clamp: 10, name: "\(prefix).experts"
+  if configuration.expertResidentSlots[layerIndex] == configuration.expertCount {
+    let hidden = SegmentedSwiGLU(
+      segments: configuration.expertCount, count: configuration.expertIntermediateSize,
+      clamp: 10, name: "\(prefix).experts"
+    )([
+      prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+    ])
+    let down = SegmentedDense(
+      segments: configuration.expertCount, count: configuration.hiddenSize,
+      noBias: true, name: "\(prefix).experts.w2")
+    let routed = down(hidden, prepared[3], prepared[4])
+    let scattered = Functional.scatterAdd(
+      count: tokenLength, countPerOutput: configuration.routedExperts,
+      routed, index: prepared[2]
+    ).reshaped([tokenLength, configuration.hiddenSize])
+    let shared = DeepSeek4SharedFFN(
+      prefix: prefix, x: x, tokenLength: tokenLength, configuration: configuration)
+    return (scattered, shared)
+  }
+  let gateWeight = Parameter<Float>(
+    .GPU(0),
+    .HWC(
+      configuration.expertCount, configuration.expertIntermediateSize,
+      configuration.hiddenSize),
+    name: "\(prefix).experts.streaming_gate"
+  )()
+  let upWeight = Parameter<Float>(
+    .GPU(0),
+    .HWC(
+      configuration.expertCount, configuration.expertIntermediateSize,
+      configuration.hiddenSize),
+    name: "\(prefix).experts.streaming_up"
+  )()
+  let downWeight = Parameter<Float>(
+    .GPU(0),
+    .HWC(
+      configuration.expertCount, configuration.hiddenSize,
+      configuration.expertIntermediateSize),
+    name: "\(prefix).experts.w2"
+  )()
+  let resident = MoEWeightStreaming(
+    residentSlots: configuration.expertResidentSlots[layerIndex],
+    routingWidth: configuration.routedExperts,
+    name: "\(prefix).expert_streaming"
   )([
-    prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+    prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+    gateWeight, upWeight, downWeight,
   ])
-  let down = SegmentedDense(
-    segments: configuration.expertCount, count: configuration.hiddenSize,
-    noBias: true, name: "\(prefix).experts.w2")
-  let routed = down(hidden, prepared[3], prepared[4])
-  return Functional.scatterAdd(
+  // Keep these Extract IOs alive through graph materialization. Dependencies are
+  // stored as raw model IOs by ccv, while the consumers retain the Swift wrappers.
+  let residentIndices = resident[0]
+  let residentCounts = resident[1]
+  let residentScales = resident[2]
+  let residentGate = resident[3]
+  let residentUp = resident[4]
+  let residentDown = resident[5]
+  let shared = DeepSeek4SharedFFN(
+    prefix: prefix, x: x, tokenLength: tokenLength,
+    dependencies: [residentGate, residentUp, residentDown], configuration: configuration)
+  let hidden = SegmentedSwiGLU(
+    segments: 0, count: configuration.expertIntermediateSize, clamp: 10, functional: true,
+    name: "\(prefix).experts.functional"
+  )([prepared[0], residentIndices, residentCounts, residentGate, residentUp, residentScales])
+  hidden.add(dependencies: [shared])
+  let routed = SegmentedDense(
+    segments: 0, count: configuration.hiddenSize, noBias: true, functional: true,
+    name: "\(prefix).experts.w2.functional"
+  )([hidden, residentIndices, residentCounts, residentDown])
+  let scattered = Functional.scatterAdd(
     count: tokenLength, countPerOutput: configuration.routedExperts,
     routed, index: prepared[2]
   ).reshaped([tokenLength, configuration.hiddenSize])
+  return (scattered, shared)
 }
 
 private func DeepSeek4Embedding<FloatType: TensorNumeric>(
@@ -960,13 +1029,11 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
   )
   let ffnBranch = ffnNorm
 
-  let routed = DeepSeek4RoutedMoE(
+  let moe = DeepSeek4RoutedMoE(
     prefix: "\(prefix).ffn", x: ffnBranch, routerInput: ffnNorm.to(FloatType.dataType),
-    tokens: tokens, tokenLength: tokenLength, routerKind: routerKind,
+    tokens: tokens, layerIndex: layerIndex, tokenLength: tokenLength, routerKind: routerKind,
     configuration: configuration)
-  let shared = DeepSeek4SharedFFN(
-    prefix: "\(prefix).ffn", x: ffnBranch, tokenLength: tokenLength, configuration: configuration)
-  let ffnBlock = routed + shared
+  let ffnBlock = moe.routed + moe.shared
   return DeepSeek4HCExpand(
     block: ffnBlock, residualHC: afterAttn, post: ffnParts.post,
     comb: ffnParts.comb, tokenLength: tokenLength, configuration: configuration)

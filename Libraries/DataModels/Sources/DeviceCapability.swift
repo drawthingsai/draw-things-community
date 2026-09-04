@@ -41,6 +41,31 @@ private func isMacCatalystBuild() -> Bool {
 }
 
 public struct DeviceCapability {
+  public enum WeightsStreaming: Int, CaseIterable, Sendable {
+    case _8GiB = 8
+    case _16GiB = 16
+    case _32GiB = 32
+    case _48GiB = 48
+    case none = 0
+  }
+
+  public static var weightsStreaming: WeightsStreaming {
+    let physicalMemory = ProcessInfo.processInfo.physicalMemory
+    let gibibyte = UInt64(1_024 * 1_024 * 1_024)
+    let reservedMemory = 32 * gibibyte
+    let availableMemory = physicalMemory > reservedMemory ? physicalMemory - reservedMemory : 0
+    if availableMemory >= 90 * gibibyte {
+      return .none
+    } else if availableMemory >= 48 * gibibyte {
+      return ._48GiB
+    } else if availableMemory >= 32 * gibibyte {
+      return ._32GiB
+    } else if availableMemory >= 16 * gibibyte {
+      return ._16GiB
+    }
+    return ._8GiB
+  }
+
   public static let keepModelPreloaded: Bool = {
     return isHighPerformance
   }()
