@@ -8,7 +8,7 @@ description: Use when writing or refactoring UIKit UI in this repo, especially W
 ## First Pass
 
 - Read nearby app code before introducing a new shape.
-- Prefer existing Draw Things / LocalCode UIKit patterns over new abstractions.
+- Prefer existing Draw Things / Local Code UIKit patterns over new abstractions.
 - Use `rg` / `rg --files` to find matching `Workflow`, `ViewController`, and `Controller` examples.
 
 ## Workflow And ViewController
