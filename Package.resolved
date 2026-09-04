@@ -5,7 +5,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/liuliu/ccv.git",
       "state" : {
-        "revision" : "701427f87c0619940b12c16c59ef2be79f0a8ecb"
+        "revision" : "302e9500a663d2833ee5a64e305d6a272330615b"
       }
     },
     {
@@ -38,7 +38,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/liuliu/s4nnc.git",
       "state" : {
-        "revision" : "9e69c9afb9e4a45cc1c2129d4c801c7838a9aae7"
+        "revision" : "924ebaa00193dff34e88934f28816659416d8bd2"
       }
     },
     {
@@ -284,6 +284,14 @@
       "location" : "https://github.com/apple/swift-system.git",
       "state" : {
         "revision" : "fbd61a676d79cbde05cd4fda3cc46e94d6b8f0eb"
+      }
+    },
+    {
+      "identity" : "yams",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jpsim/Yams.git",
+      "state" : {
+        "revision" : "948991e19e795cdd7bd310756a97b5fbda559535"
       }
     }
   ],
