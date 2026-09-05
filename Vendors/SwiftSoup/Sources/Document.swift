@@ -34,6 +34,9 @@ open class Document: Element {
   @usableFromInline
   internal var parsedAsXml: Bool = false
 
+  @usableFromInline
+  internal var dirtySourceRoots: [ObjectIdentifier: Weak<Node>] = [:]
+
   /**
      Create a new, empty Document.
      - parameter baseUri: base URI of document
@@ -242,8 +245,212 @@ open class Document: Element {
   }
 
   @inline(__always)
+  private func estimatedDocumentOuterHtmlCapacity() -> Int {
+    if let sourceCount = sourceBuffer?.bytes.count, sourceCount > 0 {
+      return min(max(1024, sourceCount), 8_388_608)
+    }
+
+    var estimated = 0
+    for child in childNodes {
+      estimated += child.estimatedOuterHtmlCapacity()
+      if estimated >= 8_388_608 {
+        return 8_388_608
+      }
+    }
+    return max(1024, estimated)
+  }
+
+  /// Serializes this document to UTF-8 using SwiftSoup's normal source-reuse behavior.
+  ///
+  /// This is the recommended serializer for almost all callers. It automatically
+  /// preserves eligible parsed source text and rebuilds modified nodes as needed.
+  /// The source-reuse variants below are specialized performance-tuning tools for
+  /// measured dense-mutation workloads.
+  @inline(__always)
   open func outerHtmlUTF8() throws -> [UInt8] {
-    return try super.htmlUTF8()  // no outer wrapper tag
+    if let patched = try patchedOuterHtmlUTF8() {
+      return patched
+    }
+    let accum = StringBuilder.acquire(estimatedDocumentOuterHtmlCapacity())
+    defer { StringBuilder.release(accum) }
+    for node in childNodes {
+      try node.outerHtml(accum)
+    }
+    return Array(getOutputSettings().prettyPrint() ? accum.buffer.trim() : accum.buffer)
+  }
+
+  // MARK: - Advanced serialization performance tuning
+
+  /// Serializes without reusing any parsed source text.
+  ///
+  /// This is an advanced performance-tuning API. Most callers should use
+  /// ``outerHtmlUTF8()``. Disabling source reuse can be faster after dense
+  /// mutations, but is usually slower for clean or sparsely modified documents.
+  /// Benchmark your representative workload before using it.
+  ///
+  /// Because every node is serialized again, the output is normalized according
+  /// to the document's output settings instead of preserving source formatting.
+  @inline(__always)
+  open func outerHtmlUTF8WithoutSourceReuse() throws -> [UInt8] {
+    let accum = StringBuilder.acquire(estimatedDocumentOuterHtmlCapacity())
+    defer { StringBuilder.release(accum) }
+    let outputSettings = getOutputSettings()
+    for node in childNodes {
+      try node.outerHtmlFastWithoutSourceReuse(accum, 0, outputSettings)
+    }
+    return Array(outputSettings.prettyPrint() ? accum.buffer.trim() : accum.buffer)
+  }
+
+  /// Serializes the body without source reuse while allowing unchanged nodes
+  /// outside the body to reuse parsed source text.
+  ///
+  /// This is an advanced performance-tuning API for HTML documents with dense
+  /// body mutations and a mostly unchanged document shell. Most callers should
+  /// use ``outerHtmlUTF8()``. Benchmark your representative workload before
+  /// choosing this policy.
+  ///
+  /// If the document does not have exactly one top-level `html` element containing
+  /// exactly one `body` element, this safely falls back to
+  /// ``outerHtmlUTF8WithoutSourceReuse()``.
+  @inline(__always)
+  open func outerHtmlUTF8ReusingSourceOutsideBody() throws -> [UInt8] {
+    guard let body = uniqueHTMLBody() else {
+      return try outerHtmlUTF8WithoutSourceReuse()
+    }
+    return try outerHtmlUTF8ReusingSourceOutsideBody(body, contents: .serializeBodyTree)
+  }
+
+  /// Inserts already-serialized UTF-8 body contents while allowing unchanged
+  /// nodes outside the body to reuse parsed source text.
+  ///
+  /// This is a specialized performance-tuning API for callers that already have
+  /// the final body bytes. Most callers should use ``outerHtmlUTF8()`` instead.
+  /// The supplied bytes are raw inner HTML; they are not parsed or escaped. The
+  /// document must have exactly one top-level `html` element containing exactly
+  /// one `body` element.
+  @inline(__always)
+  open func outerHtmlUTF8ReusingSourceOutsideBody(
+    preSerializedBodyContents bodyInnerHTMLUTF8: [UInt8]
+  ) throws -> [UInt8] {
+    guard let body = uniqueHTMLBody() else {
+      throw Exception.Error(
+        type: .IllegalArgumentException,
+        Message: "Replacing body contents requires one unambiguous html/body structure"
+      )
+    }
+    return try outerHtmlUTF8ReusingSourceOutsideBody(body, contents: .serialized(bodyInnerHTMLUTF8))
+  }
+
+  private enum BodyContentsForSerialization {
+    case serializeBodyTree
+    case serialized([UInt8])
+  }
+
+  private struct UniqueHTMLBody {
+    let html: Element
+    let htmlIndex: Int
+    let body: Element
+    let bodyIndex: Int
+  }
+
+  private struct IndexedElement {
+    let element: Element
+    let index: Int
+  }
+
+  private func uniqueDirectElement(named tagName: [UInt8], in nodes: [Node]) -> IndexedElement? {
+    var match: IndexedElement?
+    for (index, node) in nodes.enumerated() {
+      guard let element = node as? Element,
+        element.tagNameUTF8() == tagName
+      else {
+        continue
+      }
+      guard match == nil else {
+        return nil
+      }
+      match = IndexedElement(element: element, index: index)
+    }
+    return match
+  }
+
+  /// Returns the single body that can be replaced without changing document
+  /// structure. Ambiguous or non-HTML documents deliberately return `nil`.
+  private func uniqueHTMLBody() -> UniqueHTMLBody? {
+    guard let html = uniqueDirectElement(named: UTF8Arrays.html, in: childNodes),
+      let body = uniqueDirectElement(named: UTF8Arrays.body, in: html.element.getChildNodes())
+    else {
+      return nil
+    }
+    return UniqueHTMLBody(
+      html: html.element,
+      htmlIndex: html.index,
+      body: body.element,
+      bodyIndex: body.index
+    )
+  }
+
+  private func outerHtmlUTF8ReusingSourceOutsideBody(
+    _ location: UniqueHTMLBody,
+    contents bodyContents: BodyContentsForSerialization
+  ) throws -> [UInt8] {
+    let htmlChildren = location.html.getChildNodes()
+    let outputSettings = getOutputSettings()
+    let replacementByteCount: Int
+    switch bodyContents {
+    case .serializeBodyTree:
+      replacementByteCount = 0
+    case .serialized(let bytes):
+      replacementByteCount = bytes.count
+    }
+    let capacity = estimatedDocumentOuterHtmlCapacity() + replacementByteCount
+    let accum = StringBuilder.acquire(capacity)
+    defer { StringBuilder.release(accum) }
+
+    for index in childNodes.indices {
+      let node = childNodes[index]
+      guard index == location.htmlIndex else {
+        try node.outerHtmlFast(accum, 0, outputSettings, allowRawSource: true)
+        continue
+      }
+
+      try location.html.outerHtmlHead(accum, 0, outputSettings)
+      for childIndex in htmlChildren.indices where childIndex < location.bodyIndex {
+        try htmlChildren[childIndex].outerHtmlFast(
+          accum,
+          1,
+          outputSettings,
+          allowRawSource: true
+        )
+      }
+
+      try location.body.outerHtmlHead(accum, 1, outputSettings)
+      switch bodyContents {
+      case .serialized(let bytes):
+        accum.append(bytes)
+      case .serializeBodyTree:
+        let bodyChildren = location.body.getChildNodes()
+        if bodyChildren.count == 1, let rawBody = bodyChildren.first as? DataNode {
+          accum.append(rawBody.getWholeDataUTF8())
+        } else {
+          for child in bodyChildren {
+            try child.outerHtmlFastWithoutSourceReuse(accum, 2, outputSettings)
+          }
+        }
+      }
+      location.body.outerHtmlTail(accum, 1, outputSettings)
+
+      for childIndex in htmlChildren.indices where childIndex > location.bodyIndex {
+        try htmlChildren[childIndex].outerHtmlFast(
+          accum,
+          1,
+          outputSettings,
+          allowRawSource: true
+        )
+      }
+      location.html.outerHtmlTail(accum, 0, outputSettings)
+    }
+    return Array(outputSettings.prettyPrint() ? accum.buffer.trim() : accum.buffer)
   }
 
   /**
@@ -418,6 +625,10 @@ open class Document: Element {
   @usableFromInline
   internal func sourcePatches() throws -> [SourcePatch] {
     guard sourceBuffer != nil else { return [] }
+    let roots = currentDirtySourceRoots()
+    guard !roots.isEmpty || sourceRangeDirty else {
+      return []
+    }
     let out = (_outputSettings.copy() as! OutputSettings).prettyPrint(pretty: false)
     var patches: [SourcePatch] = []
 
@@ -444,11 +655,118 @@ open class Document: Element {
       }
     }
 
-    collect(self, false)
+    if roots.isEmpty {
+      collect(self, false)
+    } else {
+      for root in roots {
+        collect(root, false)
+      }
+    }
     if patches.count > 1 {
       patches.sort { $0.range.start < $1.range.start }
     }
     return patches
+  }
+
+  @usableFromInline
+  internal func registerDirtySourceRoot(_ node: Node) {
+    let identifier = ObjectIdentifier(node)
+    if let registered = dirtySourceRoots[identifier]?.value,
+      registered === node,
+      registered.sourceRangeDirty
+    {
+      return
+    }
+
+    if node === self {
+      dirtySourceRoots = [identifier: Weak(self)]
+      return
+    }
+
+    var ancestor = node.parentNode
+    while let current = ancestor {
+      let ancestorIdentifier = ObjectIdentifier(current)
+      if let registered = dirtySourceRoots[ancestorIdentifier]?.value,
+        registered === current,
+        registered.sourceRangeDirty
+      {
+        return
+      }
+      ancestor = current.parentNode
+    }
+
+    cleanupDirtySourceRoots()
+    let descendantIdentifiers = dirtySourceRoots.compactMap { entry -> ObjectIdentifier? in
+      let (identifier, weakNode) = entry
+      guard let existing = weakNode.value,
+        node.isAncestor(of: existing)
+      else {
+        return nil
+      }
+      return identifier
+    }
+    for descendantIdentifier in descendantIdentifiers {
+      dirtySourceRoots.removeValue(forKey: descendantIdentifier)
+    }
+    dirtySourceRoots[identifier] = Weak(node)
+  }
+
+  @usableFromInline
+  internal func currentDirtySourceRoots() -> [Node] {
+    cleanupDirtySourceRoots()
+    return dirtySourceRoots.values.compactMap(\.value)
+  }
+
+  @usableFromInline
+  internal func cleanupDirtySourceRoots() {
+    dirtySourceRoots = dirtySourceRoots.filter { _, weakNode in
+      weakNode.value?.sourceRangeDirty == true
+    }
+  }
+
+  @usableFromInline
+  internal func patchedOuterHtmlUTF8() throws -> [UInt8]? {
+    guard !_outputSettings.prettyPrint(),
+      let source = sourceBuffer?.bytes
+    else {
+      return nil
+    }
+
+    let patches = try sourcePatches()
+    if patches.isEmpty {
+      return source
+    }
+
+    var previousEnd = 0
+    var totalCount = source.count
+    for patch in patches {
+      let range = patch.range
+      guard range.isValid,
+        range.start >= previousEnd,
+        range.end <= source.count
+      else {
+        return nil
+      }
+      totalCount += patch.replacement.count - (range.end - range.start)
+      previousEnd = range.end
+    }
+
+    var result: [UInt8] = []
+    result.reserveCapacity(max(totalCount, 0))
+
+    var cursor = 0
+    for patch in patches {
+      let range = patch.range
+      if cursor < range.start {
+        result.append(contentsOf: source[cursor..<range.start])
+      }
+      result.append(contentsOf: patch.replacement)
+      cursor = range.end
+    }
+    if cursor < source.count {
+      result.append(contentsOf: source[cursor..<source.count])
+    }
+    return result
   }
 
   @inline(__always)
@@ -482,6 +800,7 @@ open class Document: Element {
     clone.updateMetaCharset = updateMetaCharset
     clone.sourceBuffer = nil
     clone.parsedAsXml = parsedAsXml
+    clone.dirtySourceRoots.removeAll(keepingCapacity: false)
     return copy(clone: clone, parent: parent, copyChildren: false, rebuildIndexes: false)
   }
 
@@ -493,6 +812,7 @@ open class Document: Element {
     clone.updateMetaCharset = updateMetaCharset
     clone.sourceBuffer = nil
     clone.parsedAsXml = parsedAsXml
+    clone.dirtySourceRoots.removeAll(keepingCapacity: false)
     return super.copy(clone: clone, parent: parent)
   }
 

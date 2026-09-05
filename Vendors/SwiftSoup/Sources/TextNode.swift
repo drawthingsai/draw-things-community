@@ -23,6 +23,8 @@ open class TextNode: Node {
   private static let TEXT_KEY = "text".utf8Array
   var _text: [UInt8]
   private var _textSlice: ByteSlice? = nil
+  private var _textSlices: [ByteSlice]? = nil
+  private var _textSlicesCount: Int = 0
 
   /**
      Create a new TextNode representing the supplied (unencoded) text).
@@ -41,6 +43,8 @@ open class TextNode: Node {
   internal init(slice: ByteSlice, baseUri: [UInt8]?) {
     self._text = []
     self._textSlice = slice
+    self._textSlices = nil
+    self._textSlicesCount = 0
     super.init()
     self.baseUri = baseUri
   }
@@ -82,6 +86,8 @@ open class TextNode: Node {
   @inline(__always)
   public func text(_ text: String) -> TextNode {
     _textSlice = nil
+    _textSlices = nil
+    _textSlicesCount = 0
     _text = text.utf8Array
     guard let attributes = attributes else {
       bumpTextMutationVersion()
@@ -108,18 +114,41 @@ open class TextNode: Node {
   }
 
   @inline(__always)
-  open func getWholeTextUTF8() -> [UInt8] {
-    if let slice = _textSlice {
-      let materialized = slice.toArray()
+  private func materializeTextIfNeeded() {
+    if let slices = _textSlices {
+      var out: [UInt8] = []
+      out.reserveCapacity(_textSlicesCount)
+      for slice in slices {
+        out.append(contentsOf: slice)
+      }
+      _text = out
+      _textSlices = nil
+      _textSlicesCount = 0
       _textSlice = nil
-      _text = materialized
-      if let attrs = attributes {
+      return
+    }
+    if let slice = _textSlice {
+      _text = slice.toArray()
+      _textSlice = nil
+    }
+  }
+
+  @inline(__always)
+  open func getWholeTextUTF8() -> [UInt8] {
+    if let attrs = attributes {
+      if _textSlice != nil || _textSlices != nil {
+        materializeTextIfNeeded()
         do {
-          try attrs.put(TextNode.TEXT_KEY, materialized)
+          try attrs.put(TextNode.TEXT_KEY, _text)
         } catch {}
       }
+      if let slice = attrs.valueSliceCaseSensitive(TextNode.TEXT_KEY) {
+        return slice.toArray()
+      }
+      return []
     }
-    return attributes == nil ? _text : attributes!.get(key: TextNode.TEXT_KEY)
+    materializeTextIfNeeded()
+    return _text
   }
 
   @usableFromInline
@@ -130,23 +159,45 @@ open class TextNode: Node {
     if let slice = _textSlice {
       return slice
     }
+    if _textSlices != nil {
+      materializeTextIfNeeded()
+    }
     return ByteSlice.fromArray(_text)
   }
 
   @usableFromInline
   internal func appendSlice(_ slice: ByteSlice) {
-    if attributes != nil {
-      var bytes = getWholeTextUTF8()
-      bytes.append(contentsOf: slice)
-      do {
-        try attributes?.put(TextNode.TEXT_KEY, bytes)
-      } catch {}
-    } else {
-      if let existingSlice = _textSlice {
-        _text = existingSlice.toArray()
-        _textSlice = nil
+    if let attrs = attributes {
+      if !attrs.hasKey(key: TextNode.TEXT_KEY) {
+        if let slices = _textSlices {
+          for existing in slices {
+            attrs.appendValueSlice(key: TextNode.TEXT_KEY, slice: existing)
+          }
+          _textSlices = nil
+          _textSlicesCount = 0
+          _text = []
+        } else if let existingSlice = _textSlice {
+          attrs.appendValueSlice(key: TextNode.TEXT_KEY, slice: existingSlice)
+          _textSlice = nil
+          _text = []
+        } else if !_text.isEmpty {
+          attrs.appendValueSlice(key: TextNode.TEXT_KEY, slice: ByteSlice.fromArray(_text))
+          _text = []
+        }
       }
+      attrs.appendValueSlice(key: TextNode.TEXT_KEY, slice: slice)
+    } else if var slices = _textSlices {
+      slices.append(slice)
+      _textSlices = slices
+      _textSlicesCount += slice.count
+    } else if let existingSlice = _textSlice {
+      _textSlices = [existingSlice, slice]
+      _textSlicesCount = existingSlice.count + slice.count
+      _textSlice = nil
+    } else if !_text.isEmpty {
       _text.append(contentsOf: slice)
+    } else {
+      _textSlice = slice
     }
     bumpTextMutationVersion()
     markSourceDirty()
@@ -154,7 +205,7 @@ open class TextNode: Node {
 
   @usableFromInline
   internal func extendSliceFromSourceRange(_ source: SourceBuffer, newRange: SourceRange) -> Bool {
-    if attributes != nil || sourceRangeDirty {
+    if attributes != nil || sourceRangeDirty || _textSlices != nil || !_text.isEmpty {
       return false
     }
     guard let existingRange = sourceRange,
@@ -167,6 +218,8 @@ open class TextNode: Node {
     }
     _text = []
     _textSlice = ByteSlice(storage: source.storage, start: existingRange.start, end: newRange.end)
+    _textSlices = nil
+    _textSlicesCount = 0
     return true
   }
 

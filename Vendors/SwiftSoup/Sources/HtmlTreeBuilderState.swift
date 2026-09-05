@@ -105,10 +105,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
         // todo: quirk state check on doctype ids
         let d: Token.Doctype = t.asDoctype()
         let doctype: DocumentType = DocumentType(
-          nameSlice: tb.settings.normalizeTag(d.getNameSlice()),
+          nameSlice: tb.settings.normalizeTag(d.takeNameSlice()),
           pubSysKeySlice: d.getPubSysKeySlice(),
-          publicIdSlice: d.getPublicIdentifierSlice(),
-          systemIdSlice: d.getSystemIdentifierSlice(),
+          publicIdSlice: d.takePublicIdentifierSlice(),
+          systemIdSlice: d.takeSystemIdentifierSlice(),
           baseUri: tb.getBaseUri()
         )
         //tb.settings.normalizeTag(d.getName()), d.getPublicIdentifier(), d.getSystemIdentifier(), tb.getBaseUri())
@@ -1231,6 +1231,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
               return false
             } else {
               // todo: error if stack contains something not dd, dt, li, optgroup, option, p, rp, rt, tbody, td, tfoot, th, thead, tr, body, html
+              tb.completeSourceRangeForOpenElement(
+                UTF8Arrays.body,
+                endingAt: endTag
+              )
               tb.transition(.AfterBody)
             }
             return true
@@ -1360,6 +1364,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
                 return false
               } else {
                 // todo: error if stack contains something not dd, dt, li, optgroup, option, p, rp, rt, tbody, td, tfoot, th, thead, tr, body, html
+                tb.completeSourceRangeForOpenElement(
+                  UTF8Arrays.body,
+                  endingAt: endTag
+                )
                 tb.transition(.AfterBody)
               }
             } else if name == UTF8Arrays.html {
@@ -1527,8 +1535,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
             let isHidden: Bool
             if startTag.hasAnyAttributes() {
               startTag.ensureAttributes()
-              let typeValue = startTag._attributes?.get(key: UTF8Arrays.type) ?? []
-              isHidden = typeValue.equalsIgnoreCase(string: UTF8Arrays.hidden)
+              let typeValue =
+                (try? startTag._attributes?.getIgnoreCaseSlice(key: UTF8Arrays.type))
+                ?? ByteSlice.empty
+              isHidden = StringUtil.equalsIgnoreCase(UTF8Arrays.hidden, typeValue)
             } else {
               isHidden = false
             }
@@ -1583,8 +1593,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
             let isHidden: Bool
             if startTag.hasAnyAttributes() {
               startTag.ensureAttributes()
-              let typeValue = startTag._attributes?.get(key: UTF8Arrays.type) ?? []
-              isHidden = typeValue.equalsIgnoreCase(string: UTF8Arrays.hidden)
+              let typeValue =
+                (try? startTag._attributes?.getIgnoreCaseSlice(key: UTF8Arrays.type))
+                ?? ByteSlice.empty
+              isHidden = StringUtil.equalsIgnoreCase(UTF8Arrays.hidden, typeValue)
             } else {
               isHidden = false
             }
@@ -2383,6 +2395,10 @@ enum HtmlTreeBuilderState: String, HtmlTreeBuilderStateProtocol {
           tb.error(self)
           return false
         } else {
+          tb.completeSourceRangeForOpenElement(
+            UTF8Arrays.html,
+            endingAt: t.asEndTag()
+          )
           tb.transition(.AfterAfterBody)
         }
       } else if t.isEOF() {

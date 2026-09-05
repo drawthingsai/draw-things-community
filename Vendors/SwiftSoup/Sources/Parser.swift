@@ -11,19 +11,6 @@ import Foundation
 /// in ``SwiftSoup``.
 public class Parser {
   private static let DEFAULT_MAX_ERRORS: Int = 0  // by default, error tracking is disabled.
-  private static let useTreeBuilderPool: Bool =
-    ProcessInfo.processInfo.environment["SWIFTSOUP_TREEBUILDER_POOL"] == "1"
-  private static let treeBuilderPoolLimit: Int = {
-    if let raw = ProcessInfo.processInfo.environment["SWIFTSOUP_TREEBUILDER_POOL_LIMIT"],
-      let value = Int(raw), value > 0
-    {
-      return value
-    }
-    return 4
-  }()
-  private static let treeBuilderPoolLock = Mutex()
-  nonisolated(unsafe) private static var htmlTreeBuilderPool: [HtmlTreeBuilder] = []
-  nonisolated(unsafe) private static var xmlTreeBuilderPool: [XmlTreeBuilder] = []
 
   private var _treeBuilder: TreeBuilder
   private var _maxErrors: Int = DEFAULT_MAX_ERRORS
@@ -121,8 +108,7 @@ public class Parser {
 	 - returns: parsed Document
 	*/
   public static func parse(_ html: [UInt8], _ baseUri: [UInt8]) throws -> Document {
-    let treeBuilder = acquireHtmlTreeBuilder()
-    defer { releaseHtmlTreeBuilder(treeBuilder) }
+    let treeBuilder = HtmlTreeBuilder()
     return try treeBuilder.parse(
       html, baseUri, ParseErrorList.noTracking(), treeBuilder.defaultSettings())
   }
@@ -130,8 +116,7 @@ public class Parser {
   public static func parse(_ html: UnsafeBufferPointer<UInt8>, _ baseUri: [UInt8]) throws
     -> Document
   {
-    let treeBuilder = acquireHtmlTreeBuilder()
-    defer { releaseHtmlTreeBuilder(treeBuilder) }
+    let treeBuilder = HtmlTreeBuilder()
     return try treeBuilder.parse(
       html, owner: nil, baseUri, ParseErrorList.noTracking(), treeBuilder.defaultSettings())
   }
@@ -139,8 +124,7 @@ public class Parser {
   public static func parse(_ html: UnsafeBufferPointer<UInt8>, owner: AnyObject, _ baseUri: [UInt8])
     throws -> Document
   {
-    let treeBuilder = acquireHtmlTreeBuilder()
-    defer { releaseHtmlTreeBuilder(treeBuilder) }
+    let treeBuilder = HtmlTreeBuilder()
     return try treeBuilder.parse(
       html, owner: owner, baseUri, ParseErrorList.noTracking(), treeBuilder.defaultSettings())
   }
@@ -150,8 +134,7 @@ public class Parser {
   }
 
   public static func parse(_ data: Data, _ baseUri: [UInt8]) throws -> Document {
-    let treeBuilder = acquireHtmlTreeBuilder()
-    defer { releaseHtmlTreeBuilder(treeBuilder) }
+    let treeBuilder = HtmlTreeBuilder()
     return try treeBuilder.parse(
       [UInt8](data), baseUri, ParseErrorList.noTracking(), treeBuilder.defaultSettings())
   }
@@ -209,8 +192,7 @@ public class Parser {
   public static func parseFragment(_ fragmentHtml: [UInt8], _ context: Element?, _ baseUri: [UInt8])
     throws -> [Node]
   {
-    let treeBuilder = acquireHtmlTreeBuilder()
-    defer { releaseHtmlTreeBuilder(treeBuilder) }
+    let treeBuilder = HtmlTreeBuilder()
     return try treeBuilder.parseFragment(
       fragmentHtml, context, baseUri, ParseErrorList.noTracking(), treeBuilder.defaultSettings())
   }
@@ -229,60 +211,9 @@ public class Parser {
 	 - returns: list of nodes parsed from the input XML.
 	*/
   public static func parseXmlFragment(_ fragmentXml: [UInt8], _ baseUri: [UInt8]) throws -> [Node] {
-    let treeBuilder = acquireXmlTreeBuilder()
-    defer { releaseXmlTreeBuilder(treeBuilder) }
+    let treeBuilder = XmlTreeBuilder()
     return try treeBuilder.parseFragment(
       fragmentXml, baseUri, ParseErrorList.noTracking(), treeBuilder.defaultSettings())
-  }
-
-  @inline(__always)
-  private static func acquireHtmlTreeBuilder() -> HtmlTreeBuilder {
-    if useTreeBuilderPool {
-      treeBuilderPoolLock.lock()
-      if let builder = htmlTreeBuilderPool.popLast() {
-        treeBuilderPoolLock.unlock()
-        builder.resetForReuse()
-        return builder
-      }
-      treeBuilderPoolLock.unlock()
-    }
-    return HtmlTreeBuilder()
-  }
-
-  @inline(__always)
-  private static func releaseHtmlTreeBuilder(_ builder: HtmlTreeBuilder) {
-    guard useTreeBuilderPool else { return }
-    builder.resetForReuse()
-    treeBuilderPoolLock.lock()
-    if htmlTreeBuilderPool.count < treeBuilderPoolLimit {
-      htmlTreeBuilderPool.append(builder)
-    }
-    treeBuilderPoolLock.unlock()
-  }
-
-  @inline(__always)
-  private static func acquireXmlTreeBuilder() -> XmlTreeBuilder {
-    if useTreeBuilderPool {
-      treeBuilderPoolLock.lock()
-      if let builder = xmlTreeBuilderPool.popLast() {
-        treeBuilderPoolLock.unlock()
-        builder.resetForReuse()
-        return builder
-      }
-      treeBuilderPoolLock.unlock()
-    }
-    return XmlTreeBuilder()
-  }
-
-  @inline(__always)
-  private static func releaseXmlTreeBuilder(_ builder: XmlTreeBuilder) {
-    guard useTreeBuilderPool else { return }
-    builder.resetForReuse()
-    treeBuilderPoolLock.lock()
-    if xmlTreeBuilderPool.count < treeBuilderPoolLimit {
-      xmlTreeBuilderPool.append(builder)
-    }
-    treeBuilderPoolLock.unlock()
   }
 
   public static func parseXmlFragment(_ fragmentXml: String, _ baseUri: String) throws -> [Node] {

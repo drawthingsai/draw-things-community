@@ -166,20 +166,6 @@ public class TreeBuilder {
     }
   }
 
-  @inline(__always)
-  func resetForReuse() {
-    doc = Document([])
-    reader = CharacterReader([])
-    stack.removeAll(keepingCapacity: true)
-    baseUri = []
-    currentToken = nil
-    errors = ParseErrorList(0, 0)
-    settings = defaultSettings()
-    tracksSourceRanges = false
-    tracksErrors = false
-    tokeniser = Tokeniser(reader, nil, settings)
-  }
-
   @discardableResult
   @inline(__always)
   public func process(_ token: Token) throws -> Bool {

@@ -486,6 +486,57 @@ class DocumentTest: XCTestCase {
     XCTAssertTrue(try doc.outerHtml().contains("bye"))
   }
 
+  func testRawSourceSerializationRegistersAlreadyDirtyParentMutation() throws {
+    let input = "<html><head></head><body><div><span>hello</span></div></body></html>"
+    let doc = try SwiftSoup.parse(input)
+    doc.outputSettings().prettyPrint(pretty: false)
+
+    let span = try XCTUnwrap(doc.select("span").first())
+    try span.text("bye")
+
+    let div = try XCTUnwrap(doc.select("div").first())
+    try div.attr("id", "a")
+
+    XCTAssertEqual(
+      "<html><head></head><body><div id=\"a\"><span>bye</span></div></body></html>",
+      try doc.outerHtml())
+  }
+
+  func testRawSourceSerializationRegistersAlreadyDirtyElementMutation() throws {
+    let input = "<html><head></head><body><div><span>hello</span></div></body></html>"
+    let doc = try SwiftSoup.parse(input)
+    doc.outputSettings().prettyPrint(pretty: false)
+
+    let span = try XCTUnwrap(doc.select("span").first())
+    let text = try XCTUnwrap(span.childNode(0) as? TextNode)
+    text.text("bye")
+    try span.attr("id", "a")
+
+    XCTAssertEqual(
+      "<html><head></head><body><div><span id=\"a\">bye</span></div></body></html>",
+      try doc.outerHtml())
+  }
+
+  func testRawSourceSerializationRegistersAlreadyDirtyAncestorAfterSerialization() throws {
+    let input = "<html><head></head><body><div><span>hello</span></div></body></html>"
+    let doc = try SwiftSoup.parse(input)
+    doc.outputSettings().prettyPrint(pretty: false)
+
+    let div = try XCTUnwrap(doc.select("div").first())
+    let span = try XCTUnwrap(doc.select("span").first())
+    let text = try XCTUnwrap(span.childNode(0) as? TextNode)
+    text.text("bye")
+
+    XCTAssertEqual(
+      "<html><head></head><body><div><span>bye</span></div></body></html>", try doc.outerHtml())
+
+    try div.attr("id", "a")
+
+    XCTAssertEqual(
+      "<html><head></head><body><div id=\"a\"><span>bye</span></div></body></html>",
+      try doc.outerHtml())
+  }
+
   func testRawSourceXmlParsedDocument() throws {
     let input = "<root><br/></root>"
     let doc = try SwiftSoup.parse(input, "", Parser.xmlParser())

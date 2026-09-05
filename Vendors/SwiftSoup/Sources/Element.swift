@@ -268,7 +268,8 @@ final class SelectorQueryStats {
 open class Element: Node {
   var _tag: Tag
 
-  private static let classString = "class".utf8Array
+  @usableFromInline
+  internal static let classString = "class".utf8Array
   private static let emptyString = "".utf8Array
   @usableFromInline
   internal static let idString = "id".utf8Array
@@ -302,21 +303,21 @@ open class Element: Node {
   /// Lazily-built tag → elements index (normalized lowercase UTF‑8 keys), invalidated on mutations.
   /// Optimizes hot tag selectors while preserving document order.
   @usableFromInline
-  internal var normalizedTagNameIndex: [[UInt8]: [Weak<Element>]]? = nil
+  internal var normalizedTagNameIndex: [ByteSlice: [Weak<Element>]]? = nil
   @usableFromInline
   internal var isTagQueryIndexDirty: Bool = false
 
   /// Lazily-built class → elements index (normalized lowercase UTF‑8 keys).
   /// Rebuilt on class/DOM mutations to avoid stale results.
   @usableFromInline
-  internal var normalizedClassNameIndex: [[UInt8]: [Weak<Element>]]? = nil
+  internal var normalizedClassNameIndex: [ByteSlice: [Weak<Element>]]? = nil
   @usableFromInline
   internal var isClassQueryIndexDirty: Bool = false
 
   /// Lazily-built id → elements index (id is case‑insensitive per HTML matching).
   /// Multiple matches are preserved for non‑unique IDs; order is document order.
   @usableFromInline
-  internal var normalizedIdIndex: [[UInt8]: [Weak<Element>]]? = nil
+  internal var normalizedIdIndex: [ByteSlice: [Weak<Element>]]? = nil
   @usableFromInline
   internal var isIdQueryIndexDirty: Bool = false
 
@@ -361,7 +362,7 @@ open class Element: Node {
   @usableFromInline
   internal var selectorQueryStats: SelectorQueryStats? = nil
   @usableFromInline
-  internal var selectorResultCacheRoot: Node? = nil
+  internal weak var selectorResultCacheRoot: Node? = nil
 
   /// Cached normalized text (UTF‑8) for trim+normalize path.
   /// NOTE: Removed text cache; keep no per-node cache state here.
@@ -433,6 +434,12 @@ open class Element: Node {
     return _tag.getNameNormal()
   }
 
+  @usableFromInline
+  @inline(__always)
+  internal func tagNameNormalSlice() -> ByteSlice {
+    return _tag.getNameNormalSlice()
+  }
+
   /**
      Change the tag of this element. For example, convert a `<span>` to a `<div>` with
      `el.tagName("div")`.
@@ -487,7 +494,8 @@ open class Element: Node {
   open func id() -> String {
     guard let attributes else { return "" }
     do {
-      return try String(decoding: attributes.getIgnoreCase(key: Element.idString), as: UTF8.self)
+      return try String(
+        decoding: attributes.getIgnoreCaseSlice(key: Element.idString), as: UTF8.self)
     } catch {}
     return ""
   }
@@ -496,7 +504,7 @@ open class Element: Node {
   open func idUTF8() -> [UInt8] {
     guard let attributes else { return [] }
     do {
-      return try attributes.getIgnoreCase(key: Element.idString)
+      return try attributes.getIgnoreCaseSlice(key: Element.idString).toArray()
     } catch {}
     return []
   }
@@ -1232,11 +1240,9 @@ open class Element: Node {
     if trimmed.isEmpty {
       return Elements()
     }
-    if !Attributes.containsAsciiUppercase(trimmed) {
-      return try getElementsByTagNormalized(trimmed)
-    }
-    let normalizedTagName = trimmed.lowercased()
-    let weakElements = tagQueryIndexForKey(normalizedTagName)
+    let trimmedSlice = ByteSlice.fromArray(trimmed)
+    let key = Attributes.containsAsciiUppercase(trimmed) ? trimmedSlice.lowercased() : trimmedSlice
+    let weakElements = tagQueryIndexForKey(key)
     return Elements(weakElements.compactMap { $0.value })
   }
 
@@ -1251,7 +1257,8 @@ open class Element: Node {
     let needsTrim =
       (normalizedTagName.first?.isWhitespace ?? false)
       || (normalizedTagName.last?.isWhitespace ?? false)
-    let key = needsTrim ? normalizedTagName.trim() : normalizedTagName
+    let keySlice = ByteSlice.fromArray(normalizedTagName)
+    let key = needsTrim ? keySlice.trim() : keySlice
     if key.isEmpty {
       return Elements()
     }
@@ -1268,7 +1275,8 @@ open class Element: Node {
   @usableFromInline
   func getElementsById(_ id: [UInt8]) -> Elements {
     let needsTrim = (id.first?.isWhitespace ?? false) || (id.last?.isWhitespace ?? false)
-    let key = needsTrim ? id.trim() : id
+    let keySlice = ByteSlice.fromArray(id)
+    let key = needsTrim ? keySlice.trim() : keySlice
     if key.isEmpty {
       return Elements()
     }
@@ -1295,7 +1303,8 @@ open class Element: Node {
     let idBytes = id.utf8Array
     try Validate.notEmpty(string: idBytes)
     let needsTrim = (idBytes.first?.isWhitespace ?? false) || (idBytes.last?.isWhitespace ?? false)
-    let key = needsTrim ? idBytes.trim() : idBytes
+    let keySlice = ByteSlice.fromArray(idBytes)
+    let key = needsTrim ? keySlice.trim() : keySlice
     if key.isEmpty {
       return nil
     }
@@ -1333,12 +1342,8 @@ open class Element: Node {
       rebuildQueryIndexesForAllClasses()
       isClassQueryIndexDirty = false
     }
-    let normalizedKey: [UInt8]
-    if !Attributes.containsAsciiUppercase(key) {
-      normalizedKey = key
-    } else {
-      normalizedKey = key.lowercased()
-    }
+    let keySlice = ByteSlice.fromArray(key)
+    let normalizedKey = Attributes.containsAsciiUppercase(key) ? keySlice.lowercased() : keySlice
     let results = normalizedClassNameIndex?[normalizedKey]?.compactMap { $0.value } ?? []
     return Elements(results)
   }
@@ -1353,7 +1358,8 @@ open class Element: Node {
       rebuildQueryIndexesForAllClasses()
       isClassQueryIndexDirty = false
     }
-    let results = normalizedClassNameIndex?[normalizedClassName]?.compactMap { $0.value } ?? []
+    let normalizedSlice = ByteSlice.fromArray(normalizedClassName)
+    let results = normalizedClassNameIndex?[normalizedSlice]?.compactMap { $0.value } ?? []
     return Elements(results)
   }
 
@@ -2425,7 +2431,9 @@ open class Element: Node {
      - returns: The literal class attribute, or an empty string if no class attribute set.
      */
   public func className() throws -> String {
-    return try String(decoding: attr(Element.classString).trim(), as: UTF8.self)
+    guard let attributes else { return "" }
+    let slice = try attributes.getIgnoreCaseSlice(key: Element.classString).trim()
+    return String(decoding: slice, as: UTF8.self)
   }
 
   /**
@@ -2434,7 +2442,8 @@ open class Element: Node {
      - returns: The literal class attribute, or an empty array if no class attribute set.
      */
   public func classNameUTF8() throws -> [UInt8] {
-    return try attr(Element.classString).trim()
+    guard let attributes else { return [] }
+    return try attributes.getIgnoreCaseSlice(key: Element.classString).trim().toArray()
   }
 
   /**
@@ -2445,8 +2454,9 @@ open class Element: Node {
      */
   @inlinable
   public func unorderedClassNamesUTF8() throws -> [ArraySlice<UInt8>] {
-    let input = try classNameUTF8()
-    var result = [ArraySlice<UInt8>]()
+    guard let attributes else { return [] }
+    let input = try attributes.getIgnoreCaseSlice(key: Element.classString)
+    var result: [ArraySlice<UInt8>] = []
     result.reserveCapacity(Int(ceil(CGFloat(input.underestimatedCount) / 10)))
     var i = 0
     let len = input.count
@@ -2464,7 +2474,8 @@ open class Element: Node {
       }
 
       if start < i {
-        result.append(input[start..<i])
+        let token = input[start..<i].toArray()
+        result.append(ArraySlice(token))
       }
     }
 
@@ -2479,7 +2490,8 @@ open class Element: Node {
      */
   @inlinable
   public func classNamesUTF8() throws -> OrderedSet<[UInt8]> {
-    let input = try classNameUTF8()
+    guard let attributes else { return OrderedSet<[UInt8]>() }
+    let input = try attributes.getIgnoreCaseSlice(key: Element.classString)
     let set = OrderedSet<[UInt8]>()
     var i = 0
     let len = input.count
@@ -2497,7 +2509,7 @@ open class Element: Node {
       }
 
       if start < i {
-        set.append(Array(input[start..<i]))
+        set.append(input[start..<i].toArray())
       }
     }
 
@@ -2511,30 +2523,21 @@ open class Element: Node {
      - returns: set of classnames, empty if no class attribute
      */
   public func classNames() throws -> OrderedSet<String> {
-    let utf8ClassName = try classNameUTF8()
+    guard let attributes else { return OrderedSet<String>() }
+    let utf8ClassName = try attributes.getIgnoreCaseSlice(key: Element.classString)
     let classNames = OrderedSet<String>()
-    var currentStartIndex: Int? = nil
-
-    for (i, byte) in utf8ClassName.enumerated() {
-      if byte.isWhitespace {
-        if let start = currentStartIndex {
-          let classBytes = utf8ClassName[start..<i]
-          if !classBytes.isEmpty {
-            classNames.append(String(decoding: classBytes, as: UTF8.self))
-          }
-          currentStartIndex = nil
-        }
-      } else {
-        if currentStartIndex == nil {
-          currentStartIndex = i
-        }
+    let len = utf8ClassName.count
+    var i = 0
+    while i < len {
+      while i < len && utf8ClassName[i].isWhitespace {
+        i += 1
       }
-    }
-
-    if let start = currentStartIndex {
-      let classBytes = utf8ClassName[start..<utf8ClassName.count]
-      if !classBytes.isEmpty {
-        classNames.append(String(decoding: classBytes, as: UTF8.self))
+      let start = i
+      while i < len && !utf8ClassName[i].isWhitespace {
+        i += 1
+      }
+      if start < i {
+        classNames.append(String(decoding: utf8ClassName[start..<i], as: UTF8.self))
       }
     }
 
@@ -2572,7 +2575,10 @@ open class Element: Node {
   // performance sensitive
   public func hasClass(_ className: [UInt8]) -> Bool {
     DebugTrace.log("Element.hasClass(bytes): \(String(decoding: className, as: UTF8.self))")
-    guard let classAttr = attributes?.get(key: Element.classString) else {
+    guard let attributes,
+      let classAttr = try? attributes.getIgnoreCaseSlice(key: Element.classString),
+      !classAttr.isEmpty
+    else {
       DebugTrace.log("Element.hasClass: no class attr")
       return false
     }
@@ -2583,11 +2589,11 @@ open class Element: Node {
       return false
     }
     if len == wantLen {
-      return className.equalsIgnoreCase(string: classAttr)
+      return StringUtil.equalsIgnoreCase(className, classAttr)
     }
 
     @inline(__always)
-    func equalsIgnoreCaseSlice(_ bytes: [UInt8], _ start: Int, _ length: Int, _ other: [UInt8])
+    func equalsIgnoreCaseSlice(_ bytes: ByteSlice, _ start: Int, _ length: Int, _ other: [UInt8])
       -> Bool
     {
       if length != other.count { return false }
@@ -2773,19 +2779,35 @@ open class Element: Node {
     return String(decoding: accum.buffer, as: UTF8.self)
   }
 
-  /**
-     Retrieves the element's inner HTML. E.g. on a `<div>` with one empty `<p>`, would return
-     `<p></p>`. (Whereas ``Node/outerHtml()`` would return `<div><p></p></div>`.)
-
-     - returns: String of HTML.
-     - seealso: ``Node/outerHtml()``
-     */
+  /// Retrieves this element's inner HTML as UTF-8 bytes.
+  ///
+  /// This is the recommended UTF-8 serializer for almost all callers. It uses
+  /// SwiftSoup's normal source-reuse behavior and rebuilds modified nodes as needed.
+  /// For a `<div>` containing one empty `<p>`, this returns `<p></p>`.
   @inline(__always)
   public func htmlUTF8() throws -> [UInt8] {
     let accum = StringBuilder.acquire(estimatedOuterHtmlCapacity())
     defer { StringBuilder.release(accum) }
     try html2(accum)
     return Array(getOutputSettings().prettyPrint() ? accum.buffer.trim() : accum.buffer)
+  }
+
+  // MARK: - Advanced serialization performance tuning
+
+  /// Serializes this element's children without reusing parsed source text.
+  ///
+  /// This is an advanced performance-tuning API. Most callers should use
+  /// ``htmlUTF8()``; disable source reuse only after benchmarking a workload
+  /// with dense mutations.
+  @inline(__always)
+  public func htmlUTF8WithoutSourceReuse() throws -> [UInt8] {
+    let accum = StringBuilder.acquire(estimatedOuterHtmlCapacity())
+    defer { StringBuilder.release(accum) }
+    let outputSettings = getOutputSettings()
+    for node in childNodes {
+      try node.outerHtmlFastWithoutSourceReuse(accum, 0, outputSettings)
+    }
+    return Array(outputSettings.prettyPrint() ? accum.buffer.trim() : accum.buffer)
   }
 
   @inline(__always)
@@ -3154,6 +3176,31 @@ extension Element {
   }
 
   @inline(__always)
+  private static func forEachClassNameWithUppercase(
+    in bytes: ByteSlice, _ visitor: (ByteSlice, Bool) -> Void
+  ) {
+    var i = 0
+    let len = bytes.count
+    while i < len {
+      while i < len && bytes[i].isWhitespace {
+        i &+= 1
+      }
+      let start = i
+      var hasUppercase = false
+      while i < len && !bytes[i].isWhitespace {
+        let b = bytes[i]
+        if !hasUppercase && b >= 65 && b <= 90 {
+          hasUppercase = true
+        }
+        i &+= 1
+      }
+      if start < i {
+        visitor(bytes[start..<i], hasUppercase)
+      }
+    }
+  }
+
+  @inline(__always)
   private func ensureDynamicAttributeValueIndexKey(_ key: ByteSlice) {
     guard Element.dynamicAttributeValueIndexMaxKeys > 0,
       !Element.isHotAttributeKey(key)
@@ -3196,9 +3243,9 @@ extension Element {
     DebugTrace.log(
       "Element.rebuildQueryIndexesCombined: tags=\(needsTags) classes=\(needsClasses) ids=\(needsIds) attrs=\(needsAttributes) hot=\(needsHotAttributes)"
     )
-    var tagIndex: [[UInt8]: [Weak<Element>]] = [:]
-    var classIndex: [[UInt8]: [Weak<Element>]] = [:]
-    var idIndex: [[UInt8]: [Weak<Element>]] = [:]
+    var tagIndex: [ByteSlice: [Weak<Element>]] = [:]
+    var classIndex: [ByteSlice: [Weak<Element>]] = [:]
+    var idIndex: [ByteSlice: [Weak<Element>]] = [:]
     var attributeIndex: [ByteSlice: [Weak<Element>]] = [:]
     var hotAttributeIndex: [ByteSlice: [ByteSlice: [Weak<Element>]]] = [:]
     let dynamicKeys = dynamicAttributeValueIndexKeySet
@@ -3224,19 +3271,19 @@ extension Element {
     traverseElementsDepthFirst { element in
       DebugTrace.log("rebuildQueryIndexesCombined: visiting \(element.tagName())")
       if needsTags {
-        let key = element.tagNameNormalUTF8()
+        let key = element.tagNameNormalSlice()
         tagIndex[key, default: []].append(Weak(element))
       }
       if needsClasses {
         DebugTrace.log("rebuildQueryIndexesCombined: classes for \(element.tagName())")
         if let attrs = element.attributes,
-          let classValue = try? attrs.getIgnoreCase(key: Element.classString),
+          let classValue = try? attrs.getIgnoreCaseSlice(key: Element.classString),
           !classValue.isEmpty
         {
           let trimmed = classValue.trim()
           if !trimmed.isEmpty {
             Element.forEachClassNameWithUppercase(in: trimmed) { className, hasUppercase in
-              let key = hasUppercase ? Array(className.lowercased()) : Array(className)
+              let key = hasUppercase ? className.lowercased() : className
               classIndex[key, default: []].append(Weak(element))
             }
           }
@@ -3245,7 +3292,7 @@ extension Element {
       if needsIds {
         DebugTrace.log("rebuildQueryIndexesCombined: ids for \(element.tagName())")
         if let attrs = element.attributes,
-          let idValue = try? attrs.getIgnoreCase(key: Element.idString),
+          let idValue = try? attrs.getIgnoreCaseSlice(key: Element.idString),
           !idValue.isEmpty
         {
           idIndex[idValue, default: []].append(Weak(element))
@@ -3321,13 +3368,13 @@ extension Element {
       return
     }
     /// Index build is depth‑first to preserve document order.
-    var newIndex: [[UInt8]: [Weak<Element>]] = [:]
+    var newIndex: [ByteSlice: [Weak<Element>]] = [:]
 
     let childNodeCount = childNodeSize()
     newIndex.reserveCapacity(childNodeCount * 4)
 
     traverseElementsDepthFirst { element in
-      let key = element.tagNameNormalUTF8()
+      let key = element.tagNameNormalSlice()
       newIndex[key, default: []].append(Weak(element))
     }
 
@@ -3337,7 +3384,7 @@ extension Element {
 
   @usableFromInline
   @inline(__always)
-  func tagQueryIndexForKey(_ key: [UInt8]) -> [Weak<Element>] {
+  func tagQueryIndexForKey(_ key: ByteSlice) -> [Weak<Element>] {
     if isTagQueryIndexDirty {
       normalizedTagNameIndex = nil
       isTagQueryIndexDirty = false
@@ -3352,12 +3399,17 @@ extension Element {
     let childNodeCount = childNodeSize()
     matches.reserveCapacity(max(4, childNodeCount / 8))
     traverseElementsDepthFirst { element in
-      if element.tagNameNormalUTF8() == key {
+      if element.tagNameNormalSlice() == key {
         matches.append(Weak(element))
       }
     }
     normalizedTagNameIndex?[key] = matches
     return matches
+  }
+
+  @inline(__always)
+  func tagQueryIndexForKey(_ key: [UInt8]) -> [Weak<Element>] {
+    return tagQueryIndexForKey(ByteSlice.fromArray(key))
   }
 
   @usableFromInline
@@ -3381,19 +3433,19 @@ extension Element {
     }
     DebugTrace.log("Element.rebuildQueryIndexesForAllClasses: solo rebuild")
     /// Index build is depth‑first to preserve document order.
-    var newIndex: [[UInt8]: [Weak<Element>]] = [:]
+    var newIndex: [ByteSlice: [Weak<Element>]] = [:]
     let childNodeCount = childNodeSize()
     newIndex.reserveCapacity(childNodeCount * 4)
 
     traverseElementsDepthFirst { element in
       if let attrs = element.attributes,
-        let classValue = try? attrs.getIgnoreCase(key: Element.classString),
+        let classValue = try? attrs.getIgnoreCaseSlice(key: Element.classString),
         !classValue.isEmpty
       {
         let trimmed = classValue.trim()
         if !trimmed.isEmpty {
           Element.forEachClassNameWithUppercase(in: trimmed) { className, hasUppercase in
-            let key = hasUppercase ? Array(className.lowercased()) : Array(className)
+            let key = hasUppercase ? className.lowercased() : className
             newIndex[key, default: []].append(Weak(element))
           }
         }
@@ -3422,14 +3474,14 @@ extension Element {
       return
     }
     /// Index build is depth‑first to preserve document order.
-    var newIndex: [[UInt8]: [Weak<Element>]] = [:]
+    var newIndex: [ByteSlice: [Weak<Element>]] = [:]
 
     let childNodeCount = childNodeSize()
     newIndex.reserveCapacity(childNodeCount)
 
     traverseElementsDepthFirst { element in
       if let attrs = element.attributes {
-        if let idValue = try? attrs.getIgnoreCase(key: Element.idString), !idValue.isEmpty {
+        if let idValue = try? attrs.getIgnoreCaseSlice(key: Element.idString), !idValue.isEmpty {
           newIndex[idValue, default: []].append(Weak(element))
         }
       }
