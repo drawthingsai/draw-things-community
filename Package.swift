@@ -8,7 +8,6 @@ let package = Package(
   products: [
     .executable(name: "gRPCServerCLI", targets: ["gRPCServerCLI"]),
     .executable(name: "draw-things-cli", targets: ["DrawThingsCLI"]),
-    .library(name: "LocalCodeApp", targets: ["LocalCodeApp"]),
     .library(name: "_MediaGenerationKit", targets: ["_MediaGenerationKit"]),
   ],
   dependencies: [
@@ -43,11 +42,6 @@ let package = Package(
     .package(
       url: "https://github.com/kelvin13/swift-png",
       revision: "075dfb248ae327822635370e9d4f94a5d3fe93b2"),
-    .package(name: "HighlighterSwift", path: "Vendors/HighlighterSwift"),
-    .package(name: "ExceptionCatcher", path: "Vendors/ExceptionCatcher"),
-    .package(name: "Nantes", path: "Vendors/Nantes"),
-    .package(name: "SnapKit", path: "Vendors/SnapKit"),
-    .package(name: "SwiftMath", path: "Vendors/SwiftMath"),
     .package(name: "SwiftSoup", path: "Vendors/SwiftSoup"),
     .package(
       url: "https://github.com/jpsim/Yams.git",
@@ -523,6 +517,83 @@ let package = Package(
       path: "Libraries/DeviceAttestation/Sources"
     ),
     .target(
+      name: "Localization",
+      path: "Libraries/Localization/Sources"
+    ),
+    .target(
+      name: "TextHistory",
+      dependencies: [
+        .product(name: "Dflat", package: "dflat"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+      ],
+      path: "Libraries/History",
+      exclude: [
+        "BUILD",
+        "Sources/clip.fbs",
+        "Sources/script_session.fbs",
+        "Sources/tensor_data.fbs",
+        "Sources/tensor_history.fbs",
+        "Sources/tensor_moodboard_data.fbs",
+        "Sources/text_history.fbs",
+        "Sources/text_lineage.fbs",
+        "Sources/thumbnail_history.fbs",
+        "Sources/thumbnail_history_half.fbs",
+        "Tests",
+      ],
+      sources: ["Sources/TextHistoryManager.swift", "PreGeneratedSPM"]
+    ),
+    .target(
+      name: "WebSearch",
+      dependencies: [
+        .product(name: "SwiftSoup", package: "SwiftSoup")
+      ],
+      path: "Libraries/WebSearch/Sources"
+    ),
+    .target(
+      name: "_MediaGenerationKit",
+      dependencies: [
+        "BinaryResources",
+        "ConfigurationZoo",
+        "DataModels",
+        "Diffusion",
+        "Downloader",
+        "GRPCImageServiceModels",
+        "ImageGenerator",
+        "LocalImageGenerator",
+        "ModelOp",
+        "RemoteImageGenerator",
+        "ModelZoo",
+        "ScriptDataModels",
+        "Tokenizer",
+        "GRPCServer",
+        .product(name: "Atomics", package: "swift-atomics"),
+        .product(name: "Dflat", package: "dflat"),
+        .product(name: "GRPC", package: "grpc-swift"),
+        .product(name: "Logging", package: "swift-log"),
+        .product(name: "NNC", package: "s4nnc"),
+        .product(name: "SQLiteDflat", package: "dflat"),
+        .product(name: "Crypto", package: "swift-crypto"),
+      ],
+      path: "Libraries/MediaGenerationKit/Sources"
+    ),
+  ]
+)
+
+// LocalCode sources and their app-only dependencies are not included in the community sync.
+// SwiftPM validates every declared path, even when building only a CLI product.
+let localCodePath = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+  .appendingPathComponent("Apps/LocalCode").path
+if FileManager.default.fileExists(atPath: localCodePath) {
+  package.products.append(.library(name: "LocalCodeApp", targets: ["LocalCodeApp"]))
+  package.dependencies += [
+    .package(name: "HighlighterSwift", path: "Vendors/HighlighterSwift"),
+    .package(name: "ExceptionCatcher", path: "Vendors/ExceptionCatcher"),
+    .package(name: "Nantes", path: "Vendors/Nantes"),
+    .package(name: "SnapKit", path: "Vendors/SnapKit"),
+    .package(name: "SwiftMath", path: "Vendors/SwiftMath"),
+  ]
+  package.targets += [
+    .target(
       name: "PrivacyPassClient",
       dependencies: [
         .product(name: "Crypto", package: "swift-crypto"),
@@ -540,10 +611,6 @@ let package = Package(
       dependencies: ["LinkTimeFlags"],
       path: "Libraries/Features/Sources",
       exclude: ["LinkTimeFlags.h"]
-    ),
-    .target(
-      name: "Localization",
-      path: "Libraries/Localization/Sources"
     ),
     .target(
       name: "Style",
@@ -581,28 +648,6 @@ let package = Package(
         .product(name: "SQLiteDflat", package: "dflat"),
       ],
       path: "Libraries/Components/Sources"
-    ),
-    .target(
-      name: "TextHistory",
-      dependencies: [
-        .product(name: "Dflat", package: "dflat"),
-        .product(name: "SQLiteDflat", package: "dflat"),
-      ],
-      path: "Libraries/History",
-      exclude: [
-        "BUILD",
-        "Sources/clip.fbs",
-        "Sources/script_session.fbs",
-        "Sources/tensor_data.fbs",
-        "Sources/tensor_history.fbs",
-        "Sources/tensor_moodboard_data.fbs",
-        "Sources/text_history.fbs",
-        "Sources/text_lineage.fbs",
-        "Sources/thumbnail_history.fbs",
-        "Sources/thumbnail_history_half.fbs",
-        "Tests",
-      ],
-      sources: ["Sources/TextHistoryManager.swift", "PreGeneratedSPM"]
     ),
     .target(
       name: "ProjectHistoryManager",
@@ -646,13 +691,6 @@ let package = Package(
     .target(
       name: "RemoteAPI",
       path: "Libraries/RemoteAPI/Sources"
-    ),
-    .target(
-      name: "WebSearch",
-      dependencies: [
-        .product(name: "SwiftSoup", package: "SwiftSoup")
-      ],
-      path: "Libraries/WebSearch/Sources"
     ),
     .target(
       name: "MarkdownEngine",
@@ -752,32 +790,5 @@ let package = Package(
       sources: ["Sources"],
       swiftSettings: [.define("LOCALCODE_CATALYST_ASAN")]
     ),
-    .target(
-      name: "_MediaGenerationKit",
-      dependencies: [
-        "BinaryResources",
-        "ConfigurationZoo",
-        "DataModels",
-        "Diffusion",
-        "Downloader",
-        "GRPCImageServiceModels",
-        "ImageGenerator",
-        "LocalImageGenerator",
-        "ModelOp",
-        "RemoteImageGenerator",
-        "ModelZoo",
-        "ScriptDataModels",
-        "Tokenizer",
-        "GRPCServer",
-        .product(name: "Atomics", package: "swift-atomics"),
-        .product(name: "Dflat", package: "dflat"),
-        .product(name: "GRPC", package: "grpc-swift"),
-        .product(name: "Logging", package: "swift-log"),
-        .product(name: "NNC", package: "s4nnc"),
-        .product(name: "SQLiteDflat", package: "dflat"),
-        .product(name: "Crypto", package: "swift-crypto"),
-      ],
-      path: "Libraries/MediaGenerationKit/Sources"
-    ),
   ]
-)
+}

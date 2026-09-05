@@ -25,6 +25,7 @@ Libraries/History
 Libraries/ImageGenerator
 Libraries/ImageSegmentation
 Libraries/LocalImageGenerator
+Libraries/Localization
 Libraries/RemoteImageGenerator
 Libraries/FrameCompression
 Libraries/GRPC
@@ -50,10 +51,13 @@ Scripts/
 Tools/
 Vendors/ZIPFoundation
 Vendors/SwiftSoup
+Vendors/Z3
+Vendors/Ripgrep
+Vendors/OpenSSH
+Vendors/OSH
 WORKSPACE.linux
 WORKSPACE.darwin
 SYNCLIST
 BUILD
 Package.swift
 Package.resolved
-AGENTS.md
