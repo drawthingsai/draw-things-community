@@ -364,12 +364,11 @@ public func MiniMaxH3(
   let refiner = H3TokenRefiner(
     hiddenSize: hiddenSize, sequenceLength: textLength,
     usesFlashAttention: usesFlashAttention)
-  // The released checkpoint does not fold condition_proj's 0.25 multiplier into its weights.
+  // UNet's weight loader scales the text bias by 1/4 to match the pre-scaled input.
   let textProjected = 4 * textInput(0.25 * text).to(.Float32)
   let textRows = refiner(textProjected)
-  let audioRows = 4 * audioInput(0.25 * audio).to(.Float32)
-  let videoRows =
-    4 * xEmbedder(0.25 * video).reshaped(.HWC(1, videoLength, hiddenSize)).to(.Float32)
+  let audioRows = audioInput(audio).to(.Float32)
+  let videoRows = xEmbedder(video).reshaped(.HWC(1, videoLength, hiddenSize)).to(.Float32)
   var out = Functional.concat(axis: 1, textRows, audioRows, videoRows)
   for layer in 0..<layers {
     // Keep FFN outliers in FP16 range; the residual branch restores the factor in FP32.

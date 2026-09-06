@@ -1447,6 +1447,7 @@ extension FirstStage {
     var tiledEncoding =
       tiledDiffusion.isEnabled
       && (startWidth > encodingTileSize.width || startHeight > encodingTileSize.height)
+    var temporalTiledEncodingConfiguration: (overlap: Int, trailingFrameDrop: Int)? = nil
     let causalAttentionMask: DynamicGraph.Tensor<Float>?
     switch version {
     case .minimaxH3:
@@ -1458,13 +1459,28 @@ extension FirstStage {
           [FloatType(1 / 0.229), FloatType(1 / 0.224), FloatType(1 / 0.225)], .GPU(0),
           .NHWC(1, 1, 1, 3)))
       x = invStd .* ((x + 1) * 0.5 - mean)
+      let frames = batchSize > 1 ? 17 : 1
+      if batchSize > 1 {
+        // Independent 17-frame clips produce 5 latents each; drop the final 3 latents.
+        if !tiledEncoding {
+          encodingTileSize.width = startWidth
+          encodingTileSize.height = startHeight
+        }
+        tiledEncoding = true
+        encodingTileSize.depth = 5
+        temporalTiledEncodingConfiguration = (overlap: 0, trailingFrameDrop: 3)
+      }
       let height = (tiledEncoding ? encodingTileSize.height : startHeight) * 16
       let width = (tiledEncoding ? encodingTileSize.width : startWidth) * 16
       encoder =
-        existingEncoder ?? MiniMaxH3VideoEncoder(frames: batchSize, height: height, width: width)
+        existingEncoder ?? MiniMaxH3VideoEncoder(frames: frames, height: height, width: width)
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
-        let input = x[0..<batchSize, 0..<height, 0..<width, 0..<shape[3]].copied()
+        var input = x[0..<min(batchSize, frames), 0..<height, 0..<width, 0..<shape[3]].copied()
+        if input.shape[0] < frames {
+          input = Pad(.replicate, begin: [0, 0, 0, 0], end: [frames - input.shape[0], 0, 0, 0])(
+            inputs: input)[0].as(of: FloatType.self)
+        }
         if highPrecision {
           encoder.compile(inputs: DynamicGraph.Tensor<Float>(from: input))
         } else {
@@ -2010,7 +2026,8 @@ extension FirstStage {
                 encoder: encoder,
                 tileSize: encodingTileSize,
                 tileOverlap: encodingTileOverlap,
-                scaleFactor: (scaleFactor, scaleFactorZ), outputChannels: outputChannels)), encoder
+                scaleFactor: (scaleFactor, scaleFactorZ), outputChannels: outputChannels,
+                temporalTiledEncodingConfiguration: temporalTiledEncodingConfiguration)), encoder
           )
         } else {
           return (
@@ -2030,7 +2047,8 @@ extension FirstStage {
                 DynamicGraph.Tensor<FloatType>(from: $0)
               }, encoder: encoder, tileSize: encodingTileSize,
               tileOverlap: encodingTileOverlap, scaleFactor: (scaleFactor, scaleFactorZ),
-              outputChannels: outputChannels),
+              outputChannels: outputChannels,
+              temporalTiledEncodingConfiguration: temporalTiledEncodingConfiguration),
             encoder
           )
         } else {
@@ -2058,7 +2076,8 @@ extension FirstStage {
                 encoder: encoder,
                 tileSize: encodingTileSize,
                 tileOverlap: encodingTileOverlap,
-                scaleFactor: (scaleFactor, scaleFactorZ), outputChannels: outputChannels))
+                scaleFactor: (scaleFactor, scaleFactorZ), outputChannels: outputChannels,
+                temporalTiledEncodingConfiguration: temporalTiledEncodingConfiguration))
         } else {
           result[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<outputChannels] = DynamicGraph
             .Tensor<
@@ -2077,7 +2096,8 @@ extension FirstStage {
               DynamicGraph.Tensor<FloatType>(from: $0)
             }, encoder: encoder, tileSize: encodingTileSize,
             tileOverlap: encodingTileOverlap, scaleFactor: (scaleFactor, scaleFactorZ),
-            outputChannels: outputChannels)
+            outputChannels: outputChannels,
+            temporalTiledEncodingConfiguration: temporalTiledEncodingConfiguration)
         } else {
           result[i..<(i + 1), 0..<startHeight, 0..<startWidth, 0..<outputChannels] = encoder(
             inputs: z,
@@ -2539,9 +2559,14 @@ extension FirstStage {
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, encoder: Model,
     tileSize: (depth: Int, width: Int, height: Int), tileOverlap: Int,
     scaleFactor: (spatial: Int, temporal: Int),
-    outputChannels: Int
+    outputChannels: Int,
+    temporalTiledEncodingConfiguration: (overlap: Int, trailingFrameDrop: Int)?
   ) -> DynamicGraph.Tensor<T> {
-    guard tileSize.depth > 1 && tileSize.depth < (z.shape[0] - 1) / scaleFactor.temporal + 1 else {
+    let temporalOverlap = temporalTiledEncodingConfiguration?.overlap ?? 5
+    guard
+      tileSize.depth > 1
+        && (temporalOverlap == 0 || tileSize.depth < (z.shape[0] - 1) / scaleFactor.temporal + 1)
+    else {
       return tiledEncode(
         z, causalAttentionMask: causalAttentionMask, encoder: encoder,
         tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap,
@@ -2564,8 +2589,15 @@ extension FirstStage {
       (startWidth - tileOverlap * 2 + (tileSize.width - tileOverlap * 2) - 1)
       / (tileSize.width - tileOverlap * 2)
     let graph = z.graph
-    var encodedRawValues = [Tensor<T>]()
-    let resultBatchSize = (shape[0] - 1) / scaleFactor.temporal + 1
+    let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
+    let resultBatchSize: Int
+    if temporalOverlap == 0 {
+      resultBatchSize =
+        (batchSize + tileDecodedDepth - 1) / tileDecodedDepth * tileSize.depth
+        - (temporalTiledEncodingConfiguration?.trailingFrameDrop ?? 0)
+    } else {
+      resultBatchSize = (shape[0] - 1) / scaleFactor.temporal + 1
+    }
     var result = Tensor<T>(
       Array(
         repeating: 0,
@@ -2574,12 +2606,20 @@ extension FirstStage {
     guard !isCancelled.load(ordering: .acquiring) else {
       return graph.variable(result.toGPU(0))
     }
-    let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
-    for t in stride(from: 0, to: resultBatchSize, by: max(1, tileSize.depth - 5)) {
-      let tDecodedStart = min(t * scaleFactor.temporal, batchSize - tileDecodedDepth)
+    for t in stride(from: 0, to: resultBatchSize, by: max(1, tileSize.depth - temporalOverlap)) {
+      var encodedRawValues = [Tensor<T>]()
+      let tDecodedStart: Int
+      let tOutputStart: Int
+      if temporalOverlap == 0 {
+        tDecodedStart = t / tileSize.depth * tileDecodedDepth
+        tOutputStart = t
+      } else {
+        tDecodedStart = min(t * scaleFactor.temporal, batchSize - tileDecodedDepth)
+        tOutputStart = tDecodedStart / scaleFactor.temporal
+      }
       let tEncodedStart: Int
       let isLast = t + tileSize.depth >= resultBatchSize
-      if t == 0 {
+      if t == 0 || temporalOverlap == 0 {
         tEncodedStart = 0
       } else if t + tileSize.depth > resultBatchSize {
         tEncodedStart = (t - (resultBatchSize - tileSize.depth)) + 3
@@ -2599,14 +2639,18 @@ extension FirstStage {
             iOfs: xOfs * scaleFactor.spatial, length: shape[2],
             tileSize: tileSize.width * scaleFactor.spatial,
             tileOverlap: tileOverlap * scaleFactor.spatial)
+          var input = z[
+            tDecodedStart..<min(tDecodedStart + tileDecodedDepth, batchSize),
+            inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad, 0..<channels
+          ].copied()
+          if input.shape[0] < tileDecodedDepth {
+            input = Pad(
+              .replicate, begin: [0, 0, 0, 0], end: [tileDecodedDepth - input.shape[0], 0, 0, 0])(
+                inputs: input)[0].as(of: T.self)
+          }
           encodedRawValues.append(
-            encoder(
-              inputs:
-                z[
-                  tDecodedStart..<(tDecodedStart + tileDecodedDepth), inputStartYPad..<inputEndYPad,
-                  inputStartXPad..<inputEndXPad,
-                  0..<channels
-                ].copied(), (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self).rawValue
+            encoder(inputs: input, (causalAttentionMask.map { [$0] } ?? []))[0].as(of: T.self)
+              .rawValue
               .toCPU())
           guard !isCancelled.load(ordering: .acquiring) else {
             return graph.variable(result.toGPU(0))
@@ -2618,12 +2662,14 @@ extension FirstStage {
         tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap)
       result.withUnsafeMutableBytes {
         guard let rfp = $0.baseAddress?.assumingMemoryBound(to: T.self) else { return }
-        for tEncoded in tEncodedStart..<tileSize.depth {
+        for tEncoded in tEncodedStart..<min(tileSize.depth, resultBatchSize - tOutputStart) {
           var fp =
-            rfp + (tEncoded + tDecodedStart / scaleFactor.temporal) * startWidth * startHeight
+            rfp + (tEncoded + tOutputStart) * startWidth * startHeight
             * outputChannels
           let tWeight: Float
-          if tEncoded - tEncodedStart < 2 && tEncodedStart != 0 {
+          if temporalOverlap == 0 {
+            tWeight = 1
+          } else if tEncoded - tEncodedStart < 2 && tEncodedStart != 0 {
             tWeight = min((Float(tEncoded - tEncodedStart) + 0.5) / 2, 1)
           } else if tileSize.depth - tEncoded <= 2 && !isLast {
             tWeight = min((Float(tileSize.depth - tEncoded) - 0.5) / 2, 1)

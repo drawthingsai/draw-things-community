@@ -3547,7 +3547,9 @@ extension LocalImageGenerator {
       }
       let graph = image.graph
       let batchSize = batchSize.0 - batchSize.1
-      let decodedSize = (batchSize - 1) * (version == .minimaxH3 ? 4 : 8) + 1
+      let decodedSize =
+        version == .minimaxH3
+        ? (batchSize == 1 ? 1 : (batchSize - 2) / 5 * 17 + 5) : (batchSize - 1) * 8 + 1
       let shape = image.shape
       var repeatedImage = graph.variable(
         .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
@@ -4965,8 +4967,11 @@ extension LocalImageGenerator {
           channels = 4
         }
         if audioHeight > 0 {
-          let audioFrames = Int(configuration.numFrames)
           let shape = x.shape
+          // Retain the packed audio prefix; its padding capacity changes with resolution.
+          let audioFrames = min(
+            shape[0] * firstPassStartWidth * firstPassAudioHeight,
+            shape[0] * startWidth * audioHeight)
           var audioLatents = graph.variable(
             .GPU(0), .HWC(1, shape[0] * startWidth * audioHeight, shape[3]), of: FloatType.self)
           audioLatents.full(0)
@@ -6318,7 +6323,7 @@ extension LocalImageGenerator {
       startWidth = image.shape[2] / 4 / scaleFactor
       startHeight = image.shape[1] / 4 / scaleFactor
       latentsZoomFactor = 4
-    } else if modelVersion == .wan22_5b {
+    } else if modelVersion == .wan22_5b || modelVersion == .minimaxH3 {
       startWidth = image.shape[2] / 16 / scaleFactor
       startHeight = image.shape[1] / 16 / scaleFactor
       latentsZoomFactor = 16

@@ -2443,6 +2443,21 @@ extension UNetFromNNC {
                     .rawValue.toCPU()
                 })
             }
+            // Match the text bias to the 1/4 pre-scaling of the context embedder input.
+            if version == .minimaxH3 && name.hasSuffix("[t-context_embedder-0-1]"),
+              let tensor = store.read(
+                name,
+                codec: [
+                  .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap), .q6p,
+                  .q8p, .i8x,
+                ])
+            {
+              return .final(
+                graph.withNoGrad {
+                  return (0.25 * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0))
+                    .rawValue.toCPU()
+                })
+            }
             if shouldOffload(name: name) {
               return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
             }
