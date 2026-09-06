@@ -1454,7 +1454,9 @@ extension FirstStage {
       let mean = graph.variable(
         Tensor<FloatType>([0.485, 0.456, 0.406], .GPU(0), .NHWC(1, 1, 1, 3)))
       let invStd = graph.variable(
-        Tensor<FloatType>([1 / 0.229, 1 / 0.224, 1 / 0.225], .GPU(0), .NHWC(1, 1, 1, 3)))
+        Tensor<FloatType>(
+          [FloatType(1 / 0.229), FloatType(1 / 0.224), FloatType(1 / 0.225)], .GPU(0),
+          .NHWC(1, 1, 1, 3)))
       x = invStd .* ((x + 1) * 0.5 - mean)
       let height = (tiledEncoding ? encodingTileSize.height : startHeight) * 16
       let width = (tiledEncoding ? encodingTileSize.width : startWidth) * 16
