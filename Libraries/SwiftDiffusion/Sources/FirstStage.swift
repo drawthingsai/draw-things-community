@@ -422,13 +422,14 @@ extension FirstStage {
       temporalTiledDecodingConfiguration = TemporalTiledDecodingConfiguration(
         overlap: 2, lookback: 0, overlapBlending: (trim: 0, offset: 0),
         frameDrop: (count: 3, interval: 20))
-      let tileHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      let tileWidth = tiledDecoding ? decodingTileSize.width : startWidth
-      decodingTileSize.height = tileHeight
-      decodingTileSize.width = tileWidth
-      if !tiledDecoding {
-        decodingTileOverlap = 0
+      if !tiledDecodingConfiguration.isEnabled {
+        // Use 256-pixel spatial tiles with 64-pixel overlap when tiling is disabled.
+        decodingTileSize.height = min(startHeight, 16)
+        decodingTileSize.width = min(startWidth, 16)
+        decodingTileOverlap = 2
       }
+      let tileHeight = decodingTileSize.height
+      let tileWidth = decodingTileSize.width
       // H3 always needs temporal trimming, including when only one spatial tile is used.
       tiledDecoding = true
       let dummy = graph.variable(

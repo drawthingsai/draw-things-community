@@ -232,7 +232,7 @@ public final class Parameters {
       commandLineFlag: "sharpness")
     shiftParameter = DoubleParameter(
       titleKey: "shift", explanationKey: "shift_detail",
-      defaultValue: Double(defaultConfiguration.shift), range: 0.1...8,
+      defaultValue: Double(defaultConfiguration.shift), range: 0.1...12,
       commandLineFlag: "shift")
     stage2StepsParameter = IntParameter(
       titleKey: "stage_2_steps", explanationKey: "stage_2_steps_detail",
