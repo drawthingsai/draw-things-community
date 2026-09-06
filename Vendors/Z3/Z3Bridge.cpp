@@ -1,4 +1,5 @@
 #include "Z3Bridge.h"
+#include "Z3Embedded.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -71,6 +72,7 @@ Z3BridgeResult Z3BridgeCheckSMT(const char *code, uint32_t timeoutMilliseconds) 
   if (code == nullptr) {
     return MakeResult(Z3BridgeStatusError, {}, "SMT-LIB input is null.");
   }
+  std::lock_guard lock(z3_embedded::runtime_mutex());
   try {
     z3::context context;
     z3::solver solver(context);

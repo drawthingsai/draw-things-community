@@ -1,5 +1,28 @@
 package(default_visibility = ["//visibility:public"])
 
+_EXCLUDED = [
+    "src/api/dotnet/**",
+    "src/api/java/**",
+    "src/api/julia/**",
+    "src/api/ml/**",
+    "src/api/python/**",
+    "src/test/**",
+]
+
+_SOURCES = glob(["src/**/*.cpp"], exclude = _EXCLUDED)
+_HEADERS = glob(["src/**/*.h", "src/**/*.hpp"], exclude = _EXCLUDED)
+_SHELL_SOURCES = glob(["src/shell/*.cpp"])
+
+genrule(
+    name = "embedded_sources",
+    srcs = _SOURCES + _HEADERS + ["scripts/VERSION.txt"],
+    outs = ["embedded/" + path for path in _SOURCES + _HEADERS],
+    cmd = "python3 $(execpath @//Vendors/Z3:embed.py) " +
+          "--source-root $$(dirname $$(dirname $(execpath scripts/VERSION.txt))) " +
+          "--output-root $(RULEDIR)/embedded " + " ".join(_SOURCES + _HEADERS),
+    tools = ["@//Vendors/Z3:embed.py"],
+)
+
 _GENERATED_HEADERS = [
     "generated/src/ackermannization/ackermannization_params.hpp",
     "generated/src/ackermannization/ackermannize_bv_tactic_params.hpp",
@@ -72,33 +95,8 @@ cc_library(
 
 cc_library(
     name = "z3",
-    srcs = glob(
-        ["src/**/*.cpp"],
-        exclude = [
-            "src/api/dotnet/**",
-            "src/api/java/**",
-            "src/api/julia/**",
-            "src/api/ml/**",
-            "src/api/python/**",
-            "src/shell/**",
-            "src/test/**",
-        ],
-    ) + _GENERATED_SOURCES,
-    hdrs = glob(
-        [
-            "src/**/*.def",
-            "src/**/*.h",
-            "src/**/*.hpp",
-        ],
-        exclude = [
-            "src/api/dotnet/**",
-            "src/api/java/**",
-            "src/api/ml/**",
-            "src/api/python/**",
-            "src/shell/**",
-            "src/test/**",
-        ],
-    ),
+    srcs = ["embedded/" + path for path in _SOURCES if path not in _SHELL_SOURCES] + _GENERATED_SOURCES,
+    hdrs = ["embedded/" + path for path in _HEADERS] + glob(["src/**/*.def"]),
     copts = [
         "-std=c++20",
         "-fvisibility=hidden",
@@ -113,10 +111,21 @@ cc_library(
         "_MP_INTERNAL",
     ],
     includes = [
+        "embedded/src",
+        "embedded/src/api",
+        "embedded/src/api/c++",
         "src",
-        "src/api",
-        "src/api/c++",
     ],
     linkstatic = True,
-    deps = [":generated_headers"],
+    deps = [
+        ":generated_headers",
+        "@//Vendors/Z3:embedded_support",
+    ],
+)
+
+cc_library(
+    name = "shell",
+    srcs = ["embedded/" + path for path in _SHELL_SOURCES],
+    copts = ["-std=c++20", "-Wno-unused-value"],
+    deps = [":z3"],
 )
