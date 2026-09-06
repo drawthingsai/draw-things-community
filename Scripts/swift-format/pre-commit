@@ -4,20 +4,15 @@ FILES=$(git diff --cached --name-only --diff-filter=ACMR "*.swift" | sed 's| |\\
 
 GIT_ROOT=$(git rev-parse --show-toplevel)
 
-# Bazel invocation may git clone some repositories, and override these env vars.
+# Bazel may initialize dependency repositories. Keep the hook's Git environment
+# out of those operations, while preserving it for staging below.
+(
+  unset $(git rev-parse --local-env-vars)
 
-_GIT_INDEX_FILE=$GIT_INDEX_FILE
-
-unset GIT_INDEX_FILE
-
-# Prettify all selected files
-export DYLD_FALLBACK_LIBRARY_PATH=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx
-echo "$FILES" | xargs -I {} bazel run --compilation_mode=opt --macos_minimum_os=15.0 @SwiftFormat//:swift-format -- format --configuration "$GIT_ROOT/.swift-format.json" -i "$GIT_ROOT/{}"
-
-export GIT_INDEX_FILE=$_GIT_INDEX_FILE
+  # Prettify all selected files
+  export DYLD_FALLBACK_LIBRARY_PATH=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx
+  echo "$FILES" | xargs -I {} bazel run --compilation_mode=opt --macos_minimum_os=15.0 @SwiftFormat//:swift-format -- format --configuration "$GIT_ROOT/.swift-format.json" -i "$GIT_ROOT/{}"
+) || exit $?
 
 # Add back the modified/prettified files to staging
 echo "$FILES" | xargs git add
-
-exit 0
-
