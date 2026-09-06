@@ -532,12 +532,16 @@ extension LCMSampler: Sampler {
           unets.append(unet)
         }
         let sigma = sigmas[timestep]
+        let timestepNext = i + 1 < timesteps.count ? timesteps[i + 1] : 0
         let cNoise: Float
+        let cNoiseNext: Float
         switch conditioning {
         case .noise:
           cNoise = discretization.noise(for: alphasCumprod[timestep])
+          cNoiseNext = discretization.noise(for: alphasCumprod[timestepNext])
         case .timestep:
           cNoise = Float(timestep)
+          cNoiseNext = Float(timestepNext)
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
@@ -571,7 +575,7 @@ extension LCMSampler: Sampler {
           newC = conditions
         }
         var etOut = unet(
-          timestep: cNoise, inputs: xIn, t.map { $0 + cfgCond }, newC,
+          timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t.map { $0 + cfgCond }, newC,
           extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: i,
@@ -617,7 +621,7 @@ extension LCMSampler: Sampler {
         let denoised = Functional.add(
           left: predictOriginalSample, right: x, leftScalar: cOut, rightScalar: cSkip)
         oldDenoised = denoised
-        let alphaPrev = alphasCumprod[i + 1 < timesteps.count ? timesteps[i + 1] : 0]
+        let alphaPrev = alphasCumprod[timestepNext]
         if i < sampling.steps - 1 {
           let noise = graph.variable(like: x)
           noise.randn(std: 1, mean: 0)

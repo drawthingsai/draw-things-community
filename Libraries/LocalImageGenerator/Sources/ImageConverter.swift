@@ -712,7 +712,7 @@ public enum ImageConverter {
       let taesd: ManagedMLModel?
       let isVideo: Bool
       switch version {
-      case .hiDreamO1:
+      case .hiDreamO1, .minimaxH3:
         return []
       case .flux1, .hiDreamI1, .zImage:
         imageHeight = shape[1] * 8
@@ -1223,6 +1223,78 @@ public enum ImageConverter {
     let imageHeight = shape[1]
     let imageWidth = shape[2]
     let channels = shape[3]
+    if version == .minimaxH3 {
+      guard channels == 24 else { return ([], false) }
+      let audioHeight = MiniMaxH3AudioHeight(
+        videoLatentFrames: batchSize, latentWidth: imageWidth)
+      let videoHeight = imageHeight - audioHeight
+      guard videoHeight > 0 else { return ([], false) }
+      return tensor.withUnsafeBytes {
+        guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
+          return ([], false)
+        }
+        var images = [CGImage]()
+        for frame in 0..<batchSize {
+          let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * videoHeight * 4)
+          let frameLatent = fp16 + frame * imageHeight * imageWidth * channels
+          for pixel in 0..<videoHeight * imageWidth {
+            let offset = pixel * channels
+            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11) = (
+              frameLatent[offset], frameLatent[offset + 1], frameLatent[offset + 2],
+              frameLatent[offset + 3], frameLatent[offset + 4], frameLatent[offset + 5],
+              frameLatent[offset + 6], frameLatent[offset + 7], frameLatent[offset + 8],
+              frameLatent[offset + 9], frameLatent[offset + 10], frameLatent[offset + 11]
+            )
+            let (v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23) = (
+              frameLatent[offset + 12], frameLatent[offset + 13], frameLatent[offset + 14],
+              frameLatent[offset + 15], frameLatent[offset + 16], frameLatent[offset + 17],
+              frameLatent[offset + 18], frameLatent[offset + 19], frameLatent[offset + 20],
+              frameLatent[offset + 21], frameLatent[offset + 22], frameLatent[offset + 23]
+            )
+            let r: FloatType =
+              (-0.018555 * v0 + 0.150164 * v1 + 0.027367 * v2 - 0.000793 * v3 - 0.048556 * v4
+                + 0.011740 * v5 + 0.061517 * v6 + 0.035321 * v7 - 0.017426 * v8 + 0.531539
+                * v9 - 0.024968 * v10 - 0.032549 * v11 + 0.022609 * v12 - 0.084001 * v13
+                - 0.018830 * v14 + 0.020777 * v15 - 0.008390 * v16 - 0.013281 * v17 + 0.000260
+                * v18 + 0.105471 * v19 + 0.016529 * v20 - 0.014015 * v21 - 0.033787 * v22
+                + 0.004224 * v23 + 0.057426) * 127.5 + 127.5
+            let g: FloatType =
+              (0.024344 * v0 + 0.137244 * v1 - 0.050369 * v2 - 0.164622 * v3 + 0.013970 * v4
+                + 0.014172 * v5 + 0.061212 * v6 + 0.086879 * v7 + 0.002997 * v8 + 0.548819
+                * v9 - 0.040234 * v10 - 0.029096 * v11 + 0.020286 * v12 - 0.038131 * v13
+                + 0.010412 * v14 + 0.011196 * v15 - 0.012201 * v16 - 0.002924 * v17 + 0.001833
+                * v18 + 0.100482 * v19 + 0.015213 * v20 - 0.017438 * v21 - 0.009984 * v22
+                + 0.017284 * v23 - 0.022078) * 127.5 + 127.5
+            let b: FloatType =
+              (-0.017536 * v0 + 0.129221 * v1 - 0.208606 * v2 - 0.323161 * v3 - 0.074286 * v4
+                - 0.006906 * v5 + 0.110025 * v6 + 0.110059 * v7 + 0.035356 * v8 + 0.624404
+                * v9 - 0.034302 * v10 - 0.017221 * v11 + 0.050661 * v12 - 0.020805 * v13
+                + 0.061120 * v14 - 0.030994 * v15 - 0.025687 * v16 + 0.006331 * v17 - 0.011038
+                * v18 + 0.132106 * v19 + 0.009999 * v20 - 0.019134 * v21 - 0.019725 * v22
+                + 0.027196 * v23 - 0.071449) * 127.5 + 127.5
+            bytes[pixel * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+            bytes[pixel * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+            bytes[pixel * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+            bytes[pixel * 4 + 3] = 255
+          }
+          images.append(
+            CGImage(
+              width: imageWidth, height: videoHeight, bitsPerComponent: 8, bitsPerPixel: 32,
+              bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
+              bitmapInfo: CGBitmapInfo(
+                rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                  | CGImageAlphaInfo.noneSkipLast.rawValue),
+              provider: CGDataProvider(
+                dataInfo: nil, data: bytes, size: imageWidth * videoHeight * 4,
+                releaseData: { _, p, _ in
+                  p.deallocate()
+                })!, decode: nil, shouldInterpolate: false,
+              intent: CGColorRenderingIntent.defaultIntent
+            )!)
+        }
+        return (images, false)
+      }
+    }
     if version == .hiDreamO1 {
       let patchSize = 32
       guard channels == 3 * patchSize * patchSize else { return ([], false) }
@@ -1436,7 +1508,7 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
-        case .hiDreamO1, .ltx2, .ltx2_3:
+        case .hiDreamO1, .ltx2, .ltx2_3, .minimaxH3:
           bytes.deallocate()
           continue
         case .hunyuanVideo:

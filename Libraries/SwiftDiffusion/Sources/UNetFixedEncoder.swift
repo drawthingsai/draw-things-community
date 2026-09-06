@@ -58,7 +58,7 @@ extension UNetFixedEncoder {
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
       .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -203,7 +203,7 @@ extension UNetFixedEncoder {
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
       .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -249,6 +249,78 @@ extension UNetFixedEncoder {
       externalOnDemand
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     switch version {
+    case .minimaxH3:
+      precondition(lora.isEmpty, "MiniMax H3 LoRA loading is not supported yet.")
+      let videoLatentFrames = batchSize
+      let audioHeight = MiniMaxH3AudioHeight(
+        videoLatentFrames: videoLatentFrames, latentWidth: startWidth)
+      let frames =
+        videoLatentFrames == 1 ? 1 : (videoLatentFrames - 2) / 5 * 17 + 5
+      let audioRows =
+        2
+        * Int(
+          (Double(frames) / Double(MiniMaxH3Configuration.framesPerSecond) * 40).rounded())
+      let videoHeight = startHeight - audioHeight
+      let textLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
+      let textBatchSize = isCfgEnabled ? 2 : 1
+      let textBatchOffset = isCfgEnabled ? 0 : textEncoding[0].shape[0] - 1
+      let text = textEncoding[0][
+        textBatchOffset..<(textBatchOffset + textBatchSize), 0..<textLength,
+        0..<textEncoding[0].shape[2]
+      ].copied()
+      let mediaLength = audioRows + videoLatentFrames * videoHeight / 2 * (startWidth / 2)
+      var rotary = graph.variable(
+        .GPU(0), .NHWC(textBatchSize, textLength + mediaLength, 1, 128), of: FloatType.self)
+      rotary.full(0)
+      let textLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
+      for (batch, length) in textLengths.enumerated() {
+        let embedding = graph.variable(
+          Tensor<FloatType>(
+            from: MiniMaxH3RotaryEmbedding(
+              textLength: length, audioLength: audioRows, videoFrames: videoLatentFrames,
+              videoHeight: videoHeight, videoWidth: startWidth)
+          ).toGPU(0))
+        rotary[batch..<(batch + 1), 0..<length, 0..<1, 0..<128] =
+          embedding[0..<1, 0..<length, 0..<1, 0..<128]
+        rotary[batch..<(batch + 1), textLength..<(textLength + mediaLength), 0..<1, 0..<128] =
+          embedding[0..<1, length..<(length + mediaLength), 0..<1, 0..<128]
+      }
+      var frequencies = Tensor<Float>(.CPU, .HWC(timesteps.count, 2, 256))
+      for index in timesteps.indices {
+        let videoSigma = timesteps[index] / 1_000
+        let audioSigma = MiniMaxH3AudioSigma(forVideoSigma: videoSigma)
+        for (modality, timestep) in [1 - videoSigma, 1 - audioSigma].enumerated() {
+          frequencies[
+            index..<(index + 1), modality..<(modality + 1),
+            0..<256
+          ] = timeEmbedding(
+            timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000
+          ).reshaped(.HWC(1, 1, 256))
+        }
+      }
+      let timestepFrequencies = graph.variable(Tensor<FloatType>(from: frequencies).toGPU(0))
+      let unetFixed = MiniMaxH3Fixed(
+        timesteps: timesteps.count, hiddenSize: 5_376, layers: 50)
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: timestepFrequencies)
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      if !loadedFromWeightsCache {
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          try! store.read(
+            "dit", model: unetFixed, strict: true,
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      let fixedConditions = unetFixed(inputs: timestepFrequencies).map {
+        $0.as(of: FloatType.self)
+      }
+      let fixedConditionCount = 50 * 18 + 4
+      precondition(fixedConditions.count == fixedConditionCount)
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      return ([text, rotary] + fixedConditions, nil)
     case .ideogram4:
       let c0 = textEncoding[0]
       let featureLength = c0.shape[2]
@@ -990,7 +1062,7 @@ extension UNetFixedEncoder {
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-        .longcatVideoAvatar1_5:
+        .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
       }
       var timeEmbeds = graph.variable(

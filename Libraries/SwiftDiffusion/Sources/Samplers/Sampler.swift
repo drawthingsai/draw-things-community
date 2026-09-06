@@ -36,6 +36,7 @@ public enum ModelVersion: String, Codable {
   case seedvr2_3b = "seedvr2_3b"
   case seedvr2_7b = "seedvr2_7b"
   case longcatVideoAvatar1_5 = "longcat_video_avatar_v1.5"
+  case minimaxH3 = "minimax_h3"
 }
 
 public enum TextEncoderVersion: String, Codable {
@@ -460,7 +461,7 @@ func isBatchEnabled(_ version: ModelVersion) -> Bool {
     .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2:
     return true
   case .hunyuanVideo, .svdI2v, .wan21_14b, .wan21_1_3b, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
-    .seedvr2_7b, .longcatVideoAvatar1_5:
+    .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3:
     return false
   }
 }

@@ -106,6 +106,9 @@ public enum ComputeUnits {
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 4 + 1))
     case .ltx2, .ltx2_3:
       return (cfgChannels, max(1, (Int(configuration.numFrames) - 1) / 8 + 1))
+    case .minimaxH3:
+      let frames = Int(configuration.numFrames)
+      return (cfgChannels, frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2)
     }
   }
 
@@ -132,7 +135,7 @@ public enum ComputeUnits {
       return paddedLength
     }
     switch version {
-    case .flux1:
+    case .flux1, .minimaxH3:
       return 512
     case .hunyuanVideo:
       return 256
@@ -163,7 +166,7 @@ public enum ComputeUnits {
         Int((Double(rawWidth) * 3.0 / 2.0).rounded(.up)),
         Int((Double(rawHeight) * 3.0 / 2.0).rounded(.up))
       )
-    case .wan22_5b:
+    case .wan22_5b, .minimaxH3:
       return (rawWidth * 4, rawHeight * 4)
     case .ltx2, .ltx2_3:
       return (rawWidth * 2, rawHeight * 2)
@@ -210,6 +213,18 @@ public enum ComputeUnits {
       * referenceImageCount(context: context, hasImage: hasImage, shuffleCount: shuffleCount)
 
     switch context.modelVersion {
+    case .minimaxH3:
+      let frames = numFrames == 1 ? 1 : (numFrames - 2) / 5 * 17 + 5
+      let audioLength =
+        2
+        * Int(
+          (Double(frames) / Double(MiniMaxH3Configuration.framesPerSecond) * 40).rounded())
+      let mainCount = MiniMaxH3InstructionCount(
+        videoTime: numFrames, videoHeight: startHeight, videoWidth: startWidth,
+        audioLength: audioLength, textLength: baseTokenLength)
+      let fixedCount = MiniMaxH3FixedInstructionCount(
+        timesteps: max(1, Int(configuration.steps)), hiddenSize: 5_376, layers: 50)
+      return (main: mainCount * batchSize, fixed: fixedCount)
     case .v1:
       let mainCount = UNetInstructionCount(
         batchSize: 1, embeddingLength: tokenLengths, startWidth: startWidth,

@@ -445,6 +445,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (Ideogram 4)"
     case .krea2:
       return " (Krea 2)"
+    case .minimaxH3:
+      return " (MiniMax H3)"
     }
   }
 

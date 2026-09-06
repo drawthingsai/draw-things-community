@@ -185,7 +185,7 @@ public struct ImageGeneratorUtils {
       .seedvr2_7b, .ideogram4, .krea2:
       return false
     case .hunyuanVideo, .svdI2v, .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       return true
     }
   }

@@ -508,12 +508,16 @@ extension DPMPPSDESampler: Sampler {
           refinerKickIn = -1
           unets.append(unet)
         }
+        let nextAlphaCumprod = discretization.alphaCumprod(from: sigmas[i + 1])
         let cNoise: Float
+        let cNoiseNext: Float
         switch conditioning {
         case .noise:
           cNoise = discretization.noise(for: alphaCumprod)
+          cNoiseNext = discretization.noise(for: nextAlphaCumprod)
         case .timestep:
           cNoise = timestep
+          cNoiseNext = discretization.timestep(for: nextAlphaCumprod)
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
@@ -549,7 +553,8 @@ extension DPMPPSDESampler: Sampler {
               controlNets: &controlNets)
           let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
           var etCond = unet(
-            timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
+            timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, cCond,
+            extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
             step: i, tokenLengthUncond: tokenLengthUncond,
@@ -563,7 +568,8 @@ extension DPMPPSDESampler: Sampler {
             xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
             let cUncond = Array([conditions[0]] + conditions[(1 + (conditions.count - 1) / 2)...])
             let etUncond = unet(
-              timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
+              timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, cUncond,
+              extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
               step: i, tokenLengthUncond: tokenLengthUncond,
@@ -611,7 +617,8 @@ extension DPMPPSDESampler: Sampler {
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let etOut = unet(
-            timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
+            timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, conditions,
+            extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
             step: i, tokenLengthUncond: tokenLengthUncond,
@@ -726,7 +733,8 @@ extension DPMPPSDESampler: Sampler {
               controlNets: &controlNets)
             let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
             var etCond = unet(
-              timestep: timestep, inputs: xIn, t, cCond, extraProjection: extraProjection,
+              timestep: (now: timestep, next: cNoiseNext), inputs: xIn, t, cCond,
+              extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
               step: i, tokenLengthUncond: tokenLengthUncond,
@@ -740,7 +748,8 @@ extension DPMPPSDESampler: Sampler {
               xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
               let cUncond = Array([conditions[0]] + conditions[(1 + (conditions.count - 1) / 2)...])
               let etUncond = unet(
-                timestep: timestep, inputs: xIn, t, cUncond, extraProjection: extraProjection,
+                timestep: (now: timestep, next: cNoiseNext), inputs: xIn, t, cUncond,
+                extraProjection: extraProjection,
                 injectedControlsAndAdapters: injectedControlsAndAdapters,
                 injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
                 step: i,
@@ -794,7 +803,8 @@ extension DPMPPSDESampler: Sampler {
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
             let etOut = unet(
-              timestep: timestep, inputs: xIn, t, conditions, extraProjection: extraProjection,
+              timestep: (now: timestep, next: cNoiseNext), inputs: xIn, t, conditions,
+              extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
               step: i, tokenLengthUncond: tokenLengthUncond,

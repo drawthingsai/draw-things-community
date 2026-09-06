@@ -13,6 +13,8 @@ public struct FailableDecodable<T: Decodable>: Decodable {
 public struct ModelZoo: DownloadZoo {
   public static func humanReadableNameForVersion(_ version: ModelVersion) -> String {
     switch version {
+    case .minimaxH3:
+      return "MiniMax H3"
     case .longcatVideoAvatar1_5:
       return "LongCat-Video Avatar 1.5"
     case .v1:
@@ -867,6 +869,45 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3) is a significant update to LTX-2 with improved audio and visual quality and enhanced prompt adherence. It is a state-of-the-art open-source audio-video foundation model developed by Lightricks and can generate synchronized video and audio within a single model. The [distilled] checkpoint is the distilled version of the full model and is optimized for fast inference; for best results, use 8 sampling steps and set Text Guidance to 1.0.",
       copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
+    ),
+    Specification(
+      name: "MiniMax H3 (Exact)", file: "minimax_h3_f16.ckpt", prefix: "",
+      version: .minimaxH3, defaultScale: 12,
+      textEncoder: "qwen_3_vl_32b_50_i8x.ckpt",
+      autoencoder: "minimax_h3_vae_f16.ckpt",
+      objective: .u(conditionScale: 1_000),
+      latentsMean: [
+        0.85809034, -0.96065915, 1.066164, -0.50903255, -0.2727582, -1.3675414,
+        -0.2553255, -0.26907554, -0.5376841, -0.04640973, 0.66573703, 0.19690128,
+        -0.5460608, -0.4035342, -0.23683025, 0.25928453, -0.30133945, 0.21134199,
+        -1.1206849, 0.35819334, -0.042251438, 0.260483, 0.22864093, 0.7056032,
+      ],
+      latentsStd: [
+        1.2223774, 1.2767264, 1.6831775, 1.7549455, 1.5636216, 2.1941435,
+        0.9653138, 1.0569886, 0.8419489, 0.7729953, 1.8955938, 0.94684184,
+        0.79968095, 0.449889, 0.71974, 0.6936293, 2.961095, 2.76942,
+        3.0496185, 2.1088054, 3.2762263, 3.1627357, 2.2816813, 2.6127844,
+      ],
+      audioLatentsMean: [
+        -0.020211687, 0.38764665, -0.0439828, -0.28591514, 0.08179686, -0.3578264,
+        0.04062381, -0.01552535, -0.22336248, 0.18210068, 0.2941779, -0.07901168,
+        -0.056815073, -0.36990282, -0.31616315, 0.5905951, -0.05213957, 0.01367316,
+        -0.03691648, 0.09732661, -0.33946624, -0.30685678, -0.24504599, -0.03469852,
+        0.02868032, -0.2121778, -0.16782632, 0.3221288, -0.12230559, 0.43566048,
+        -0.05025992, 0.39792585,
+      ],
+      audioLatentsStd: [
+        1.6895524, 2.7626374, 1.7945344, 1.6801682, 1.6390227, 2.7788298, 1.765909,
+        1.6199758, 2.6336527, 1.8539357, 2.5056498, 1.8110192, 1.9579657, 1.6685498,
+        1.4922469, 3.2986703, 1.9491805, 1.8720003, 1.833408, 1.648807, 1.6176958,
+        1.9131449, 1.5695245, 1.6943659, 1.8318421, 1.5540638, 1.9344931, 1.5991982,
+        1.718046, 1.630722, 1.8661226, 1.5613768,
+      ],
+      latentsScalingFactor: 1,
+      framesPerSecond: 24,
+      note:
+        "MiniMax H3 jointly generates video and synchronized stereo audio. Suggested starting settings: 50 DDIM Trailing steps, shift 12, Text Guidance 1, and 1 or 17n+5 frames (124 by default).",
+      copyright: "© MiniMax"
     ),
     Specification(
       name: "LTX-2.3 22B [distilled] 1.1 (8-bit S)", file: "ltx_2.3_22b_distilled_1.1_i8x.ckpt",
@@ -2820,7 +2861,7 @@ public struct ModelZoo: DownloadZoo {
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
       .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       return .u(conditionScale: 1000)
     }
   }
@@ -2836,7 +2877,7 @@ public struct ModelZoo: DownloadZoo {
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
       .flux2_9b, .flux2_4b,
       .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       return .timestep
     case .svdI2v:
       return .noise
@@ -2870,7 +2911,7 @@ public struct ModelZoo: DownloadZoo {
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
       .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     }
   }
@@ -2884,7 +2925,7 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .kandinsky21, .wurstchenStageB,
       .wurstchenStageC, .sd3, .sd3Large:
       return 77
-    case .pixart:
+    case .pixart, .minimaxH3:
       return 0
     case .auraflow:
       return 256
@@ -2925,6 +2966,11 @@ public struct ModelZoo: DownloadZoo {
       return (nil, nil, 0.13025, nil, nil, nil)
     case .kandinsky21, .hiDreamO1:
       return (nil, nil, 1, nil, nil, nil)
+    case .minimaxH3:
+      return (
+        specification.latentsMean, specification.latentsStd, 1, nil,
+        audioLatentsMean, audioLatentsStd
+      )
     case .wurstchenStageC, .wurstchenStageB:
       return (nil, nil, 2.32558139535, nil, nil, nil)
     case .sd3, .sd3Large:
@@ -3290,6 +3336,8 @@ public struct ModelZoo: DownloadZoo {
       return 24_000
     case .longcatVideoAvatar1_5:
       return 16_000
+    case .minimaxH3:
+      return 32_000
     case .ltx2:
       return 24_000
     case .ltx2_3:
@@ -3344,7 +3392,7 @@ public struct ModelZoo: DownloadZoo {
       return 25
     case .wan21_1_3b, .wan21_14b, .qwenImage:
       return 16
-    case .wan22_5b:
+    case .wan22_5b, .minimaxH3:
       return 24
     case .ltx2, .ltx2_3:
       return 25
@@ -3378,7 +3426,7 @@ public struct ModelZoo: DownloadZoo {
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
         .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
         .ltx2_3, .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2,
-        .longcatVideoAvatar1_5:
+        .longcatVideoAvatar1_5, .minimaxH3:
         return nil
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
@@ -3484,6 +3532,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 9 * 1_024 * 1_024 * 1_024
       case .krea2:
         return fileSize < 9 * 1_024 * 1_024 * 1_024
+      case .minimaxH3:
+        return fileSize < 28 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -3560,6 +3610,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 18 * 1_024 * 1_024 * 1_024
       case .krea2:
         return fileSize < 13 * 1_024 * 1_024 * 1_024
+      case .minimaxH3:
+        return fileSize < 36 * 1_024 * 1_024 * 1_024
       }
     }
     return false
@@ -3695,7 +3747,7 @@ extension ModelZoo {
     switch version {
     case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .svdI2v, .wan22_5b, .zImage,
       .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
-      .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+      .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return false
     case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,
       .ssd1b, .kandinsky21, .wurstchenStageB, .wurstchenStageC:

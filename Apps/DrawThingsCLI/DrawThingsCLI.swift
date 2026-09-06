@@ -1086,6 +1086,14 @@ private enum RecommendedSettingsResolver {
       builder.sampler = .dDIMTrailing
       builder.numFrames = 93
       builder.shift = 7
+    } else if modelSpecification.version == .minimaxH3 {
+      builder.steps = 50
+      builder.guidanceScale = 1
+      builder.sampler = .dDIMTrailing
+      builder.startWidth = 21
+      builder.startHeight = 12
+      builder.numFrames = 124
+      builder.shift = 12
     }
     return builder.build()
   }
@@ -1634,7 +1642,7 @@ private func defaultImportedModelDisplayName(for artifactURL: URL) -> String {
 
 private func defaultImportScale(for version: ModelVersion, artifactFileName: String) -> UInt16 {
   switch version {
-  case .hunyuanVideo, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
+  case .hunyuanVideo, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5, .minimaxH3:
     return 12
   case .wan21_1_3b:
     return 8
@@ -1664,7 +1672,7 @@ private func validateCustomTextEncoderSupport(
   case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
     .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
     .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-    .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+    .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
     throw ValidationError(
       "Custom text encoder import is not supported for \(ModelZoo.humanReadableNameForVersion(version))."
     )
@@ -1692,7 +1700,7 @@ private func projectedImportedOutputFiles(
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
       .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       break
     }
   }
@@ -3515,6 +3523,13 @@ private func validateLongCatTemporalFrameCount(_ frames: Int, flag: String) thro
   }
 }
 
+private func validateMiniMaxH3TemporalFrameCount(_ frames: Int, flag: String) throws {
+  guard frames == 1 || ((5...362).contains(frames) && frames % 17 == 5) else {
+    throw ValidationError(
+      "\(flag) must be 1, or 17k + 5 in the supported 5...362 range for MiniMax H3.")
+  }
+}
+
 private func createConfiguration(
   modelSpecification: ModelZoo.Specification, steps: Int?, cfg: Float?, width: Int?, height: Int?,
   frames: Int?, seed: UInt32?, strength: Float?, configJSON: String?, configFile: String?,
@@ -3548,8 +3563,11 @@ private func createConfiguration(
   }
   if let frames {
     guard frames >= 1 else { throw ValidationError("--frames must be >= 1") }
-    if ModelZoo.versionForModel(modelSpecification.file) == .longcatVideoAvatar1_5 {
+    let version = ModelZoo.versionForModel(modelSpecification.file)
+    if version == .longcatVideoAvatar1_5 {
       try validateLongCatTemporalFrameCount(frames, flag: "--frames")
+    } else if version == .minimaxH3 {
+      try validateMiniMaxH3TemporalFrameCount(frames, flag: "--frames")
     }
     builder.numFrames = UInt32(frames)
   }
@@ -3562,6 +3580,8 @@ private func createConfiguration(
   }
   if ModelZoo.versionForModel(modelSpecification.file) == .longcatVideoAvatar1_5 {
     try validateLongCatTemporalFrameCount(Int(builder.numFrames), flag: "LongCat frame count")
+  } else if ModelZoo.versionForModel(modelSpecification.file) == .minimaxH3 {
+    try validateMiniMaxH3TemporalFrameCount(Int(builder.numFrames), flag: "MiniMax H3 frame count")
   }
   return ResolvedGenerationConfiguration(
     configuration: builder.build(),

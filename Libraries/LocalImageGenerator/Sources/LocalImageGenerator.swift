@@ -164,7 +164,7 @@ extension LocalImageGenerator {
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
       .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
       .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       samplingTimesteps = []
       samplingSigmas = []
     }
@@ -1608,6 +1608,12 @@ extension LocalImageGenerator {
         result.8 = result.8 - 34
         return result
       }
+    case .minimaxH3:
+      return tokenize(
+        graph: graph, tokenizer: tokenizerQwen3, text: text.isEmpty ? " " : text,
+        negativeText: negativeText.isEmpty ? " " : negativeText,
+        paddingToken: nil, addSpecialTokens: false, conditionalLength: 5120, modifier: .qwen3,
+        potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
     case .zImage:
       let promptWithTemplate =
         "<|im_start|>user\n\(text)<|im_end|>\n<|im_start|>assistant\n"
@@ -3271,7 +3277,7 @@ extension LocalImageGenerator {
       case .ltx2, .ltx2_3:
         fatalError()
       case .auraflow, .flux1, .kandinsky21, .pixart, .hunyuanVideo, .seedvr2_3b, .seedvr2_7b,
-        .ideogram4:
+        .ideogram4, .minimaxH3:
         break
       }
     }
@@ -3376,6 +3382,8 @@ extension LocalImageGenerator {
         fatalError()
       case .hunyuanVideo:
         fatalError()
+      case .minimaxH3:
+        return (nil, [])
       }
     case .canny:
       switch version {
@@ -3383,7 +3391,7 @@ extension LocalImageGenerator {
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
         .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-        .longcatVideoAvatar1_5:
+        .longcatVideoAvatar1_5, .minimaxH3:
         return (nil, [])
       case .flux1:
         guard
@@ -3408,7 +3416,7 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4, .krea2:
+        .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
         return (nil, [])
       case .longcatVideoAvatar1_5:
         // ai2v: the reference image becomes the clean first latent frame substituted during
@@ -3493,7 +3501,7 @@ extension LocalImageGenerator {
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .flux1, .qwenImage, .cosmos2_5_2b,
         .flux2,
-        .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .flux2_9b, .flux2_4b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
         return x
       case .ltx2, .ltx2_3, .longcatVideoAvatar1_5:
         guard let firstFrame = imageCond.1.first else { return x }
@@ -3513,7 +3521,7 @@ extension LocalImageGenerator {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1, .hiDreamI1, .hiDreamO1, .qwenImage,
       .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .seedvr2_3b,
-      .seedvr2_7b, .ideogram4, .krea2:
+      .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
       return false
     case .svdI2v:
       return true
@@ -3533,13 +3541,13 @@ extension LocalImageGenerator {
       .flux2_4b,
       .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (1, image, nil)
-    case .ltx2, .ltx2_3:
+    case .ltx2, .ltx2_3, .minimaxH3:
       guard forSample else {
         return (1, image, nil)
       }
       let graph = image.graph
       let batchSize = batchSize.0 - batchSize.1
-      let decodedSize = (batchSize - 1) * 8 + 1
+      let decodedSize = (batchSize - 1) * (version == .minimaxH3 ? 4 : 8) + 1
       let shape = image.shape
       var repeatedImage = graph.variable(
         .GPU(0), .NHWC(decodedSize, shape[1], shape[2], shape[3]), of: FloatType.self)
@@ -3634,7 +3642,7 @@ extension LocalImageGenerator {
       .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB,
       .wurstchenStageC, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
-      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
       return (batchSize, 0)
     }
   }
@@ -3717,7 +3725,7 @@ extension LocalImageGenerator {
       return result
     case .flux2, .flux2_9b, .flux2_4b:
       fatalError()
-    case .ltx2, .ltx2_3:
+    case .ltx2, .ltx2_3, .minimaxH3:
       fatalError()
     }
   }
@@ -4094,6 +4102,21 @@ extension LocalImageGenerator {
       firstPassAudioHeight = 0
     } else {
       switch modelVersion {
+      case .minimaxH3:
+        firstPassChannels = 24
+        firstPassScaleFactor = 16
+        firstPassStartWidth =
+          (hiresFixEnabled ? Int(configuration.hiresFixStartWidth) : Int(configuration.startWidth))
+          * 4
+        firstPassStartHeight =
+          (hiresFixEnabled
+            ? Int(configuration.hiresFixStartHeight) : Int(configuration.startHeight))
+          * 4
+        let frames = Int(configuration.numFrames)
+        let latentFrames =
+          frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2
+        firstPassAudioHeight = MiniMaxH3AudioHeight(
+          videoLatentFrames: latentFrames, latentWidth: firstPassStartWidth)
       case .hiDreamO1:
         firstPassChannels = 3 * 32 * 32
         firstPassScaleFactor = 32
@@ -4345,6 +4368,9 @@ extension LocalImageGenerator {
         deviceProperties: DeviceCapability.deviceProperties)
       var batchSize = (batchSize, 0)
       switch modelVersion {
+      case .minimaxH3:
+        let frames = Int(configuration.numFrames)
+        batchSize = (frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2, 0)
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b:
@@ -4614,6 +4640,15 @@ extension LocalImageGenerator {
         startHeight = Int(configuration.startHeight) * 4
         startScaleFactor = 16
         audioHeight = 0
+      } else if modelVersion == .minimaxH3 {
+        startWidth = Int(configuration.startWidth) * 4
+        startHeight = Int(configuration.startHeight) * 4
+        startScaleFactor = 16
+        let frames = Int(configuration.numFrames)
+        let latentFrames =
+          frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2
+        audioHeight = MiniMaxH3AudioHeight(
+          videoLatentFrames: latentFrames, latentWidth: startWidth)
       } else if modelVersion == .ltx2 || modelVersion == .ltx2_3 {
         startWidth = Int(configuration.startWidth) * 2
         startHeight = Int(configuration.startHeight) * 2
@@ -4911,6 +4946,8 @@ extension LocalImageGenerator {
         )
         let channels: Int
         switch modelVersion {
+        case .minimaxH3:
+          channels = 24
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
           .longcatVideoAvatar1_5:
@@ -5421,6 +5458,14 @@ extension LocalImageGenerator {
       audioHeight = 0
     } else {
       switch modelVersion {
+      case .minimaxH3:
+        channels = 24
+        startScaleFactor = 16
+        startWidth = image.shape[2] / 16 / imageScaleFactor
+        startHeight = image.shape[1] / 16 / imageScaleFactor
+        let frames = Int(configuration.numFrames)
+        let latentFrames = frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2
+        audioHeight = MiniMaxH3AudioHeight(videoLatentFrames: latentFrames, latentWidth: startWidth)
       case .hiDreamO1:
         channels = 3 * 32 * 32
         startScaleFactor = 32
@@ -5644,6 +5689,9 @@ extension LocalImageGenerator {
       }
       var batchSize = (batchSize, 0)
       switch modelVersion {
+      case .minimaxH3:
+        let frames = Int(configuration.numFrames)
+        batchSize = (frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2, 0)
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
@@ -6776,6 +6824,14 @@ extension LocalImageGenerator {
       audioHeight = 0
     } else {
       switch modelVersion {
+      case .minimaxH3:
+        channels = 24
+        startScaleFactor = 16
+        startWidth = image.shape[2] / 16 / imageScaleFactor
+        startHeight = image.shape[1] / 16 / imageScaleFactor
+        let frames = Int(configuration.numFrames)
+        let latentFrames = frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2
+        audioHeight = MiniMaxH3AudioHeight(videoLatentFrames: latentFrames, latentWidth: startWidth)
       case .hiDreamO1:
         channels = 3 * 32 * 32
         startScaleFactor = 32
@@ -7072,6 +7128,9 @@ extension LocalImageGenerator {
       }
       var batchSize = (batchSize, 0)
       switch modelVersion {
+      case .minimaxH3:
+        let frames = Int(configuration.numFrames)
+        batchSize = (frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2, 0)
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
@@ -7684,6 +7743,14 @@ extension LocalImageGenerator {
       audioHeight = 0
     } else {
       switch modelVersion {
+      case .minimaxH3:
+        channels = 24
+        startScaleFactor = 16
+        startWidth = image.shape[2] / 16 / imageScaleFactor
+        startHeight = image.shape[1] / 16 / imageScaleFactor
+        let frames = Int(configuration.numFrames)
+        let latentFrames = frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2
+        audioHeight = MiniMaxH3AudioHeight(videoLatentFrames: latentFrames, latentWidth: startWidth)
       case .hiDreamO1:
         channels = 3 * 32 * 32
         startScaleFactor = 32
@@ -7979,6 +8046,9 @@ extension LocalImageGenerator {
       }
       var batchSize = (batchSize, 0)
       switch modelVersion {
+      case .minimaxH3:
+        let frames = Int(configuration.numFrames)
+        batchSize = (frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2, 0)
       case .svdI2v:
         batchSize = (Int(configuration.numFrames), 0)
       case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:

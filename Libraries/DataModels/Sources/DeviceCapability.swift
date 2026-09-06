@@ -747,6 +747,10 @@ public struct DeviceCapability {
       guard !isUltraPerformance || force else {
         return false
       }
+    case .minimaxH3:
+      guard !isUltraPerformance || force else {
+        return false
+      }
     }
     return true
   }

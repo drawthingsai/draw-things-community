@@ -1,5 +1,5 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_test")
 
 config_setting(
     name = "macos_build",
@@ -56,6 +56,19 @@ swift_library(
     srcs = glob(["Sources/Mappings/**/*.swift"]),
     module_name = "DiffusionMappings",
     visibility = ["//visibility:public"],
+)
+
+swift_test(
+    name = "FirstStageTests",
+    srcs = ["Tests/FirstStageTests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":SwiftDiffusion",
+        "@s4nnc//nnc",
+    ],
 )
 
 swift_library(

@@ -161,6 +161,8 @@ final class ComputeUnitsTests: XCTestCase {
       return 1.176470588 * 0.8
     case .seedvr2_7b:
       return 1.176470588
+    case .longcatVideoAvatar1_5, .minimaxH3:
+      fatalError()
     }
   }
 
@@ -215,6 +217,8 @@ final class ComputeUnitsTests: XCTestCase {
           lowerTriangle + upperRidge * Double(configuration.causalInference) / Double(numFrames)
         modelCoefficient = modelCoefficient * (totalArea / (sequenceLength * sequenceLength))
       }
+    case .longcatVideoAvatar1_5, .minimaxH3:
+      fatalError()
     }
     root = root * Double(numFrames)
     let scalingFactor: Double = 0.00000922917
@@ -393,6 +397,66 @@ final class ComputeUnitsTests: XCTestCase {
         ComputeUnits.from(
           configuration, hasImage: false, shuffleCount: 0, overrideMapping: overrideMapping))
       XCTAssertGreaterThan(estimate, 0)
+    }
+  }
+
+  func testMiniMaxH3FrameAlignmentMatchesGeneration() throws {
+    let modelName = "test-minimax-h3-frame-alignment"
+    let overrideMapping = mapping(modelName: modelName, version: .minimaxH3)
+    for frames in 1...400 {
+      var alignedFrames = frames
+      if frames != 1 {
+        alignedFrames = max(frames, 5)
+        while alignedFrames % 17 != 5 {
+          alignedFrames += 1
+        }
+      }
+      let requested = configuration(
+        modelName: modelName, width: 12, height: 12, numFrames: UInt32(frames))
+      let aligned = configuration(
+        modelName: modelName, width: 12, height: 12, numFrames: UInt32(alignedFrames))
+      let estimate = try XCTUnwrap(
+        ComputeUnits.from(
+          requested, hasImage: false, shuffleCount: 0, overrideMapping: overrideMapping))
+      let alignedEstimate = try XCTUnwrap(
+        ComputeUnits.from(
+          aligned, hasImage: false, shuffleCount: 0, overrideMapping: overrideMapping))
+      XCTAssertEqual(estimate, alignedEstimate, "Frame count: \(frames)")
+    }
+  }
+
+  func testMiniMaxH3FixedInstructionCountMatchesProjections() {
+    for timesteps in [1, 21, 50] {
+      for layers in [1, 50] {
+        let expected = 2 * timesteps * (256 * 5_376 + 5_376 * 2_688 * (1 + 18 * layers + 2))
+        XCTAssertEqual(
+          MiniMaxH3FixedInstructionCount(timesteps: timesteps, hiddenSize: 5_376, layers: layers),
+          expected)
+      }
+    }
+  }
+
+  func testMiniMaxH3EstimateSharesFixedWorkAcrossCFG() throws {
+    let modelName = "test-minimax-h3-fixed-cfg"
+    let overrideMapping = mapping(modelName: modelName, version: .minimaxH3)
+    let mainCount = MiniMaxH3InstructionCount(
+      videoTime: 1, videoHeight: 48, videoWidth: 48, audioLength: 4, textLength: 512)
+    for steps: UInt32 in [1, 21, 50] {
+      let fixedCount = MiniMaxH3FixedInstructionCount(
+        timesteps: Int(steps), hiddenSize: 5_376, layers: 50)
+      for guidanceScale: Float in [1, 2] {
+        let cfg = GenerationConfiguration(
+          id: 1, startWidth: 12, startHeight: 12, steps: steps, guidanceScale: guidanceScale,
+          strength: 1, model: modelName, batchSize: 4, numFrames: 1)
+        let estimate = try XCTUnwrap(
+          ComputeUnits.from(
+            cfg, hasImage: false, shuffleCount: 0, overrideMapping: overrideMapping))
+        let mainEstimate =
+          Double(mainCount * (guidanceScale == 1 ? 1 : 2)) * Self.instructionCalibrationScale
+          * Double(steps)
+        let fixedEstimate = Double(fixedCount) * Self.instructionCalibrationScale
+        XCTAssertEqual(estimate, Int((mainEstimate + fixedEstimate).rounded(.up)))
+      }
     }
   }
 

@@ -544,7 +544,7 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         throw Error.noTextEncoder
-      case .kandinsky21:
+      case .kandinsky21, .minimaxH3:
         fatalError()
       }
     }
@@ -590,7 +590,7 @@ public final class ModelImporter {
             }
           }
           switch modelVersion {
-          case .longcatVideoAvatar1_5:
+          case .longcatVideoAvatar1_5, .minimaxH3:
             fatalError()
           case .v1, .sdxlBase, .ssd1b:
             (textModel, textModelReader) = CLIPTextModel(
@@ -645,7 +645,7 @@ public final class ModelImporter {
           }
           try graph.openStore(filePath) {
             switch modelVersion {
-            case .longcatVideoAvatar1_5:
+            case .longcatVideoAvatar1_5, .minimaxH3:
               fatalError()
             case .v1, .sdxlBase, .ssd1b:
               if $0.keys.count < 196 {
@@ -803,7 +803,7 @@ public final class ModelImporter {
     case .hiDreamI1:
       conditionalLength = 4096
       batchSize = 1
-    case .hiDreamO1:
+    case .hiDreamO1, .minimaxH3:
       fatalError()
     case .qwenImage:
       conditionalLength = 3854
@@ -890,7 +890,7 @@ public final class ModelImporter {
         }
         let vectors: [DynamicGraph.Tensor<FloatType>]
         switch modelVersion {
-        case .longcatVideoAvatar1_5:
+        case .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
         case .sdxlBase, .ssd1b:
           vectors = [graph.variable(.CPU, .WC(batchSize, 2816), of: FloatType.self)]
@@ -1004,7 +1004,7 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .hiDreamO1:
+      case .hiDreamO1, .minimaxH3:
         fatalError()
       case .qwenImage:
         cArr =
@@ -1308,7 +1308,7 @@ public final class ModelImporter {
           usesFlashAttention: .scale1, outputResidual: false, inputResidual: false)
         (unetFixed, unetFixedMapper) = HiDreamFixed(
           timesteps: 1, layers: (16, 32), outputTimesteps: false)
-      case .hiDreamO1:
+      case .hiDreamO1, .minimaxH3:
         fatalError()
       case .qwenImage:
         (unetMapper, unet) = QwenImage(
@@ -1507,7 +1507,7 @@ public final class ModelImporter {
             graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self)  // Llama encoder hidden states.
           }
         tEmb = nil
-      case .hiDreamO1:
+      case .hiDreamO1, .minimaxH3:
         fatalError()
       case .qwenImage:
         crossattn =
@@ -1835,7 +1835,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b:
+          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b, .minimaxH3:
             fatalError()
           }
           func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
@@ -2155,7 +2155,7 @@ public final class ModelImporter {
           if $0.keys.count != 1857 {
             throw Error.tensorWritesFailed
           }
-        case .hiDreamO1:
+        case .hiDreamO1, .minimaxH3:
           fatalError()
         case .wan22_5b:
           let count = $0.keys.count
@@ -2498,7 +2498,7 @@ extension ModelImporter {
       clipEncoder = "\(fileName)_f16.ckpt"
     case .wurstchenStageC:
       textEncoder = nil
-    case .kandinsky21, .wurstchenStageB:
+    case .kandinsky21, .wurstchenStageB, .minimaxH3:
       fatalError()
     }
 
@@ -2831,7 +2831,7 @@ extension ModelImporter {
       }
       // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
       specification.hiresFixScale = finetuneScale * 2
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .minimaxH3:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()

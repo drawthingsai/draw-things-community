@@ -80,7 +80,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
         .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
         .cosmos2_5_2b,
         .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-        .longcatVideoAvatar1_5:
+        .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
       case .hunyuanVideo:
         t = [inferModel(inputs: t[0], Array(t[(4 + 6)..<(6 + 6)]))[0]]  // context chunks is before x chunks. We need x chunks.
@@ -136,7 +136,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage, .wan22_5b, .zImage,
       .ernieImage,
       .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-      .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+      .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       fatalError()
     case .hunyuanVideo:
       if let inferModel = inferModel {
@@ -198,6 +198,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     let shift: DynamicGraph.AnyTensor
     let scale: DynamicGraph.AnyTensor
     switch modelVersion {
+    case .minimaxH3:
+      fatalError("MiniMax H3 does not support TeaCache.")
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,

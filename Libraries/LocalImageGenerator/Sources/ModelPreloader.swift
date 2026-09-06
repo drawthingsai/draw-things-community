@@ -531,6 +531,7 @@ extension ModelPreloader {
     // SD-style preloader cannot synthesize a representative graph yet.
     if modelVersion == .hiDreamO1 || modelVersion == .seedvr2_3b || modelVersion == .seedvr2_7b
       || modelVersion == .ideogram4 || modelVersion == .krea2
+      || modelVersion == .minimaxH3
     {
       return
     }
@@ -545,7 +546,7 @@ extension ModelPreloader {
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
       .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       fatalError()
     }
     let cfgChannels: Int
@@ -771,7 +772,7 @@ extension ModelPreloader {
           .qwenImage,
           .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
           .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-          .longcatVideoAvatar1_5:
+          .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
         }
         let tokensTensor = graph.variable(.GPU(0), .C(2 * 77), of: Int32.self)
@@ -812,7 +813,7 @@ extension ModelPreloader {
                     .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
                     .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
                     .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b,
-                    .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+                    .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
                     fatalError()
                   }
                   return loader.mergeLoRA(
@@ -857,7 +858,7 @@ extension ModelPreloader {
                   .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
                   .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
                   .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b,
-                  .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+                  .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
                   fatalError()
                 }
                 return .continue(name)
@@ -1165,6 +1166,8 @@ extension ModelPreloader {
             .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
             .longcatVideoAvatar1_5:
             return DeviceCapability.isLowPerformance
+          case .minimaxH3:
+            return true
           }
         case .unet:
           return DeviceCapability.externalOnDemand(
@@ -1400,7 +1403,7 @@ extension ModelPreloader {
     case .auraflow, .flux1, .hiDreamI1, .hiDreamO1, .hunyuanVideo, .sd3, .sd3Large, .wan21_14b,
       .wan21_1_3b, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
       .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5:
+      .longcatVideoAvatar1_5, .minimaxH3:
       let unet: UNetWrapper<FloatType>? = {
         switch x {
         case .success(let x):

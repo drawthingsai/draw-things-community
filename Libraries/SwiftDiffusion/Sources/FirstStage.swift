@@ -56,6 +56,10 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
 private struct TemporalTiledDecodingConfiguration {
   let overlap: Int
   let lookback: Int
+  // Override decoded overlap trimming and the sampling offset of the fade ramp.
+  var overlapBlending: (trim: Int, offset: Float)? = nil
+  // Drop the trailing frames of each interval after temporal blending.
+  var frameDrop: (count: Int, interval: Int)? = nil
 }
 
 extension FirstStage {
@@ -153,7 +157,32 @@ extension FirstStage {
     let scalingFactor = latentsScaling.scalingFactor
     var z: DynamicGraph.Tensor<FloatType>
     var audioZ: DynamicGraph.Tensor<Float>?
-    if version == .ltx2 || version == .ltx2_3 {
+    if version == .minimaxH3 {
+      let latentFrames = shape[0]
+      precondition(
+        latentFrames == 1 || latentFrames == 2
+          || (latentFrames >= 7 && (latentFrames - 2) % 5 == 0))
+      let outputFrames = latentFrames == 1 ? 1 : (latentFrames - 2) / 5 * 17 + 5
+      let audioRows =
+        2
+        * Int(
+          (Double(outputFrames) / Double(MiniMaxH3Configuration.framesPerSecond) * 40)
+            .rounded())
+      let audioHeight = MiniMaxH3AudioHeight(
+        videoLatentFrames: latentFrames, latentWidth: startWidth)
+      startHeight -= audioHeight
+      precondition(shape[3] == MiniMaxH3Configuration.videoChannels)
+      let audioCapacity =
+        latentFrames * audioHeight * startWidth * MiniMaxH3Configuration.videoChannels
+        / MiniMaxH3Configuration.audioChannels
+      let audioSource = x[
+        0..<latentFrames, startHeight..<shape[1], 0..<startWidth,
+        0..<MiniMaxH3Configuration.videoChannels
+      ].copied().reshaped(.WC(audioCapacity, MiniMaxH3Configuration.audioChannels))
+      audioZ = DynamicGraph.Tensor<Float>(
+        from: audioSource[0..<audioRows, 0..<32].copied().reshaped(.HWC(2, audioRows / 2, 32)))
+      z = x[0..<latentFrames, 0..<startHeight, 0..<startWidth, 0..<shape[3]].copied()
+    } else if version == .ltx2 || version == .ltx2_3 {
       // If it has audio, extract the audio track.
       let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(x.shape)
       startHeight = startHeight - audioHeight
@@ -235,7 +264,7 @@ extension FirstStage {
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       scaleFactor = 8
       scaleFactorZ = 4
-    case .wan22_5b:
+    case .wan22_5b, .minimaxH3:
       scaleFactor = 16
       scaleFactorZ = 4
     case .ltx2, .ltx2_3:
@@ -261,6 +290,7 @@ extension FirstStage {
       externalOnDemand ? .externalOnDemand : .externalData
     let outputChannels: Int
     let causalAttentionMask: DynamicGraph.Tensor<Float>?
+    var decoderInputs = [DynamicGraph.AnyTensor]()
     switch version {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .pixart, .auraflow:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
@@ -386,6 +416,59 @@ extension FirstStage {
     case .hiDreamO1:
       // No need to do any model related work.
       return (hiDreamO1Unpatchify(x), nil, nil)
+    case .minimaxH3:
+      let temporalCount = 7
+      decodingTileSize.depth = temporalCount
+      temporalTiledDecodingConfiguration = TemporalTiledDecodingConfiguration(
+        overlap: 2, lookback: 0, overlapBlending: (trim: 0, offset: 0),
+        frameDrop: (count: 3, interval: 20))
+      let tileHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      let tileWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      decodingTileSize.height = tileHeight
+      decodingTileSize.width = tileWidth
+      if !tiledDecoding {
+        decodingTileOverlap = 0
+      }
+      // H3 always needs temporal trimming, including when only one spatial tile is used.
+      tiledDecoding = true
+      let dummy = graph.variable(
+        .GPU(0), .NHWC(temporalCount, tileHeight, tileWidth, 24), of: Float16.self)
+      let zero = graph.variable(.GPU(0), .HWC(1, 1, 2_048), of: Float.self)
+      zero.full(0)
+      // The reference decoder normalizes coordinates within each tile, not the full canvas.
+      let rotary = graph.variable(
+        Tensor<FloatType>(
+          from: MiniMaxH3VideoDecoderRotaryEmbedding(
+            latentFrames: temporalCount, latentHeight: tileHeight, latentWidth: tileWidth)
+        ).toGPU(0))
+      decoderInputs = [rotary, zero]
+      decoder =
+        existingDecoder
+        ?? MiniMaxH3VideoDecoder(
+          latentFrames: temporalCount, latentHeight: tileHeight, latentWidth: tileWidth,
+          hiddenSize: 2_048, layers: 36)
+      decoder.maxConcurrency = .limit(1)
+      guard let audioZ else { fatalError() }
+      audioDecoder = [MiniMaxH3AudioDecoder(latentWidth: audioZ.shape[1])]
+      audioDecoder[0].maxConcurrency = .limit(1)
+      audioDecoder[0].compile(inputs: audioZ[0..<1, 0..<audioZ.shape[1], 0..<32].copied())
+      if existingDecoder == nil {
+        decoder.compile(inputs: dummy, rotary, zero)
+      }
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if existingDecoder == nil {
+          store.read(
+            "video_decoder", model: decoder,
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+        store.read(
+          "audio_decoder", model: audioDecoder[0],
+          codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+      }
+      outputChannels = 3
+      causalAttentionMask = nil
     case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
@@ -946,18 +1029,28 @@ extension FirstStage {
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
         && version != .wan22_5b && version != .ltx2 && version != .ltx2_3
-        && version != .longcatVideoAvatar1_5
+        && version != .longcatVideoAvatar1_5 && version != .minimaxH3
     else {
       let audio: DynamicGraph.Tensor<Float>?
-      if audioDecoder.count > 1, let audioZ = audioZ {
+      if version == .minimaxH3, let audioZ {
+        var channels = [DynamicGraph.Tensor<Float>]()
+        for channel in 0..<2 {
+          channels.append(
+            audioDecoder[0](
+              inputs: audioZ[
+                channel..<(channel + 1), 0..<audioZ.shape[1], 0..<32
+              ].copied())[0].as(of: Float.self).reshaped(.NC(1, audioZ.shape[1] * 800)))
+        }
+        audio = Functional.concat(axis: 0, channels[0], channels[1])
+      } else if audioDecoder.count > 1, let audioZ = audioZ {
         let decodedAudio = audioDecoder[0](inputs: audioZ)[0].as(of: Float.self)
         let waveform = audioDecoder[1](inputs: decodedAudio)[0].as(of: Float.self)
         audio = waveform.reshaped(.NC(waveform.shape[1], waveform.shape[3]))
       } else {
         audio = nil
       }
-      if highPrecision {
-        let result: DynamicGraph.Tensor<Float>
+      if highPrecision || version == .minimaxH3 {
+        var result: DynamicGraph.Tensor<Float>
         if tiledDecoding {
           result = tiledDecode(
             DynamicGraph.Tensor<Float>(from: z), causalAttentionMask: causalAttentionMask,
@@ -965,12 +1058,20 @@ extension FirstStage {
             transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
             scaleFactor: (scaleFactor, scaleFactorZ),
-            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration
+            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration,
+            inputs: decoderInputs
           )
         } else {
           result = internalDecode(
             DynamicGraph.Tensor<Float>(from: z), causalAttentionMask: causalAttentionMask,
-            decoder: decoder, transparentDecoder: transparentDecoder)
+            decoder: decoder, transparentDecoder: transparentDecoder, inputs: decoderInputs)
+        }
+        if version == .minimaxH3 {
+          let mean = graph.variable(
+            Tensor<Float>([0.485, 0.456, 0.406], .GPU(0), .NHWC(1, 1, 1, 3)))
+          let std = graph.variable(
+            Tensor<Float>([0.229, 0.224, 0.225], .GPU(0), .NHWC(1, 1, 1, 3)))
+          result = (std .* result + mean).clamped(0...1) * 2 - 1
         }
         let shape = result.shape
         return (
@@ -1321,7 +1422,7 @@ extension FirstStage {
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       scaleFactor = 8
       scaleFactorZ = 4
-    case .wan22_5b:
+    case .wan22_5b, .minimaxH3:
       scaleFactor = 16
       scaleFactorZ = 4
     case .ltx2, .ltx2_3:
@@ -1348,6 +1449,34 @@ extension FirstStage {
       && (startWidth > encodingTileSize.width || startHeight > encodingTileSize.height)
     let causalAttentionMask: DynamicGraph.Tensor<Float>?
     switch version {
+    case .minimaxH3:
+      // H3 expects ImageNet-normalized RGB, not the app's [-1, 1] pixels.
+      let mean = graph.variable(
+        Tensor<FloatType>([0.485, 0.456, 0.406], .GPU(0), .NHWC(1, 1, 1, 3)))
+      let invStd = graph.variable(
+        Tensor<FloatType>([1 / 0.229, 1 / 0.224, 1 / 0.225], .GPU(0), .NHWC(1, 1, 1, 3)))
+      x = invStd .* ((x + 1) * 0.5 - mean)
+      let height = (tiledEncoding ? encodingTileSize.height : startHeight) * 16
+      let width = (tiledEncoding ? encodingTileSize.width : startWidth) * 16
+      encoder =
+        existingEncoder ?? MiniMaxH3VideoEncoder(frames: batchSize, height: height, width: width)
+      if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(4)
+        let input = x[0..<batchSize, 0..<height, 0..<width, 0..<shape[3]].copied()
+        if highPrecision {
+          encoder.compile(inputs: DynamicGraph.Tensor<Float>(from: input))
+        } else {
+          encoder.compile(inputs: input)
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          try! store.read(
+            "video_encoder", model: encoder, strict: true, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 48
+      causalAttentionMask = nil
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .pixart, .auraflow:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
@@ -1868,7 +1997,7 @@ extension FirstStage {
     guard
       batchSize > 1 && version != .hunyuanVideo && version != .wan21_1_3b && version != .wan21_14b
         && version != .wan22_5b && version != .ltx2 && version != .ltx2_3
-        && version != .longcatVideoAvatar1_5
+        && version != .longcatVideoAvatar1_5 && version != .minimaxH3
     else {
       if highPrecision {
         if tiledEncoding {
@@ -1962,9 +2091,16 @@ extension FirstStage {
 extension FirstStage {
   private func internalDecode<T: TensorNumeric & BinaryFloatingPoint>(
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, decoder: Model,
-    transparentDecoder: Model?
+    transparentDecoder: Model?, inputs: [DynamicGraph.AnyTensor] = []
   ) -> DynamicGraph.Tensor<T> {
-    var pixel = decoder(inputs: z, causalAttentionMask.map { [$0] } ?? [])[0].as(of: T.self)
+    if version == .minimaxH3 {
+      // H3 decodes in FP16, but blends spatial tiles in FP32.
+      return DynamicGraph.Tensor<T>(
+        from: decoder(inputs: DynamicGraph.Tensor<Float16>(from: z), inputs)[0].as(of: Float16.self)
+      )
+    }
+    var pixel = decoder(inputs: z, (causalAttentionMask.map { [$0] } ?? []) + inputs)[0].as(
+      of: T.self)
     if alternativeDecoderVersion == .transparent,
       version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
     {
@@ -1995,7 +2131,7 @@ extension FirstStage {
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, decoder: Model,
     transparentDecoder: Model?,
     tileSize: (width: Int, height: Int), tileOverlap: Int, outputChannels: Int,
-    scaleFactor: (spatial: Int, temporal: Int)
+    scaleFactor: (spatial: Int, temporal: Int), inputs: [DynamicGraph.AnyTensor] = []
   ) -> DynamicGraph.Tensor<T> {
     let shape = z.shape
     let channels = shape[3]
@@ -2036,7 +2172,7 @@ extension FirstStage {
               0..<batchSize, inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
               0..<channels
             ].copied(), causalAttentionMask: causalAttentionMask, decoder: decoder,
-            transparentDecoder: transparentDecoder
+            transparentDecoder: transparentDecoder, inputs: inputs
           ).rawValue.toCPU())
         guard !isCancelled.load(ordering: .acquiring) else {
           return graph.variable(
@@ -2114,14 +2250,16 @@ extension FirstStage {
     transparentDecoder: Model?,
     tileSize: (depth: Int, width: Int, height: Int), tileOverlap: Int, outputChannels: Int,
     scaleFactor: (spatial: Int, temporal: Int),
-    temporalTiledDecodingConfiguration: TemporalTiledDecodingConfiguration?
+    temporalTiledDecodingConfiguration: TemporalTiledDecodingConfiguration?,
+    inputs: [DynamicGraph.AnyTensor] = []
   ) -> DynamicGraph.Tensor<T> {
-    guard tileSize.depth > 1 && tileSize.depth < z.shape[0] else {
+    let frameDrop = temporalTiledDecodingConfiguration?.frameDrop
+    guard tileSize.depth > 1 && (tileSize.depth < z.shape[0] || frameDrop != nil) else {
       return tiledDecode(
         z, causalAttentionMask: causalAttentionMask, decoder: decoder,
         transparentDecoder: transparentDecoder,
         tileSize: (width: tileSize.width, height: tileSize.height), tileOverlap: tileOverlap,
-        outputChannels: outputChannels, scaleFactor: scaleFactor)
+        outputChannels: outputChannels, scaleFactor: scaleFactor, inputs: inputs)
     }
     let shape = z.shape
     let channels = shape[3]
@@ -2145,7 +2283,15 @@ extension FirstStage {
         width: tileSize.width * scaleFactor.spatial, height: tileSize.height * scaleFactor.spatial
       ),
       tileOverlap: tileOverlap * scaleFactor.spatial)
-    let resultBatchSize = (shape[0] - 1) * scaleFactor.temporal + 1
+    let decodedBatchSize = (shape[0] - 1) * scaleFactor.temporal + 1
+    let resultBatchSize: Int
+    if let frameDrop {
+      resultBatchSize =
+        decodedBatchSize / frameDrop.interval * (frameDrop.interval - frameDrop.count)
+        + min(decodedBatchSize % frameDrop.interval, frameDrop.interval - frameDrop.count)
+    } else {
+      resultBatchSize = decodedBatchSize
+    }
     var result = Tensor<T>(
       Array(
         repeating: 0,
@@ -2162,6 +2308,10 @@ extension FirstStage {
     let tileStep = max(1, tileSize.depth - temporalOverlap - temporalLookback)
     let nominalDepth = max(1, tileSize.depth - temporalLookback)
     let temporalOverlapFrames = max(0, ((temporalOverlap - 1) * scaleFactor.temporal) + 1)
+    let overlapTrim =
+      temporalTiledDecodingConfiguration?.overlapBlending?.trim
+      ?? (temporalOverlapFrames + 1) / 2
+    let fadeOffset = temporalTiledDecodingConfiguration?.overlapBlending?.offset ?? 0.5
     let leftFadeFrames: Int
     let rightFadeFrames: Int
     let firstTileValidFrames: Int
@@ -2171,8 +2321,8 @@ extension FirstStage {
       firstTileValidFrames = max(
         1, ((tileSize.depth - temporalLookback - 1) * scaleFactor.temporal) + 1)
     } else {
-      leftFadeFrames = temporalOverlapFrames / 2
-      rightFadeFrames = temporalOverlapFrames / 2
+      leftFadeFrames = temporalOverlapFrames - overlapTrim
+      rightFadeFrames = temporalOverlapFrames - overlapTrim
       firstTileValidFrames = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
     }
     let temporalTileCount =
@@ -2181,7 +2331,7 @@ extension FirstStage {
       let anchor = tileIndex * tileStep
       var decodedRawValues = [Tensor<T>]()
       let unclampedStart = max(0, anchor - temporalLookback)
-      let tStart = min(unclampedStart, batchSize - tileSize.depth)
+      let tStart = min(unclampedStart, max(0, batchSize - tileSize.depth))
       let tDecodedStart: Int
       let isLast = tileIndex + 1 >= temporalTileCount
       if temporalLookback > 0 {
@@ -2190,10 +2340,10 @@ extension FirstStage {
         tDecodedStart = 0
       } else {
         tDecodedStart =
-          (unclampedStart - tStart) * scaleFactor.temporal + (temporalOverlapFrames + 1) / 2
+          (unclampedStart - tStart) * scaleFactor.temporal + overlapTrim
       }
       let tileDecodedDepth = ((tileSize.depth - 1) * scaleFactor.temporal) + 1
-      var tileDecodedEnd = min(tileDecodedDepth, resultBatchSize - tStart * scaleFactor.temporal)
+      var tileDecodedEnd = min(tileDecodedDepth, decodedBatchSize - tStart * scaleFactor.temporal)
       if tileIndex == 0 {
         tileDecodedEnd = min(tileDecodedEnd, firstTileValidFrames)
       }
@@ -2206,14 +2356,19 @@ extension FirstStage {
           let xOfs = x * (tileSize.width - tileOverlap * 2) + (x > 0 ? tileOverlap : 0)
           let (inputStartXPad, inputEndXPad) = paddedTileStartAndEnd(
             iOfs: xOfs, length: shape[2], tileSize: tileSize.width, tileOverlap: tileOverlap)
+          var input = z[
+            tStart..<min(tStart + tileSize.depth, batchSize), inputStartYPad..<inputEndYPad,
+            inputStartXPad..<inputEndXPad, 0..<channels
+          ].copied()
+          if input.shape[0] < tileSize.depth {
+            input = Pad(
+              .replicate, begin: [0, 0, 0, 0], end: [tileSize.depth - input.shape[0], 0, 0, 0])(
+                inputs: input)[0].as(of: T.self)
+          }
           decodedRawValues.append(
             internalDecode(
-              z[
-                tStart..<(tStart + tileSize.depth), inputStartYPad..<inputEndYPad,
-                inputStartXPad..<inputEndXPad,
-                0..<channels
-              ].copied(), causalAttentionMask: causalAttentionMask, decoder: decoder,
-              transparentDecoder: transparentDecoder
+              input, causalAttentionMask: causalAttentionMask, decoder: decoder,
+              transparentDecoder: transparentDecoder, inputs: inputs
             ).rawValue.toCPU())
           guard !isCancelled.load(ordering: .acquiring) else {
             return graph.variable(result.toGPU(0))
@@ -2227,8 +2382,14 @@ extension FirstStage {
         withExtendedLifetime(decodedRawValues) {
           DispatchQueue.concurrentPerform(iterations: tileDecodedEnd - tDecodedStart) {
             let tDecoded = $0 + tDecodedStart
+            var tOutput = tDecoded + tStart * scaleFactor.temporal
+            if let frameDrop {
+              let offset = tOutput % frameDrop.interval
+              guard offset < frameDrop.interval - frameDrop.count else { return }
+              tOutput -= tOutput / frameDrop.interval * frameDrop.count
+            }
             var fp =
-              rfp + (tDecoded + tStart * scaleFactor.temporal) * shape[1] * scaleFactor.spatial
+              rfp + tOutput * shape[1] * scaleFactor.spatial
               * shape[2] * scaleFactor.spatial * outputChannels
             let tOffset =
               tDecoded * tileSize.width * scaleFactor.spatial * inputChannels * tileSize.height
@@ -2242,10 +2403,12 @@ extension FirstStage {
             }
             let tWeight: Float
             if tileIndex > 0 && tDecoded - tDecodedStart < leftFadeFrames && leftFadeFrames > 0 {
-              tWeight = min((Float(tDecoded - tDecodedStart) + 0.5) / Float(leftFadeFrames), 1)
+              tWeight = min(
+                (Float(tDecoded - tDecodedStart) + fadeOffset) / Float(leftFadeFrames), 1)
             } else if tileDecodedEnd - tDecoded <= rightFadeFrames && !isLast && rightFadeFrames > 0
             {
-              tWeight = min((Float(tileDecodedEnd - tDecoded) - 0.5) / Float(rightFadeFrames), 1)
+              tWeight = min(
+                (Float(tileDecodedEnd - tDecoded) - fadeOffset) / Float(rightFadeFrames), 1)
             } else {
               tWeight = 1
             }

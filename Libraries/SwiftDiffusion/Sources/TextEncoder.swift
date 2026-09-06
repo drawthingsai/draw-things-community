@@ -45,6 +45,53 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
 }
 
 extension TextEncoder {
+  private func encodeMiniMaxH3(
+    tokens: [DynamicGraph.Tensor<Int32>], tokenLengthCond: Int
+  ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
+    let graph = tokens[0].graph
+    let tokenLength = tokens[0].shape[0] / 2
+    let batchSize = isCfgEnabled ? 2 : 1
+    let textModel = Qwen3(
+      FloatType.self, vocabularySize: 151_936, width: 5_120, tokenLength: tokenLength,
+      layers: 50, MLP: 25_600, heads: 64, outputHiddenStates: [49],
+      noFinalNormalizedOutput: true, batchSize: batchSize, usesFlashAttention: usesFlashAttention)
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
+      .NHWC(1, 1, tokenLength, tokenLength))
+    for row in 0..<(tokenLength - 1) {
+      for column in (row + 1)..<tokenLength {
+        causalAttentionMask[0, 0, row, column] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let tokensGPU = tokens[0][(isCfgEnabled ? 0 : tokenLength)..<(tokenLength * 2)].toGPU(0)
+    let rotaryGPU = graph.variable(
+      QwenVLRotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    textModel.maxConcurrency = .limit(1)
+    textModel.compile(inputs: tokensGPU, rotaryGPU, causalAttentionMaskGPU)
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        try! store.read(
+          "text_model", model: textModel, strict: true,
+          codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData])
+      }
+    }
+    let encoding = textModel(inputs: tokensGPU, rotaryGPU, causalAttentionMaskGPU)[0].as(
+      of: FloatType.self
+    ).reshaped(.HWC(batchSize, tokenLength, 5_120))[
+      0..<batchSize, 0..<(isCfgEnabled ? tokenLength : tokenLengthCond), 0..<5_120
+    ].copied()
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+    return ([encoding], [textModel])
+  }
+
   private func encodeHiDreamO1(
     tokens: [DynamicGraph.Tensor<Int32>], textModels existingTextModels: [Model?]
   ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
@@ -3705,6 +3752,8 @@ extension TextEncoder {
   {
     let conditionalLength: Int
     switch version {
+    case .minimaxH3:
+      return encodeMiniMaxH3(tokens: tokens, tokenLengthCond: tokenLengthCond)
     case .seedvr2_3b, .seedvr2_7b:
       return encodeSeedVR2(
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond, tokens: tokens)
@@ -3895,7 +3944,7 @@ extension TextEncoder {
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
-        .seedvr2_7b, .longcatVideoAvatar1_5:
+        .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -3935,7 +3984,7 @@ extension TextEncoder {
                   .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
                   .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
                   .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-                  .longcatVideoAvatar1_5:
+                  .longcatVideoAvatar1_5, .minimaxH3:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -3977,7 +4026,7 @@ extension TextEncoder {
                 .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
                 .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
                 .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-                .longcatVideoAvatar1_5:
+                .longcatVideoAvatar1_5, .minimaxH3:
                 fatalError()
               }
               return .continue(name)

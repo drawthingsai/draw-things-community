@@ -321,7 +321,7 @@ extension UNetFromCoreML {
   }
 
   public func callAsFunction(
-    timestep: Float,
+    timestep: (now: Float, next: Float),
     inputs xT: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
@@ -353,7 +353,7 @@ extension UNetFromCoreML {
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
         .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-        .longcatVideoAvatar1_5:
+        .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
       }
       let channels = xT.shape[3]
@@ -393,7 +393,7 @@ extension UNetFromCoreML {
           ),
           "timestep": MLMultiArray(
             MLShapedArray<Float>(
-              scalars: Array(repeating: timestep, count: insideBatch), shape: [insideBatch])),
+              scalars: Array(repeating: timestep.now, count: insideBatch), shape: [insideBatch])),
           "encoder_hidden_states": MLMultiArray(
             MLShapedArray<Float>(
               Tensor<Float>(
@@ -431,7 +431,8 @@ extension UNetFromCoreML {
               ),
               "timestep": MLMultiArray(
                 MLShapedArray<Float>(
-                  scalars: Array(repeating: timestep, count: insideBatch), shape: [insideBatch])),
+                  scalars: Array(repeating: timestep.now, count: insideBatch), shape: [insideBatch])
+              ),
               "encoder_hidden_states": MLMultiArray(
                 MLShapedArray<Float>(
                   Tensor<Float>(from: hiddenStates))

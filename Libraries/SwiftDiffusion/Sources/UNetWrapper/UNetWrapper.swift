@@ -127,7 +127,7 @@ extension UNetWrapper {
   }
 
   public func callAsFunction(
-    timestep t: Float,
+    timestep t: (now: Float, next: Float),
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (

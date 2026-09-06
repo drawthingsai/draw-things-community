@@ -471,12 +471,16 @@ extension PLMSSampler: Sampler {
           refinerKickIn = -1
           unets.append(unet)
         }
+        let nextAlphaCumprod = alphasCumprod[i + 1]
         let cNoise: Float
+        let cNoiseNext: Float
         switch conditioning {
         case .noise:
           cNoise = discretization.noise(for: alphasCumprod[i])
+          cNoiseNext = discretization.noise(for: nextAlphaCumprod)
         case .timestep:
           cNoise = timestep
+          cNoiseNext = discretization.timestep(for: nextAlphaCumprod)
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoise,
@@ -512,7 +516,8 @@ extension PLMSSampler: Sampler {
               controlNets: &controlNets)
           let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
           var etCond = unet(
-            timestep: cNoise, inputs: xIn, t, cCond, extraProjection: extraProjection,
+            timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, cCond,
+            extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
             step: i, tokenLengthUncond: tokenLengthUncond,
@@ -526,7 +531,8 @@ extension PLMSSampler: Sampler {
             xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
             let cUncond = Array([conditions[0]] + conditions[(1 + (conditions.count - 1) / 2)...])
             let etUncond = unet(
-              timestep: cNoise, inputs: xIn, t, cUncond, extraProjection: extraProjection,
+              timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, cUncond,
+              extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
               step: i, tokenLengthUncond: tokenLengthUncond,
@@ -574,7 +580,8 @@ extension PLMSSampler: Sampler {
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let etOut = unet(
-            timestep: cNoise, inputs: xIn, t, conditions, extraProjection: extraProjection,
+            timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, conditions,
+            extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
             step: i, tokenLengthUncond: tokenLengthUncond,
@@ -608,13 +615,6 @@ extension PLMSSampler: Sampler {
         case 0:
           let (xPrev, _) = xPrevAndPredX0(x: x, et: et, alpha: alpha, alphaPrev: alphaPrev)
           let timestepNext = discretization.timestep(for: alphasCumprod[i + 1])
-          let cNoiseNext: Float
-          switch conditioning {
-          case .noise:
-            cNoiseNext = discretization.noise(for: alphasCumprod[i + 1])
-          case .timestep:
-            cNoiseNext = timestepNext
-          }
           let tNext = unet.timeEmbed(
             graph: graph, batchSize: cfgChannels * batchSize, timestep: cNoiseNext,
             version: currentModelVersion)
@@ -641,7 +641,8 @@ extension PLMSSampler: Sampler {
               controlNets: &controlNets)
             let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
             var etNextCond = unet(
-              timestep: cNoiseNext, inputs: xIn, tNext, cCond, extraProjection: extraProjection,
+              timestep: (now: cNoiseNext, next: cNoiseNext), inputs: xIn, tNext, cCond,
+              extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
               step: i, tokenLengthUncond: tokenLengthUncond,
@@ -655,7 +656,8 @@ extension PLMSSampler: Sampler {
               xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
               let cUncond = Array([conditions[0]] + conditions[(1 + (conditions.count - 1) / 2)...])
               let etNextUncond = unet(
-                timestep: cNoiseNext, inputs: xIn, tNext, cUncond, extraProjection: extraProjection,
+                timestep: (now: cNoiseNext, next: cNoiseNext), inputs: xIn, tNext, cUncond,
+                extraProjection: extraProjection,
                 injectedControlsAndAdapters: injectedControlsAndAdapters,
                 injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
                 step: i,
@@ -701,7 +703,7 @@ extension PLMSSampler: Sampler {
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
             let etNextOut = unet(
-              timestep: cNoiseNext, inputs: xIn, tNext, conditions,
+              timestep: (now: cNoiseNext, next: cNoiseNext), inputs: xIn, tNext, conditions,
               extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,

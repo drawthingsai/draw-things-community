@@ -498,12 +498,16 @@ extension TCDSampler: Sampler {
           refinerKickIn = -1
           unets.append(unet)
         }
+        let nextAlphaCumprod = alphasCumprod[i + 1]
         let cNoise: Float
+        let cNoiseNext: Float
         switch conditioning {
         case .noise:
           cNoise = discretization.noise(for: alphaCumprod)
+          cNoiseNext = discretization.noise(for: nextAlphaCumprod)
         case .timestep:
           cNoise = timestep
+          cNoiseNext = discretization.timestep(for: nextAlphaCumprod)
         }
         let t = unet.timeEmbed(
           graph: graph, batchSize: batchSize, timestep: cNoise, version: currentModelVersion)
@@ -537,7 +541,8 @@ extension TCDSampler: Sampler {
           newC = conditions
         }
         var etOut = unet(
-          timestep: cNoise, inputs: xIn, t, newC, extraProjection: extraProjection,
+          timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, newC,
+          extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: i,
           tokenLengthUncond: tokenLengthUncond,
