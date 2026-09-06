@@ -164,7 +164,7 @@ Result Run(const char* command, const char* input_contents = "",
   const char* environment[] = {"BASE=initial"};
   Context context = {cancelled};
   osh_ios_config config = {RunExternal, IsCancelled, SendSignal,
-                            SetSignalHandler, GetProcessId, 1, environment,
+                            SetSignalHandler, GetProcessId, nullptr, 1, environment,
                             &context};
   int status = osh_ios_run(command, input, output, error, &config);
   Result result = {status, Read(output), Read(error)};
@@ -191,6 +191,8 @@ void Expect(const char* name, const char* command, int expected_status,
 }  // namespace
 
 int main() {
+  Expect("filesystem discovery without virtual callback",
+         "command -v /bin/sh", 0, "/bin/sh\n");
   Expect("bash language features",
          "set -u; arr=(one two); [[ ${arr[0]} =~ ^o ]]; "
          "f() { local x=${arr[1]}; echo ${x//w/W}; }; "

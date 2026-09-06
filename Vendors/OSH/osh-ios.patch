@@ -253,7 +253,48 @@
  }
  
  Wait::Wait(process::Waiter* waiter, process::JobList* job_list, state::Mem* mem, dev::Tracer* tracer, ui::ErrorFormatter* errfmt) {
-@@ -24630,8 +24840,311 @@
+@@ -24365,2 +24576,16 @@
++#ifdef OSH_IOS
++static int _LookupVirtualPath(BigStr* path) {
++  const osh_ios_config* config = osh_ios::CurrentConfig();
++  if (config == nullptr || config->lookup_virtual_path == nullptr) {
++    return -1;
++  }
++  return config->lookup_virtual_path(path->data(), config->context);
++}
++#endif
++
+ bool _IsPathExecutable(BigStr* full_path) {
++#ifdef OSH_IOS
++  int virtual_result = _LookupVirtualPath(full_path);
++  if (virtual_result >= 0) return virtual_result != 0;
++#endif
+   return (posix::access(full_path, X_OK) and path_stat::isfile(full_path));
+@@ -24373,6 +24598,10 @@
+     return nullptr;
+   }
+   if (str_contains(name, S_ckc)) {
++#ifdef OSH_IOS
++    int virtual_result = _LookupVirtualPath(name);
++    if (virtual_result >= 0) return virtual_result ? name : nullptr;
++#endif
+     return path_stat::exists(name) ? name : nullptr;
+   }
+   for (ListIter<BigStr*> it(path_dirs); !it.Done(); it.Next()) {
+@@ -24382,7 +24611,12 @@
+       found = _IsPathExecutable(full_path);
+     }
+     else {
++#ifdef OSH_IOS
++      int virtual_result = _LookupVirtualPath(full_path);
++      found = virtual_result >= 0 ? virtual_result != 0 : path_stat::isfile(full_path);
++#else
+       found = path_stat::isfile(full_path);
++#endif
+     }
+     if (found) {
+       return full_path;
+@@ -24630,8 +24863,311 @@
  
  void PureExecutor::PopProcessSub(runtime_asdl::StatusArray* compound_st) {
    ;  // pass
@@ -565,7 +606,7 @@
  ShellExecutor::ShellExecutor(state::Mem* mem, optview::Exec* exec_opts, state::MutableOpts* mutable_opts, state::Procs* procs, hay_ysh::HayState* hay_state, Dict<int, vm::_Builtin*>* builtins, dev::Tracer* tracer, ui::ErrorFormatter* errfmt, executor::SearchPath* search_path, process::ExternalProgram* ext_prog, process::Waiter* waiter, process::JobControl* job_control, process::JobList* job_list, process::FdState* fd_state, trap_osh::TrapState* trap_state) : ::vm::_Executor(mem, exec_opts, mutable_opts, procs, hay_state, builtins, tracer, errfmt) {
    this->search_path = search_path;
    this->ext_prog = ext_prog;
-@@ -24719,10 +25232,14 @@
+@@ -24719,10 +25255,14 @@
      builtin_id = _RewriteExternToBuiltin(cmd_val->argv);
      if (builtin_id != consts::NO_INDEX) {
        if (builtin_id == builtin_i::cat) {
@@ -580,7 +621,7 @@
        }
        else {
          return this->RunBuiltin(builtin_id, cmd_val);
-@@ -24733,6 +25250,18 @@
+@@ -24733,6 +25273,18 @@
  }
  
  int ShellExecutor::RunExternal(BigStr* arg0, syntax_asdl::loc_t* arg0_loc, cmd_value::Argv* cmd_val, runtime_asdl::CommandStatus* cmd_st, int run_flags) {
@@ -599,7 +640,7 @@
    Dict<BigStr*, BigStr*>* environ = nullptr;
    BigStr* argv0_path = nullptr;
    bool do_fork;
-@@ -24792,9 +25321,18 @@
+@@ -24792,9 +25344,18 @@
    this->tracer->OnExec(cmd_val->argv);
    this->ext_prog->Exec(argv0_path, cmd_val, environ);
    assert(0);  // AssertionError
@@ -618,7 +659,7 @@
    syntax_asdl::command_t* UP_node = nullptr;
    process::Pipeline* pi = nullptr;
    process::Process* p = nullptr;
-@@ -24832,9 +25370,51 @@
+@@ -24832,9 +25393,51 @@
      print_stderr(StrFormat("[%%%d] PID %d Started", job_id, this->mem->last_bg_pid));
    }
    return 0;
@@ -670,7 +711,7 @@
    process::Pipeline* pi = nullptr;
    List<syntax_asdl::loc_t*>* pipe_locs = nullptr;
    int n;
-@@ -24868,9 +25448,14 @@
+@@ -24868,9 +25471,14 @@
      this->fg_pipeline = nullptr;
    }
    status_out->pipe_locs = pipe_locs;
@@ -685,7 +726,7 @@
    process::Process* p = nullptr;
    StackRoot _root0(&node);
    StackRoot _root1(&p);
-@@ -24880,9 +25465,20 @@
+@@ -24880,9 +25488,20 @@
      p->AddStateChange(Alloc<process::SetPgid>(process::OWN_LEADER, this->tracer));
    }
    return p->RunProcess(this->waiter, trace::ForkWait);
@@ -706,7 +747,7 @@
    process::Process* p = nullptr;
    int r;
    int w;
-@@ -24928,9 +25524,14 @@
+@@ -24928,9 +25547,14 @@
    status = p->Wait(this->waiter);
    stdout_str = S_Aoo->join(chunks)->rstrip(S_nfs);
    return Tuple2<int, BigStr*>(status, stdout_str);
@@ -721,7 +762,7 @@
    process::Process* p = nullptr;
    int stdout_fd;
    int w;
-@@ -25006,6 +25607,7 @@
+@@ -25006,6 +25630,7 @@
    stdout_str = S_Aoo->join(stdout_chunks);
    stderr_str = S_Aoo->join(stderr_chunks);
    return Tuple3<int, BigStr*, BigStr*>(status, stdout_str, stderr_str);
@@ -729,7 +770,7 @@
  }
  
  BigStr* ShellExecutor::RunCommandSub(syntax_asdl::CommandSub* cs_part) {
-@@ -25054,6 +25656,10 @@
+@@ -25054,6 +25679,10 @@
  }
  
  BigStr* ShellExecutor::RunProcessSub(syntax_asdl::CommandSub* cs_part) {
@@ -740,7 +781,7 @@
    loc::WordPart* cs_loc = nullptr;
    process::Process* p = nullptr;
    int r;
-@@ -25115,9 +25721,136 @@
+@@ -25115,9 +25744,136 @@
        assert(0);  // AssertionError
      }
    }
@@ -877,7 +918,7 @@
    StackRoot _root0(&redirects);
    StackRoot _root1(&err_out);
  
-@@ -25125,13 +25858,51 @@
+@@ -25125,13 +25881,51 @@
      return ;
    }
    this->fd_state->Push(redirects, err_out);
@@ -929,7 +970,7 @@
  }
  
  void ShellExecutor::PushProcessSub() {
-@@ -38080,6 +38851,11 @@
+@@ -38080,6 +38874,11 @@
  }
  
  int CommandEvaluator::_Execute(syntax_asdl::command_t* node) {
@@ -941,7 +982,7 @@
    runtime_asdl::CommandStatus* cmd_st = nullptr;
    runtime_asdl::StatusArray* process_sub_st = nullptr;
    int status;
-@@ -58274,4 +59050,3 @@
+@@ -58274,4 +59073,3 @@
  }
  
  }  // define namespace shell

@@ -25,6 +25,9 @@ typedef int (*osh_ios_set_signal_handler)(int signal_number,
                                            osh_ios_signal_handler handler,
                                            void* context);
 typedef int (*osh_ios_get_process_id)(void* context);
+/* Return 1 for an executable virtual path, 0 for a missing virtual path,
+ * or -1 to let OSH inspect the real filesystem. */
+typedef int (*osh_ios_lookup_virtual_path)(const char* path, void* context);
 
 typedef struct osh_ios_config {
   osh_ios_external_runner run_external;
@@ -32,6 +35,7 @@ typedef struct osh_ios_config {
   osh_ios_send_signal send_signal;
   osh_ios_set_signal_handler set_signal_handler;
   osh_ios_get_process_id get_process_id;
+  osh_ios_lookup_virtual_path lookup_virtual_path;
   int environment_count;
   const char* const* environment;
   void* context;
