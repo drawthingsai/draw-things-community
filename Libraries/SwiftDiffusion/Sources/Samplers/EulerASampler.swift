@@ -349,7 +349,9 @@ extension EulerASampler: Sampler {
       var currentModelVersion = version
       var indexOffset = startStep.integral
       if startStep.fractional == 0 && sigmas[0] != 1 {  // Otherwise it is already scaled properly with the noiseScaleFactor and sampleScaleFactor.
-        x = Float(sigmas[0]) * x
+        x = sampleScaledAdd(
+          x, x, sigma: (now: Float(sigmas[0]), next: 0), version: version
+        ) { sigma in (sigma.now, 0) }
       }
       var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
       for i in startStep.integral..<endStep.integral {
@@ -628,20 +630,40 @@ extension EulerASampler: Sampler {
             alpha: alpha, modifier: modifier, step: i, isBatchEnabled: isBatchEnabled,
             cfgZeroStar: cfgZeroStar)
         }
-        let sigmaUp = min(
-          sigmas[i + 1],
-          1.0
-            * ((sigmas[i + 1] * sigmas[i + 1]) * (sigma * sigma - sigmas[i + 1] * sigmas[i + 1])
-            / (sigma * sigma)).squareRoot())
-        let sigmaDown = (sigmas[i + 1] * sigmas[i + 1] - sigmaUp * sigmaUp).squareRoot()
+        let sigmaUp = { (sigma: (now: Double, next: Double)) -> Double in
+          guard sigma.now > 0 else { return 0 }
+          return min(
+            sigma.next,
+            ((sigma.next * sigma.next) * (sigma.now * sigma.now - sigma.next * sigma.next)
+              / (sigma.now * sigma.now)).squareRoot())
+        }
+        let stepSigma = (now: Float(sigma), next: Float(sigmas[i + 1]))
+        let up = sigmaUp((now: sigma, next: sigmas[i + 1]))
+        let sigmaDown = (sigmas[i + 1] * sigmas[i + 1] - up * up).squareRoot()
         let dt = sigmaDown - sigma  // Notice this is already a negative.
         var denoised: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
         case .u(_):
-          denoised = Functional.add(left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
-          x = Functional.add(
-            left: x, right: et, leftScalar: Float(1 - sigmas[i + 1] + sigmaDown),
-            rightScalar: Float(sigmaDown - sigma * sigmaDown - sigma * (1 - sigmas[i + 1])))
+          // et is expressed per video-sigma step. Convert its coefficient back to the
+          // modality's own sigma units; this ratio is one for ordinary models and video.
+          denoised = sampleScaledAdd(x, et, sigma: stepSigma, version: currentModelVersion) {
+            sigma in
+            let delta = sigma.now - sigma.next
+            let velocityScale = delta > 0 ? (stepSigma.now - stepSigma.next) / delta : 0
+            return (1, -sigma.now * velocityScale)
+          }
+          x = sampleScaledAdd(x, et, sigma: stepSigma, version: currentModelVersion) { sigma in
+            let delta = sigma.now - sigma.next
+            let velocityScale = delta > 0 ? (stepSigma.now - stepSigma.next) / delta : 0
+            let now = Double(sigma.now)
+            let next = Double(sigma.next)
+            let up = sigmaUp((now: now, next: next))
+            let down = (next * next - up * up).squareRoot()
+            return (
+              Float(1 - next + down),
+              Float(down - now * down - now * (1 - next)) * velocityScale
+            )
+          }
         case .v:
           // denoised = Float(1.0 / (sigma * sigma + 1)) * x - (sigma * sqrtAlphaCumprod) * et
           denoised = Functional.add(
@@ -677,8 +699,14 @@ extension EulerASampler: Sampler {
         }
         oldDenoised = denoised
         noise.randn(std: 1, mean: 0)
-        if sigmaUp > 0 {
-          x = Functional.add(left: x, right: noise, leftScalar: 1, rightScalar: Float(sigmaUp))
+        if up > 0 {
+          if case .u(_) = discretization.objective {
+            x = sampleScaledAdd(x, noise, sigma: stepSigma, version: currentModelVersion) { sigma in
+              (1, Float(sigmaUp((now: Double(sigma.now), next: Double(sigma.next)))))
+            }
+          } else {
+            x = Functional.add(left: x, right: noise, leftScalar: 1, rightScalar: Float(up))
+          }
         }
         if i < endStep.integral - 1, let sample = sample, let mask = mask, let negMask = negMask {
           // If you check how we compute sigma, this is basically how we get back to alphaCumprod.
@@ -687,9 +715,10 @@ extension EulerASampler: Sampler {
           // However, because we will multiple back 1 / alphaPrev.squareRoot() again, this effectively become the following.
           let qSample: DynamicGraph.Tensor<FloatType>
           if case .u(_) = discretization.objective {
-            qSample = Functional.add(
-              left: sample, right: noise, leftScalar: Float(1 - sigmas[i + 1]),
-              rightScalar: Float(sigmas[i + 1]))
+            qSample = sampleAdd(
+              sample, noise: noise,
+              scale: (sample: Float(1 - sigmas[i + 1]), noise: Float(sigmas[i + 1])),
+              version: currentModelVersion)
           } else {
             qSample = sample + Float(sigmas[i + 1]) * noise
           }

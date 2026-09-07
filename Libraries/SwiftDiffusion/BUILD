@@ -71,6 +71,19 @@ swift_test(
     ],
 )
 
+swift_test(
+    name = "SamplerTests",
+    srcs = ["Tests/SamplerTests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":SwiftDiffusion",
+        "@s4nnc//nnc",
+    ],
+)
+
 swift_library(
     name = "SwiftDiffusionCoreML",
     srcs = glob(["Sources/CoreML/**/*.swift"]),

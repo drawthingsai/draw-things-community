@@ -186,7 +186,7 @@ extension DPMPP2MSampler: Sampler {
         deviceProperties: deviceProperties, weightsCache: weightsCache)
       let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
       let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
-      let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
+      var sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
       let timesteps = (startStep.integral..<endStep.integral).map {
         let alphaCumprod: Double
         if $0 == startStep.integral && Float(startStep.integral) != startStep.fractional {
@@ -351,7 +351,9 @@ extension DPMPP2MSampler: Sampler {
       var indexOffset = startStep.integral
       // Now do DPM++ 2M Karras sampling.
       if startStep.fractional == 0 && sigmas[0] != 1 {
-        x = Float(sigmas[0]) * x
+        x = sampleScaledAdd(x, x, sigma: (now: Float(sigmas[0]), next: 0), version: version) {
+          sigma in (sigma.now, 0)
+        }
       }
       var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
       for i in startStep.integral..<endStep.integral {
@@ -367,6 +369,7 @@ extension DPMPP2MSampler: Sampler {
             + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
           let alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
           sigma = discretization.sigma(from: alphaCumprod)
+          sigmas[i] = sigma  // Keep the actual first interval for the multistep history.
         } else {
           sigma = sigmas[i]
         }
@@ -633,10 +636,16 @@ extension DPMPP2MSampler: Sampler {
         if isNaN(et.rawValue.toCPU()) {
           return .failure(SamplerError.isNaN)
         }
+        let stepSigma = (now: Float(sigma), next: Float(sigmas[i + 1]))
         var denoised: DynamicGraph.Tensor<FloatType>
         switch discretization.objective {
         case .u(_):
-          denoised = Functional.add(left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
+          denoised = sampleScaledAdd(x, et, sigma: stepSigma, version: currentModelVersion) {
+            sigma in
+            let delta = sigma.now - sigma.next
+            let velocityScale = delta > 0 ? (stepSigma.now - stepSigma.next) / delta : 0
+            return (1, -sigma.now * velocityScale)
+          }
         case .v:
           denoised = Functional.add(
             left: x, right: et, leftScalar: Float(1.0 / (sigma * sigma + 1)),
@@ -655,19 +664,23 @@ extension DPMPP2MSampler: Sampler {
         if isNaN(denoised.rawValue.toCPU()) {
           return .failure(SamplerError.isNaN)
         }
-        if let oldDenoised = oldDenoised, i < sampling.steps - 1 {
+        if let oldDenoised = oldDenoised, i < sampling.steps - 1,
+          sigma > sigmas[i + 1] && sigmas[i + 1] > 0
+        {
           if case .u(_) = discretization.objective {
             if sigmas[i - 1] < 1 {
-              // This is the correct formulation given we reformulaze it the sigma.
+              // A flow shift adds a constant to log-SNR, so h / hLast is shared by audio and video.
               let hLast = log(sigmas[i - 1] / (1 - sigmas[i - 1])) - log(sigma / (1 - sigma))
               let h = log(sigma / (1 - sigma)) - log(sigmas[i + 1] / (1 - sigmas[i + 1]))
               let r = h / hLast / 2
               let denoisedD = Functional.add(
                 left: denoised, right: oldDenoised, leftScalar: Float(1 + r), rightScalar: Float(-r)
               )
-              let w = sigmas[i + 1] / sigma
-              x = Functional.add(
-                left: x, right: denoisedD, leftScalar: Float(w), rightScalar: Float(1 - w))
+              x = sampleScaledAdd(x, denoisedD, sigma: stepSigma, version: currentModelVersion) {
+                sigma in
+                let w = Double(sigma.next) / Double(sigma.now)
+                return (Float(w), Float(1 - w))
+              }
             } else {
               // We will have hLast == inf case, in that case, just fallback.
               x = Functional.add(
@@ -683,7 +696,7 @@ extension DPMPP2MSampler: Sampler {
             x = Functional.add(
               left: x, right: denoisedD, leftScalar: Float(w), rightScalar: Float(1 - w))
           }
-        } else if i == sampling.steps - 1 {
+        } else if i == sampling.steps - 1 || sigmas[i + 1] == 0 {
           x = denoised
         } else {
           if case .u(_) = discretization.objective {
@@ -706,9 +719,10 @@ extension DPMPP2MSampler: Sampler {
           noise.randn(std: 1, mean: 0)
           let qSample: DynamicGraph.Tensor<FloatType>
           if case .u(_) = discretization.objective {
-            qSample = Functional.add(
-              left: sample, right: noise, leftScalar: Float(1 - sigmas[i + 1]),
-              rightScalar: Float(sigmas[i + 1]))
+            qSample = sampleAdd(
+              sample, noise: noise,
+              scale: (sample: Float(1 - sigmas[i + 1]), noise: Float(sigmas[i + 1])),
+              version: currentModelVersion)
           } else {
             qSample = sample + Float(sigmas[i + 1]) * noise
           }

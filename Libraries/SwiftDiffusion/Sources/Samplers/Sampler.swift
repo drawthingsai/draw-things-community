@@ -290,6 +290,55 @@ public protocol Sampler<FloatType, UNet> {
   func sampleScaleFactor(at step: Float, sampling: Sampling) -> Float
 }
 
+// Add noise to a clean sample. H3's RF audio and video use different noise levels.
+public func sampleAdd<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  _ sample: DynamicGraph.Tensor<FloatType>, noise: DynamicGraph.Tensor<FloatType>,
+  scale: (sample: Float, noise: Float), version: ModelVersion
+) -> DynamicGraph.Tensor<FloatType> {
+  var result = Functional.add(
+    left: sample, right: noise, leftScalar: scale.sample, rightScalar: scale.noise)
+  guard version == .minimaxH3 else { return result }
+  let shape = sample.shape
+  precondition(shape.count == 4 && shape[3] == 24 && shape == noise.shape)
+  let audioHeight = MiniMaxH3AudioHeight(videoLatentFrames: shape[0], latentWidth: shape[2])
+  let videoHeight = shape[1] - audioHeight
+  precondition(videoHeight > 0)
+  let audioSigma = MiniMaxH3AudioSigma(forVideoSigma: scale.noise)
+  result[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]] = Functional.add(
+    left: sample[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+    right: noise[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+    leftScalar: 1 - audioSigma, rightScalar: audioSigma)
+  return result
+}
+
+// Evaluate the same coefficient calculation at each modality's sigma. The operands may
+// be noisy samples, velocities, or fresh noise; their meaning belongs to the caller.
+public func sampleScaledAdd<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  _ left: DynamicGraph.Tensor<FloatType>, _ right: DynamicGraph.Tensor<FloatType>,
+  sigma: (now: Float, next: Float), version: ModelVersion,
+  scale: (_ sigma: (now: Float, next: Float)) -> (left: Float, right: Float)
+) -> DynamicGraph.Tensor<FloatType> {
+  let videoScale = scale(sigma)
+  var result = Functional.add(
+    left: left, right: right, leftScalar: videoScale.left, rightScalar: videoScale.right)
+  guard version == .minimaxH3 else { return result }
+  let shape = left.shape
+  precondition(shape.count == 4 && shape[3] == 24 && shape == right.shape)
+  let audioHeight = MiniMaxH3AudioHeight(videoLatentFrames: shape[0], latentWidth: shape[2])
+  let videoHeight = shape[1] - audioHeight
+  precondition(videoHeight > 0)
+  let audioScale = scale(
+    (
+      now: MiniMaxH3AudioSigma(forVideoSigma: sigma.now),
+      next: MiniMaxH3AudioSigma(forVideoSigma: sigma.next)
+    ))
+  result[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]] = Functional.add(
+    left: left[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+    right: right[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
+    leftScalar: audioScale.left, rightScalar: audioScale.right)
+  return result
+}
+
 // Cfg related shared functions.
 
 public func isCfgEnabled(

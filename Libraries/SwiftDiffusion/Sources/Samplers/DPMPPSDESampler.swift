@@ -173,7 +173,7 @@ extension DPMPPSDESampler: Sampler {
     let streamContext = StreamContext(.GPU(0))
     let result: Result<SamplerOutput<FloatType, UNet>, Error> = graph.withStream(streamContext) {
       let oldC = c
-      var conditions: [DynamicGraph.AnyTensor] = c
+      var allConditions: [DynamicGraph.AnyTensor] = c
       let fixedEncoder = UNetFixedEncoder<FloatType>(
         filePath: filePath, version: version, modifier: modifier,
         dualAttentionLayers: dualAttentionLayers, activationQkScaling: activationQkScaling,
@@ -187,9 +187,10 @@ extension DPMPPSDESampler: Sampler {
       let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
       let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
       let sigmas = alphasCumprod.map { discretization.sigma(from: $0) }
-      let timesteps = (startStep.integral..<endStep.integral).map {
+      // Interleave each step and its midpoint for fixed encoders and controls.
+      let timesteps = (startStep.integral..<endStep.integral).flatMap { i -> [Float] in
         let alphaCumprod: Double
-        if $0 == startStep.integral && Float(startStep.integral) != startStep.fractional {
+        if i == startStep.integral && Float(startStep.integral) != startStep.fractional {
           let lowTimestep = discretization.timestep(
             for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
           let highTimestep = discretization.timestep(
@@ -200,13 +201,17 @@ extension DPMPPSDESampler: Sampler {
             + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
           alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
         } else {
-          alphaCumprod = discretization.alphaCumprod(from: sigmas[$0])
+          alphaCumprod = discretization.alphaCumprod(from: sigmas[i])
         }
-        switch conditioning {
-        case .noise:
-          return discretization.noise(for: alphaCumprod)
-        case .timestep:
-          return discretization.timestep(for: alphaCumprod)
+        let sigma = discretization.sigma(from: alphaCumprod)
+        let sigmaS = sigmas[i + 1] > 0 ? (sigma * sigmas[i + 1]).squareRoot() : sigma
+        return [alphaCumprod, discretization.alphaCumprod(from: sigmaS)].map {
+          switch conditioning {
+          case .noise:
+            return discretization.noise(for: $0)
+          case .timestep:
+            return discretization.timestep(for: $0)
+          }
         }
       }
       let listOfLoras = lora
@@ -230,7 +235,7 @@ extension DPMPPSDESampler: Sampler {
           tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
           teaCache: teaCache, isBF16: isBF16, injectedControls: injectedControls,
           referenceImages: referenceImages)
-        conditions = vector + encodings
+        allConditions = vector + encodings
         injectedControlsC = injectedControls.map {
           $0.model.encode(
             isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
@@ -279,9 +284,9 @@ extension DPMPPSDESampler: Sampler {
             tiledDiffusion: tiledDiffusion)
         let newC: [DynamicGraph.AnyTensor]
         if version == .svdI2v {
-          newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
+          newC = Array(allConditions[0..<(1 + (allConditions.count - 1) / 2)])
         } else {
-          newC = conditions
+          newC = allConditions
         }
         let _ = unet.compileModel(
           filePath: filePath, externalOnDemand: externalOnDemand,
@@ -353,7 +358,9 @@ extension DPMPPSDESampler: Sampler {
       var indexOffset = startStep.integral
       // Now do DPM++ SDE Karras sampling.
       if startStep.fractional == 0 && sigmas[0] != 1 {
-        x = Float(sigmas[0]) * x
+        x = sampleScaledAdd(x, x, sigma: (now: Float(sigmas[0]), next: 0), version: version) {
+          sigma in (sigma.now, 0)
+        }
       }
       var oldDenoised: DynamicGraph.Tensor<FloatType>? = nil
       for i in startStep.integral..<endStep.integral {
@@ -373,7 +380,9 @@ extension DPMPPSDESampler: Sampler {
           sigma = sigmas[i]
         }
         if i == startStep.integral {
-          brownianNoise = Float(sigma.squareRoot()) * brownianNoise
+          brownianNoise = sampleScaledAdd(
+            brownianNoise, brownianNoise, sigma: (now: Float(sigma), next: 0), version: version
+          ) { sigma in (sigma.now.squareRoot(), 0) }
         }
         let alphaCumprod = discretization.alphaCumprod(from: sigma)
         let sqrtAlphaCumprod = alphaCumprod.squareRoot()
@@ -399,16 +408,7 @@ extension DPMPPSDESampler: Sampler {
         }
         let timestep = discretization.timestep(for: alphaCumprod)
         if timestep < refinerKickIn, let refiner = refiner {
-          let timesteps = (i..<endStep.integral).map {
-            let alphaCumprod =
-              $0 == i ? alphaCumprod : discretization.alphaCumprod(from: sigmas[$0])
-            switch conditioning {
-            case .noise:
-              return discretization.noise(for: alphaCumprod)
-            case .timestep:
-              return discretization.timestep(for: alphaCumprod)
-            }
-          }
+          let refinerTimesteps = Array(timesteps[(2 * (i - startStep.integral))...])
           unets = [nil]
           unet.unloadModel()
           lora =
@@ -434,7 +434,7 @@ extension DPMPPSDESampler: Sampler {
             externalOnDemand: refiner.externalOnDemand, deviceProperties: deviceProperties,
             weightsCache: weightsCache)
           if UNetFixedEncoder<FloatType>.isFixedEncoderRequired(version: refiner.version) {
-            conditions = []
+            allConditions = []
             let vector = fixedEncoder.vector(
               textEmbedding: oldC[oldC.count - 1], originalSize: originalSize,
               cropTopLeft: cropTopLeft,
@@ -442,13 +442,13 @@ extension DPMPPSDESampler: Sampler {
               negativeOriginalSize: negativeOriginalSize,
               negativeAestheticScore: negativeAestheticScore, fpsId: fpsId,
               motionBucketId: motionBucketId, condAug: condAug)
-            conditions =
+            allConditions =
               vector
               + fixedEncoder.encode(
                 isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
                 guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
                 distilledGuidanceLayers: refiner.distilledGuidanceLayers, modifier: modifier,
-                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                textEncoding: oldC, timesteps: refinerTimesteps, batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
@@ -474,9 +474,9 @@ extension DPMPPSDESampler: Sampler {
               tiledDiffusion: tiledDiffusion)
           let newC: [DynamicGraph.AnyTensor]
           if version == .svdI2v {
-            newC = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
+            newC = Array(allConditions[0..<(1 + (allConditions.count - 1) / 2)])
           } else {
-            newC = conditions
+            newC = allConditions
           }
           let _ = unet.compileModel(
             filePath: refiner.filePath, externalOnDemand: refiner.externalOnDemand,
@@ -524,9 +524,9 @@ extension DPMPPSDESampler: Sampler {
           version: currentModelVersion)
         let conditions = UNetExtractConditions(
           of: FloatType.self,
-          graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
+          graph: graph, index: 2 * (i - indexOffset), batchSize: cfgChannels * batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-          conditions: conditions, referenceImageCount: referenceImageCount,
+          conditions: allConditions, referenceImageCount: referenceImageCount,
           version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled)
         var et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
@@ -540,7 +540,7 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral),
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let injectedControlsAndAdapters = ControlModel<FloatType>
@@ -548,7 +548,7 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral),
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
@@ -605,7 +605,7 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injecteds, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral),
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let injectedControlsAndAdapters = ControlModel<FloatType>
@@ -613,7 +613,7 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injecteds, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral),
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let etOut = unet(
@@ -635,12 +635,17 @@ extension DPMPPSDESampler: Sampler {
             alpha: alpha, modifier: modifier, step: i, isBatchEnabled: isBatchEnabled,
             cfgZeroStar: cfgZeroStar)
         }
-        if i < sampling.steps - 1 {
+        let stepSigma = (now: Float(sigma), next: Float(sigmas[i + 1]))
+        if i < sampling.steps - 1 && sigma > sigmas[i + 1] && sigmas[i + 1] > 0 {
           var denoised: DynamicGraph.Tensor<FloatType>
           switch discretization.objective {
           case .u(_):
-            denoised = Functional.add(
-              left: x, right: et, leftScalar: 1, rightScalar: Float(-sigma))
+            denoised = sampleScaledAdd(x, et, sigma: stepSigma, version: currentModelVersion) {
+              sigma in
+              // The UNet expresses velocity per video-sigma step.
+              let velocityScale = (stepSigma.now - stepSigma.next) / (sigma.now - sigma.next)
+              return (1, -sigma.now * velocityScale)
+            }
           case .v:
             denoised = Functional.add(
               left: x, right: et, leftScalar: Float(1.0 / (sigma * sigma + 1)),
@@ -657,37 +662,42 @@ extension DPMPPSDESampler: Sampler {
               rightScalar: Float(sigma * sigmaData / (sigma * sigma + sigmaData2).squareRoot()))
           }
           let sigmaS = (sigma * sigmas[i + 1]).squareRoot()  // exp(log(sigma) - h / 2) == exp(log(sigma) / 2 + log(sigmas[i + 1]) / 2) == sqrt(exp(log(sigma) + log(sigma[i + 1]))
-          let sigmaUp1 = min(
-            sigmaS,
-            1.0
-              * ((sigmaS * sigmaS) * (sigma * sigma - sigmaS * sigmaS)
-              / (sigma * sigma)).squareRoot())
-          let sigmaDown1 = (sigmaS * sigmaS - sigmaUp1 * sigmaUp1).squareRoot()
-          let w1 = sigmaDown1 / sigma
-          var x2: DynamicGraph.Tensor<FloatType>
-          if case .u(_) = discretization.objective {
-            // Need to add denoised * (sigmaDown1 - sigmaS) for later compute x2.
-            x2 = Functional.add(
-              left: x, right: denoised, leftScalar: Float(w1),
-              rightScalar: Float(1 - w1 + sigmaDown1 - sigmaS))
-          } else {
-            x2 = Functional.add(
-              left: x, right: denoised, leftScalar: Float(w1), rightScalar: Float(1 - w1))
+          let firstSigma = (now: Float(sigma), next: Float(sigmaS))
+          var x2 = sampleScaledAdd(x, denoised, sigma: firstSigma, version: currentModelVersion) {
+            sigma in
+            // With eta = 1, sigmaDown = next^2 / now and w = sigmaDown / now.
+            let ratio = Double(sigma.next) / Double(sigma.now)
+            let w = ratio * ratio
+            if case .u(_) = discretization.objective {
+              return (Float(w), Float(1 - w + Double(sigma.next) * (ratio - 1)))
+            } else {
+              return (Float(w), Float(1 - w))
+            }
           }
           // Now do brownian sampling to sigma -> sigmaS (right), needs to compute sigmaS -> 0 (left).
           // Formulation borrowed from: https://github.com/google-research/torchsde/blob/master/torchsde/_brownian/brownian_interval.py#L181
           // Because we do brownian sampling, meaning there is a dependency between this observation and the next one.
           // We need to keep leftW and leftW2 in memory (leftW2 in next round) as we split the observations further.
-          let leftDiffOverH = sigmaS / sigma
-          let rightDiff = sigma - sigmaS
           noise.randn(std: 1, mean: 0)
-          let leftW = Functional.add(
-            left: brownianNoise, right: noise, leftScalar: Float(leftDiffOverH),
-            rightScalar: Float((rightDiff * leftDiffOverH).squareRoot()))
+          let leftW = sampleScaledAdd(
+            brownianNoise, noise, sigma: firstSigma, version: currentModelVersion
+          ) { sigma in
+            let ratio = Double(sigma.next) / Double(sigma.now)
+            return (
+              Float(ratio), Float(((Double(sigma.now) - Double(sigma.next)) * ratio).squareRoot())
+            )
+          }
           let rightW = brownianNoise - leftW
-          x2 = Functional.add(
-            left: x2, right: rightW, leftScalar: 1,
-            rightScalar: Float(sigmaUp1 / (sigma - sigmaS).squareRoot()))
+          x2 = sampleScaledAdd(x2, rightW, sigma: firstSigma, version: currentModelVersion) {
+            sigma in
+            // sigmaUp / sqrt(now - next) = (next / now) * sqrt(now + next).
+            (
+              1,
+              Float(
+                Double(sigma.next) / Double(sigma.now)
+                  * (Double(sigma.now) + Double(sigma.next)).squareRoot())
+            )
+          }
           // Now run the model again.
           let alphaSCumprod = discretization.alphaCumprod(from: sigmaS)
           let sqrtAlphaSCumprod = alphaSCumprod.squareRoot()
@@ -711,6 +721,12 @@ extension DPMPPSDESampler: Sampler {
           let t = unet.timeEmbed(
             graph: graph, batchSize: cfgChannels * batchSize, timestep: timestep,
             version: currentModelVersion)
+          let conditions = UNetExtractConditions(
+            of: FloatType.self, graph: graph, index: 2 * (i - indexOffset) + 1,
+            batchSize: cfgChannels * batchSize,
+            tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+            conditions: allConditions, referenceImageCount: referenceImageCount,
+            version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled)
           if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
             let condAugFrames = condAugFrames
           {
@@ -721,14 +737,14 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral) + 1,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
             let injectedControlsAndAdapters = ControlModel<FloatType>.injectedControlsAndAdapters(
               injecteds: injectedControls, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral) + 1,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
             let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
@@ -789,7 +805,7 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injecteds, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral) + 1,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
             let injectedControlsAndAdapters = ControlModel<
@@ -799,7 +815,7 @@ extension DPMPPSDESampler: Sampler {
               injecteds: injecteds, step: i, version: unet.version,
               usesFlashAttention: usesFlashAttention != .none, inputs: xIn, t, injectedControlsC,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
-              isCfgEnabled: isCfgEnabled, index: i - startStep.integral,
+              isCfgEnabled: isCfgEnabled, index: 2 * (i - startStep.integral) + 1,
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
             let etOut = unet(
@@ -822,10 +838,14 @@ extension DPMPPSDESampler: Sampler {
               cfgZeroStar: cfgZeroStar)
           }
           var denoised2: DynamicGraph.Tensor<FloatType>
+          let secondSigma = (now: Float(sigmaS), next: Float(sigmas[i + 1]))
           switch discretization.objective {
           case .u(_):
-            denoised2 = Functional.add(
-              left: x2, right: et, leftScalar: 1, rightScalar: Float(-sigmaS))
+            denoised2 = sampleScaledAdd(x2, et, sigma: secondSigma, version: currentModelVersion) {
+              sigma in
+              let velocityScale = (secondSigma.now - secondSigma.next) / (sigma.now - sigma.next)
+              return (1, -sigma.now * velocityScale)
+            }
           case .v:
             denoised2 = Functional.add(
               left: x2, right: et, leftScalar: Float(1.0 / (sigmaS * sigmaS + 1)),
@@ -842,32 +862,49 @@ extension DPMPPSDESampler: Sampler {
               left: x2, right: et, leftScalar: Float(sigmaData2 / (sigmaS * sigmaS + sigmaData2)),
               rightScalar: Float(sigmaS * sigmaData / (sigmaS * sigmaS + sigmaData2).squareRoot()))
           }
-          let sigmaUp2 = min(
-            sigmas[i + 1],
-            1.0
-              * ((sigmas[i + 1] * sigmas[i + 1]) * (sigma * sigma - sigmas[i + 1] * sigmas[i + 1])
-              / (sigma * sigma)).squareRoot())
-          let sigmaDown2 = (sigmas[i + 1] * sigmas[i + 1] - sigmaUp2 * sigmaUp2).squareRoot()
-          let denoisedD = denoised2
-          let w2 = sigmaDown2 / sigma
+          var denoisedD = denoised2
           if case .u(_) = discretization.objective {
-            x = Functional.add(
-              left: x, right: denoisedD, leftScalar: Float(w2),
-              rightScalar: Float(1 - w2 + sigmaDown2 - sigmas[i + 1]))
-          } else {
-            x = Functional.add(
-              left: x, right: denoisedD, leftScalar: Float(w2), rightScalar: Float(1 - w2))
+            // The mapped midpoint need not bisect audio's log-sigma interval.
+            // denoisedD = denoised + (h / (2 * hMid)) * (denoised2 - denoised).
+            let derivative = sampleScaledAdd(
+              denoised2, denoised, sigma: firstSigma, version: currentModelVersion
+            ) { sigma in
+              let hMid = log(Double(sigma.now) / Double(sigma.next))
+              return (Float(1 / hMid), Float(-1 / hMid))
+            }
+            denoisedD = sampleScaledAdd(
+              denoised, derivative, sigma: stepSigma, version: currentModelVersion
+            ) { sigma in (1, Float(log(Double(sigma.now) / Double(sigma.next)) / 2)) }
           }
-          let leftDiffOverH2 = sigmas[i + 1] / sigmaS
-          let rightDiff2 = sigmaS - sigmas[i + 1]
+          x = sampleScaledAdd(x, denoisedD, sigma: stepSigma, version: currentModelVersion) {
+            sigma in
+            let ratio = Double(sigma.next) / Double(sigma.now)
+            let w = ratio * ratio
+            if case .u(_) = discretization.objective {
+              return (Float(w), Float(1 - w + Double(sigma.next) * (ratio - 1)))
+            } else {
+              return (Float(w), Float(1 - w))
+            }
+          }
           noise.randn(std: 1, mean: 0)
-          let leftW2 = Functional.add(
-            left: leftW, right: noise, leftScalar: Float(leftDiffOverH2),
-            rightScalar: Float((rightDiff2 * leftDiffOverH2).squareRoot()))
+          let leftW2 = sampleScaledAdd(
+            leftW, noise, sigma: secondSigma, version: currentModelVersion
+          ) {
+            sigma in
+            let ratio = Double(sigma.next) / Double(sigma.now)
+            return (
+              Float(ratio), Float(((Double(sigma.now) - Double(sigma.next)) * ratio).squareRoot())
+            )
+          }
           let rightW2 = leftW - leftW2 + rightW
-          x = Functional.add(
-            left: x, right: rightW2, leftScalar: 1,
-            rightScalar: Float(sigmaUp2 / (sigma - sigmas[i + 1]).squareRoot()))
+          x = sampleScaledAdd(x, rightW2, sigma: stepSigma, version: currentModelVersion) { sigma in
+            (
+              1,
+              Float(
+                Double(sigma.next) / Double(sigma.now)
+                  * (Double(sigma.now) + Double(sigma.next)).squareRoot())
+            )
+          }
           brownianNoise = leftW2  // On next round, this is the only thing we care.
           oldDenoised = denoised
         } else {
@@ -904,9 +941,10 @@ extension DPMPPSDESampler: Sampler {
           noise.randn(std: 1, mean: 0)
           let qSample: DynamicGraph.Tensor<FloatType>
           if case .u(_) = discretization.objective {
-            qSample = Functional.add(
-              left: sample, right: noise, leftScalar: Float(1 - sigmas[i + 1]),
-              rightScalar: Float(sigmas[i + 1]))
+            qSample = sampleAdd(
+              sample, noise: noise,
+              scale: (sample: Float(1 - sigmas[i + 1]), noise: Float(sigmas[i + 1])),
+              version: currentModelVersion)
           } else {
             qSample = sample + Float(sigmas[i + 1]) * noise
           }

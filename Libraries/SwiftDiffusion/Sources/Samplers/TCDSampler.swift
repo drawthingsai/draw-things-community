@@ -570,12 +570,21 @@ extension TCDSampler: Sampler {
         switch discretization.objective {
         case .u(_):
           let sigmaS = discretization.sigma(from: alphaCumprodS)
-          predictOriginalSample = Functional.add(
-            left: x, right: etOut, leftScalar: 1, rightScalar: Float(-sigma))
-          predictNoisedSample = Functional.add(
-            left: x, right: predictOriginalSample,
-            leftScalar: Float(sigmaS / sigma),
-            rightScalar: Float(1 - sigmaS / sigma))
+          let stepSigma = (now: Float(sigma), next: Float(discretization.sigma(from: alphaPrev)))
+          predictOriginalSample = sampleScaledAdd(
+            x, etOut, sigma: stepSigma, version: currentModelVersion
+          ) { sigma in
+            let delta = sigma.now - sigma.next
+            let velocityScale = delta > 0 ? (stepSigma.now - stepSigma.next) / delta : 0
+            return (1, -sigma.now * velocityScale)
+          }
+          predictNoisedSample = sampleScaledAdd(
+            x, predictOriginalSample, sigma: (now: Float(sigma), next: Float(sigmaS)),
+            version: currentModelVersion
+          ) { sigma in
+            let w = sigma.now > 0 ? Double(sigma.next) / Double(sigma.now) : 0
+            return (Float(w), Float(1 - w))
+          }
         case .v:
           let sqrtAlphaCumprod = 1.0 / (sigma * sigma + 1).squareRoot()
           predictOriginalSample = Functional.add(
@@ -614,15 +623,19 @@ extension TCDSampler: Sampler {
             if case .u(_) = discretization.objective {
               // For flow matching, move from s -> t_prev by correcting x0 coefficient, then add
               // independent noise to match the target sigma marginal.
-              x = Functional.add(
-                left: predictNoisedSample, right: predictOriginalSample, leftScalar: 1,
-                rightScalar: Float(alphaPrev - alphaCumprodS))
               let sigmaPrev = discretization.sigma(from: alphaPrev)
               let sigmaS = discretization.sigma(from: alphaCumprodS)
-              let stochasticStd = max(0, sigmaPrev * sigmaPrev - sigmaS * sigmaS).squareRoot()
-              x = Functional.add(
-                left: x, right: noise, leftScalar: 1,
-                rightScalar: Float(stochasticStd))
+              let noiseSigma = (now: Float(sigmaPrev), next: Float(sigmaS))
+              x = sampleScaledAdd(
+                predictNoisedSample, predictOriginalSample, sigma: noiseSigma,
+                version: currentModelVersion
+              ) { sigma in (1, sigma.next - sigma.now) }
+              x = sampleScaledAdd(x, noise, sigma: noiseSigma, version: currentModelVersion) {
+                sigma in
+                let now = Double(sigma.now)
+                let next = Double(sigma.next)
+                return (1, Float(max(0, now * now - next * next).squareRoot()))
+              }
             } else {
               x = Functional.add(
                 left: predictNoisedSample, right: noise,
@@ -641,9 +654,9 @@ extension TCDSampler: Sampler {
           noise.randn(std: 1, mean: 0)
           let qSample: DynamicGraph.Tensor<FloatType>
           if case .u(_) = discretization.objective {
-            qSample = Functional.add(
-              left: sample, right: noise, leftScalar: Float(alphaPrev),
-              rightScalar: Float(1 - alphaPrev))
+            qSample = sampleAdd(
+              sample, noise: noise, scale: (sample: Float(alphaPrev), noise: Float(1 - alphaPrev)),
+              version: currentModelVersion)
           } else {
             qSample =
               Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise

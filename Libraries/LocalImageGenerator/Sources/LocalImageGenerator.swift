@@ -4994,7 +4994,9 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         let noiseScaleFactor = secondPassSampler.noiseScaleFactor(
           at: initTimestep.startStep, sampling: sampling)
-        xEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+        xEnc = sampleAdd(
+          sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
+          version: modelVersion)
         secondPassTextGuidance = textGuidanceScale
         secondPassSampling = sampling
       }
@@ -5835,7 +5837,9 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         let noiseScaleFactor = sampler.noiseScaleFactor(
           at: initTimestep.startStep, sampling: sampling)
-        let zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+        let zEnc = sampleAdd(
+          sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
+          version: modelVersion)
         x_T = zEnc
       } else {
         x_T = noise
@@ -5969,7 +5973,9 @@ extension LocalImageGenerator {
             at: initTimestep.startStep, sampling: secondPassSampling)
           let noiseScaleFactor = sampler.noiseScaleFactor(
             at: initTimestep.startStep, sampling: secondPassSampling)
-          let zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+          let zEnc = sampleAdd(
+            sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
+            version: modelVersion)
           x_T = zEnc
         } else {
           x_T = noise
@@ -7264,7 +7270,9 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         let noiseScaleFactor = sampler.noiseScaleFactor(
           at: initTimestep.startStep, sampling: sampling)
-        let zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+        let zEnc = sampleAdd(
+          sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
+          version: modelVersion)
         x_T = zEnc
       } else {
         x_T = noise
@@ -7414,7 +7422,9 @@ extension LocalImageGenerator {
             at: initTimestep.startStep, sampling: secondPassSampling)
           let noiseScaleFactor = sampler.noiseScaleFactor(
             at: initTimestep.startStep, sampling: secondPassSampling)
-          let zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+          let zEnc = sampleAdd(
+            sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
+            version: modelVersion)
           x_T = zEnc
         } else {
           x_T = noise
@@ -8288,7 +8298,9 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         let noiseScaleFactor = sampler.noiseScaleFactor(
           at: initTimestep.startStep, sampling: sampling)
-        zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+        zEnc = sampleAdd(
+          sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
+          version: modelVersion)
         pureNoise = false
       } else {
         zEnc = noise
@@ -8503,7 +8515,9 @@ extension LocalImageGenerator {
             at: initTimestep.startStep, sampling: sampling)
           let noiseScaleFactor = sampler.noiseScaleFactor(
             at: initTimestep.startStep, sampling: sampling)
-          zEnc = sampleScaleFactor * sample + noiseScaleFactor * noise
+          zEnc = sampleAdd(
+            sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
+            version: modelVersion)
           pureNoise = false
         } else {
           zEnc = noise

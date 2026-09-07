@@ -96,7 +96,7 @@ extension UniPCSampler: Sampler {
     prevTimestep t: Int,
     sample x: DynamicGraph.Tensor<Float>, timestepList: [Int],
     outputList: [DynamicGraph.Tensor<Float>], lambdas: [Double], alphas: [Double],
-    sigmas: [Double]
+    sigmas: [Double], version: ModelVersion
   ) -> DynamicGraph.Tensor<Float> {
     let s0 = timestepList[timestepList.count - 1]
     let m0 = outputList[outputList.count - 1]
@@ -105,7 +105,9 @@ extension UniPCSampler: Sampler {
     let alphat = alphas[t]
     let sigmat = sigmas[t]
     let sigmas0 = sigmas[s0]
+    if sigmat == 0 { return m0 }
     let h = lambdat - lambdas0
+    guard h > 0 else { return x }
     let D1: DynamicGraph.Tensor<Float>?
     if timestepList.count >= 2 && outputList.count >= 2 {
       let si = timestepList[timestepList.count - 2]
@@ -120,9 +122,25 @@ extension UniPCSampler: Sampler {
     let hPhi1 = exp(hh) - 1
     let Bh = hPhi1
     let rhosP = 0.5
-    let xt_ = Functional.add(
-      left: x, right: m0, leftScalar: Float(sigmat / sigmas0), rightScalar: Float(-alphat * hPhi1))
+    let xt_: DynamicGraph.Tensor<Float>
+    if case .u(_) = discretization.objective {
+      xt_ = sampleScaledAdd(
+        x, m0, sigma: (now: Float(sigmas0), next: Float(sigmat)), version: version
+      ) { sigma in
+        let w = Double(sigma.next) / Double(sigma.now)
+        return (Float(w), Float(1 - w))
+      }
+    } else {
+      xt_ = Functional.add(
+        left: x, right: m0, leftScalar: Float(sigmat / sigmas0), rightScalar: Float(-alphat * hPhi1)
+      )
+    }
     if let D1 = D1 {
+      if case .u(_) = discretization.objective {
+        return sampleScaledAdd(
+          xt_, D1, sigma: (now: Float(sigmas0), next: Float(sigmat)), version: version
+        ) { sigma in (1, Float((1 - Double(sigma.next) / Double(sigma.now)) * rhosP)) }
+      }
       let xt = Functional.add(
         left: xt_, right: D1, leftScalar: 1, rightScalar: Float(-alphat * Bh * rhosP))
       return xt
@@ -134,7 +152,7 @@ extension UniPCSampler: Sampler {
     predX0 mt: DynamicGraph.Tensor<Float>, timestep t: Int,
     lastSample x: DynamicGraph.Tensor<Float>, timestepList: [Int],
     outputList: [DynamicGraph.Tensor<Float>], lambdas: [Double], alphas: [Double],
-    sigmas: [Double]
+    sigmas: [Double], version: ModelVersion
   ) -> DynamicGraph.Tensor<Float> {
     let s0 = timestepList[timestepList.count - 1]
     let m0 = outputList[outputList.count - 1]
@@ -143,7 +161,9 @@ extension UniPCSampler: Sampler {
     let alphat = alphas[t]
     let sigmat = sigmas[t]
     let sigmas0 = sigmas[s0]
+    if sigmat == 0 { return mt }
     let h = lambdat - lambdas0
+    guard h > 0 else { return x }
     let hh = -h
     let hPhi1 = exp(hh) - 1
     let hPhik = hPhi1 / hh - 1
@@ -166,8 +186,19 @@ extension UniPCSampler: Sampler {
       rhosC0 = 0.5
       rhosC1 = 0.5
     }
-    let xt_ = Functional.add(
-      left: x, right: m0, leftScalar: Float(sigmat / sigmas0), rightScalar: Float(-alphat * hPhi1))
+    let xt_: DynamicGraph.Tensor<Float>
+    if case .u(_) = discretization.objective {
+      xt_ = sampleScaledAdd(
+        x, m0, sigma: (now: Float(sigmas0), next: Float(sigmat)), version: version
+      ) { sigma in
+        let w = Double(sigma.next) / Double(sigma.now)
+        return (Float(w), Float(1 - w))
+      }
+    } else {
+      xt_ = Functional.add(
+        left: x, right: m0, leftScalar: Float(sigmat / sigmas0), rightScalar: Float(-alphat * hPhi1)
+      )
+    }
     let D1t = mt - m0
     let D1s: DynamicGraph.Tensor<Float>
     if let D1 = D1 {
@@ -175,6 +206,11 @@ extension UniPCSampler: Sampler {
         left: D1, right: D1t, leftScalar: Float(rhosC0), rightScalar: Float(rhosC1))
     } else {
       D1s = Float(rhosC1) * D1t
+    }
+    if case .u(_) = discretization.objective {
+      return sampleScaledAdd(
+        xt_, D1s, sigma: (now: Float(sigmas0), next: Float(sigmat)), version: version
+      ) { sigma in (1, Float(1 - Double(sigma.next) / Double(sigma.now))) }
     }
     let xt = Functional.add(left: xt_, right: D1s, leftScalar: 1, rightScalar: Float(-alphat * Bh))
     return xt
@@ -272,22 +308,21 @@ extension UniPCSampler: Sampler {
         canRunLoRASeparately: canRunLoRASeparately, externalOnDemand: externalOnDemand,
         deviceProperties: deviceProperties, weightsCache: weightsCache)
       let injectedControlsC: [[DynamicGraph.Tensor<FloatType>]]
-      let alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+      var alphasCumprod = discretization.alphasCumprod(steps: sampling.steps, shift: sampling.shift)
+      if Float(startStep.integral) != startStep.fractional {
+        let lowTimestep = discretization.timestep(
+          for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
+        let highTimestep = discretization.timestep(
+          for: alphasCumprod[
+            max(0, min(Int(startStep.fractional.rounded(.up)), alphasCumprod.count - 1))])
+        let timestep =
+          lowTimestep
+          + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
+        alphasCumprod[startStep.integral] = discretization.alphaCumprod(
+          timestep: timestep, shift: 1)
+      }
       let timesteps = (startStep.integral..<endStep.integral).map {
-        let alphaCumprod: Double
-        if $0 == startStep.integral && Float(startStep.integral) != startStep.fractional {
-          let lowTimestep = discretization.timestep(
-            for: alphasCumprod[max(0, min(Int(startStep.integral), alphasCumprod.count - 1))])
-          let highTimestep = discretization.timestep(
-            for: alphasCumprod[
-              max(0, min(Int(startStep.fractional.rounded(.up)), alphasCumprod.count - 1))])
-          let timestep =
-            lowTimestep
-            + Float(highTimestep - lowTimestep) * (startStep.fractional - Float(startStep.integral))
-          alphaCumprod = discretization.alphaCumprod(timestep: timestep, shift: 1)
-        } else {
-          alphaCumprod = alphasCumprod[$0]
-        }
+        let alphaCumprod = alphasCumprod[$0]
         switch conditioning {
         case .noise:
           return discretization.noise(for: alphaCumprod)
@@ -410,6 +445,8 @@ extension UniPCSampler: Sampler {
         alphas = alphasCumprod.map { $0.squareRoot() }
         sigmas = alphasCumprod.map { (1 - $0).squareRoot() }
       }
+      // H3's flow shift adds a constant to log-SNR. Differences (h, rk, rhos)
+      // are therefore shared; only the sample and clean-prediction coefficients differ.
       let lambdas = zip(alphas, sigmas).map { log($0) - log($1) }
       let condAugFrames: DynamicGraph.Tensor<FloatType>?
       let textGuidanceVector: DynamicGraph.Tensor<FloatType>?
@@ -704,9 +741,15 @@ extension UniPCSampler: Sampler {
         var xF32 = DynamicGraph.Tensor<Float>(from: x)
         switch discretization.objective {
         case .u(_):
-          predX0 = Functional.add(
-            left: xF32, right: DynamicGraph.Tensor<Float>(from: et), leftScalar: 1,
-            rightScalar: Float(-sigmas[i]))
+          let stepSigma = (now: Float(sigmas[i]), next: Float(sigmas[i + 1]))
+          predX0 = sampleScaledAdd(
+            xF32, DynamicGraph.Tensor<Float>(from: et), sigma: stepSigma,
+            version: currentModelVersion
+          ) { sigma in
+            let delta = sigma.now - sigma.next
+            let velocityScale = delta > 0 ? (stepSigma.now - stepSigma.next) / delta : 0
+            return (1, -sigma.now * velocityScale)
+          }
         case .v:
           predX0 = Functional.add(
             left: xF32, right: DynamicGraph.Tensor<Float>(from: et), leftScalar: Float(alphas[i]),
@@ -731,7 +774,8 @@ extension UniPCSampler: Sampler {
         if let lastSample = lastSample {
           xF32 = uniCBhUpdate(
             predX0: predX0, timestep: i, lastSample: lastSample, timestepList: timestepList,
-            outputList: outputList, lambdas: lambdas, alphas: alphas, sigmas: sigmas)
+            outputList: outputList, lambdas: lambdas, alphas: alphas, sigmas: sigmas,
+            version: currentModelVersion)
         }
         if timestepList.count < 2 {
           timestepList.append(i)
@@ -751,7 +795,8 @@ extension UniPCSampler: Sampler {
           lastSample = xF32
           xF32 = uniPBhUpdate(
             prevTimestep: prevTimestep, sample: xF32, timestepList: timestepList,
-            outputList: outputList, lambdas: lambdas, alphas: alphas, sigmas: sigmas)
+            outputList: outputList, lambdas: lambdas, alphas: alphas, sigmas: sigmas,
+            version: currentModelVersion)
         } else {
           xF32 = predX0
         }
@@ -762,9 +807,9 @@ extension UniPCSampler: Sampler {
           noise.randn(std: 1, mean: 0)
           let qSample: DynamicGraph.Tensor<FloatType>
           if case .u(_) = discretization.objective {
-            qSample = Functional.add(
-              left: sample, right: noise, leftScalar: Float(alphaPrev),
-              rightScalar: Float(1 - alphaPrev))
+            qSample = sampleAdd(
+              sample, noise: noise, scale: (sample: Float(alphaPrev), noise: Float(1 - alphaPrev)),
+              version: currentModelVersion)
           } else {
             qSample =
               Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise

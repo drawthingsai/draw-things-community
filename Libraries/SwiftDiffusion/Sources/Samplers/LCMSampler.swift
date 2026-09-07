@@ -643,9 +643,9 @@ extension LCMSampler: Sampler {
           noise.randn(std: 1, mean: 0)
           let qSample: DynamicGraph.Tensor<FloatType>
           if case .u(_) = discretization.objective {
-            qSample = Functional.add(
-              left: sample, right: noise, leftScalar: Float(alphaPrev),
-              rightScalar: Float(1 - alphaPrev))
+            qSample = sampleAdd(
+              sample, noise: noise, scale: (sample: Float(alphaPrev), noise: Float(1 - alphaPrev)),
+              version: currentModelVersion)
           } else {
             qSample =
               Float(alphaPrev.squareRoot()) * sample + Float((1 - alphaPrev).squareRoot()) * noise
