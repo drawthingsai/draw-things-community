@@ -15,6 +15,16 @@ swift_library(
 )
 
 swift_test(
+    name = "ModelZooTests",
+    srcs = [
+        "Tests/ModelZooTests.swift",
+    ],
+    deps = [
+        ":ModelZoo",
+    ],
+)
+
+swift_test(
     name = "ComputeUnitsTests",
     srcs = [
         "Tests/ComputeUnitsTests.swift",
