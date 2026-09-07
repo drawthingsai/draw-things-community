@@ -309,12 +309,7 @@ public struct DeviceCapability {
     #else
       if #available(iOS 26, macOS 26, macCatalyst 26, *) {
         let physicalMemory = ProcessInfo.processInfo.physicalMemory
-        guard physicalMemory >= 50_465_865_728 else {
-          return true
-        }
-        if let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple10) {
-          return false
-        }
+        return physicalMemory < 50_465_865_728
       }
       return true
     #endif
