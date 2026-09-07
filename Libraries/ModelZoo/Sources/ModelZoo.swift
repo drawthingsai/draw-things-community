@@ -871,7 +871,7 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
     ),
     Specification(
-      name: "MiniMax H3 (Exact)", file: "minimax_h3_f16.ckpt", prefix: "",
+      name: "MiniMax H3 (8-bit S)", file: "minimax_h3_i8x.ckpt", prefix: "",
       version: .minimaxH3, defaultScale: 12,
       textEncoder: "qwen_3_vl_32b_50_i8x.ckpt",
       autoencoder: "minimax_h3_vae_f16.ckpt",
