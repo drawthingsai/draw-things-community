@@ -44,7 +44,9 @@ public struct DeviceCapability {
   public enum WeightsStreaming: Int, CaseIterable, Sendable {
     case _8GiB = 8
     case _16GiB = 16
+    case _24GiB = 24
     case _32GiB = 32
+    case _40GiB = 40
     case _48GiB = 48
     case none = 0
   }
@@ -58,8 +60,12 @@ public struct DeviceCapability {
       return .none
     } else if availableMemory >= 48 * gibibyte {
       return ._48GiB
+    } else if availableMemory >= 40 * gibibyte {
+      return ._40GiB
     } else if availableMemory >= 32 * gibibyte {
       return ._32GiB
+    } else if availableMemory >= 24 * gibibyte {
+      return ._24GiB
     } else if availableMemory >= 16 * gibibyte {
       return ._16GiB
     }
