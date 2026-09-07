@@ -494,6 +494,38 @@ import Foundation
       }
     }()
 
+    static let MiniMaxH3UnzipItem: URL? = {
+      let fileManager = FileManager.default
+      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
+      let modelUrl = coreMLUrl.appendingPathComponent("minimax_h3_tae")
+      do {
+        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
+        guard !fileManager.fileExists(atPath: modelUrl.path) else { return modelUrl }
+        guard let archiveUrl = Bundle.main.url(forResource: "minimax_h3_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
+        for size in [768, 1024, 1280, 1536, 1792] {
+          do {
+            try fileManager.linkItem(
+              at: modelUrl.appendingPathComponent("weight.bin"),
+              to: modelUrl.appendingPathComponent("\(size).mlmodelc/weights/weight.bin"))
+          } catch {
+            try fileManager.copyItem(
+              at: modelUrl.appendingPathComponent("weight.bin"),
+              to: modelUrl.appendingPathComponent("\(size).mlmodelc/weights/weight.bin"))
+          }
+        }
+        try fileManager.moveItem(
+          at: modelUrl.appendingPathComponent("weight.bin"),
+          to: modelUrl.appendingPathComponent("2048.mlmodelc/weights/weight.bin"))
+        return modelUrl
+      } catch {
+        try? fileManager.removeItem(at: modelUrl)
+        return nil
+      }
+    }()
+
     static let LTX2UnzipItem: URL? = {
       let fileManager = FileManager.default
       let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
@@ -1109,6 +1141,78 @@ import Foundation
       }
       return ManagedMLModel(
         contentsOf: flux2UnzipItem.appendingPathComponent("2048.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let MiniMaxH3TinyDecoderFor768: ManagedMLModel? = {
+      guard let MiniMaxH3UnzipItem = MiniMaxH3UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: MiniMaxH3UnzipItem.appendingPathComponent("768.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let MiniMaxH3TinyDecoderFor1024: ManagedMLModel? = {
+      guard let MiniMaxH3UnzipItem = MiniMaxH3UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: MiniMaxH3UnzipItem.appendingPathComponent("1024.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let MiniMaxH3TinyDecoderFor1280: ManagedMLModel? = {
+      guard let MiniMaxH3UnzipItem = MiniMaxH3UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: MiniMaxH3UnzipItem.appendingPathComponent("1280.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let MiniMaxH3TinyDecoderFor1536: ManagedMLModel? = {
+      guard let MiniMaxH3UnzipItem = MiniMaxH3UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: MiniMaxH3UnzipItem.appendingPathComponent("1536.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let MiniMaxH3TinyDecoderFor1792: ManagedMLModel? = {
+      guard let MiniMaxH3UnzipItem = MiniMaxH3UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: MiniMaxH3UnzipItem.appendingPathComponent("1792.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let MiniMaxH3TinyDecoderFor2048: ManagedMLModel? = {
+      guard let MiniMaxH3UnzipItem = MiniMaxH3UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: MiniMaxH3UnzipItem.appendingPathComponent("2048.mlmodelc"),
         configuration: configuration)
     }()
     static let LTX2TinyDecoderFor768: ManagedMLModel? = {

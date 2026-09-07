@@ -700,7 +700,7 @@ public enum ImageConverter {
       return x / 12.92
     }
   }
-  #if canImport(UIKit) && canImport(CoreML)
+  #if canImport(CoreML)
     public static func imagesWithTAESD(fromLatent tensor: Tensor<FloatType>, version: ModelVersion)
       -> [CGImage]
     {
@@ -712,7 +712,7 @@ public enum ImageConverter {
       let taesd: ManagedMLModel?
       let isVideo: Bool
       switch version {
-      case .hiDreamO1, .minimaxH3:
+      case .hiDreamO1:
         return []
       case .flux1, .hiDreamI1, .zImage:
         imageHeight = shape[1] * 8
@@ -946,6 +946,38 @@ public enum ImageConverter {
           imagePaddingSize = 1792
         case 1793...2048:
           taesd = LTX2_3TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
+      case .minimaxH3:
+        let audioHeight = MiniMaxH3AudioHeight(
+          videoLatentFrames: shape[0], latentWidth: shape[2])
+        guard shape[3] == 24, shape[1] > audioHeight else { return [] }
+        tensor = tensor[0..<shape[0], 0..<(shape[1] - audioHeight), 0..<shape[2], 0..<shape[3]]
+          .copied()
+        shape = tensor.shape
+        imageHeight = shape[1] * 16
+        imageWidth = shape[2] * 16
+        isVideo = true
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = MiniMaxH3TinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = MiniMaxH3TinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = MiniMaxH3TinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = MiniMaxH3TinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = MiniMaxH3TinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = MiniMaxH3TinyDecoderFor2048
           imagePaddingSize = 2048
         default:
           return []
@@ -1223,78 +1255,6 @@ public enum ImageConverter {
     let imageHeight = shape[1]
     let imageWidth = shape[2]
     let channels = shape[3]
-    if version == .minimaxH3 {
-      guard channels == 24 else { return ([], false) }
-      let audioHeight = MiniMaxH3AudioHeight(
-        videoLatentFrames: batchSize, latentWidth: imageWidth)
-      let videoHeight = imageHeight - audioHeight
-      guard videoHeight > 0 else { return ([], false) }
-      return tensor.withUnsafeBytes {
-        guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
-          return ([], false)
-        }
-        var images = [CGImage]()
-        for frame in 0..<batchSize {
-          let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * videoHeight * 4)
-          let frameLatent = fp16 + frame * imageHeight * imageWidth * channels
-          for pixel in 0..<videoHeight * imageWidth {
-            let offset = pixel * channels
-            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11) = (
-              frameLatent[offset], frameLatent[offset + 1], frameLatent[offset + 2],
-              frameLatent[offset + 3], frameLatent[offset + 4], frameLatent[offset + 5],
-              frameLatent[offset + 6], frameLatent[offset + 7], frameLatent[offset + 8],
-              frameLatent[offset + 9], frameLatent[offset + 10], frameLatent[offset + 11]
-            )
-            let (v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23) = (
-              frameLatent[offset + 12], frameLatent[offset + 13], frameLatent[offset + 14],
-              frameLatent[offset + 15], frameLatent[offset + 16], frameLatent[offset + 17],
-              frameLatent[offset + 18], frameLatent[offset + 19], frameLatent[offset + 20],
-              frameLatent[offset + 21], frameLatent[offset + 22], frameLatent[offset + 23]
-            )
-            let r: FloatType =
-              (-0.018555 * v0 + 0.150164 * v1 + 0.027367 * v2 - 0.000793 * v3 - 0.048556 * v4
-                + 0.011740 * v5 + 0.061517 * v6 + 0.035321 * v7 - 0.017426 * v8 + 0.531539
-                * v9 - 0.024968 * v10 - 0.032549 * v11 + 0.022609 * v12 - 0.084001 * v13
-                - 0.018830 * v14 + 0.020777 * v15 - 0.008390 * v16 - 0.013281 * v17 + 0.000260
-                * v18 + 0.105471 * v19 + 0.016529 * v20 - 0.014015 * v21 - 0.033787 * v22
-                + 0.004224 * v23 + 0.057426) * 127.5 + 127.5
-            let g: FloatType =
-              (0.024344 * v0 + 0.137244 * v1 - 0.050369 * v2 - 0.164622 * v3 + 0.013970 * v4
-                + 0.014172 * v5 + 0.061212 * v6 + 0.086879 * v7 + 0.002997 * v8 + 0.548819
-                * v9 - 0.040234 * v10 - 0.029096 * v11 + 0.020286 * v12 - 0.038131 * v13
-                + 0.010412 * v14 + 0.011196 * v15 - 0.012201 * v16 - 0.002924 * v17 + 0.001833
-                * v18 + 0.100482 * v19 + 0.015213 * v20 - 0.017438 * v21 - 0.009984 * v22
-                + 0.017284 * v23 - 0.022078) * 127.5 + 127.5
-            let b: FloatType =
-              (-0.017536 * v0 + 0.129221 * v1 - 0.208606 * v2 - 0.323161 * v3 - 0.074286 * v4
-                - 0.006906 * v5 + 0.110025 * v6 + 0.110059 * v7 + 0.035356 * v8 + 0.624404
-                * v9 - 0.034302 * v10 - 0.017221 * v11 + 0.050661 * v12 - 0.020805 * v13
-                + 0.061120 * v14 - 0.030994 * v15 - 0.025687 * v16 + 0.006331 * v17 - 0.011038
-                * v18 + 0.132106 * v19 + 0.009999 * v20 - 0.019134 * v21 - 0.019725 * v22
-                + 0.027196 * v23 - 0.071449) * 127.5 + 127.5
-            bytes[pixel * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
-            bytes[pixel * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
-            bytes[pixel * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
-            bytes[pixel * 4 + 3] = 255
-          }
-          images.append(
-            CGImage(
-              width: imageWidth, height: videoHeight, bitsPerComponent: 8, bitsPerPixel: 32,
-              bytesPerRow: 4 * imageWidth, space: CGColorSpaceCreateDeviceRGB(),
-              bitmapInfo: CGBitmapInfo(
-                rawValue: CGBitmapInfo.byteOrder32Big.rawValue
-                  | CGImageAlphaInfo.noneSkipLast.rawValue),
-              provider: CGDataProvider(
-                dataInfo: nil, data: bytes, size: imageWidth * videoHeight * 4,
-                releaseData: { _, p, _ in
-                  p.deallocate()
-                })!, decode: nil, shouldInterpolate: false,
-              intent: CGColorRenderingIntent.defaultIntent
-            )!)
-        }
-        return (images, false)
-      }
-    }
     if version == .hiDreamO1 {
       let patchSize = 32
       guard channels == 3 * patchSize * patchSize else { return ([], false) }
@@ -1347,10 +1307,11 @@ public enum ImageConverter {
       }
     }
     guard
-      channels == 4 || channels == 3 || channels == 16 || channels == 32 || channels == 48
+      channels == 4 || channels == 3 || channels == 16 || channels == 24 || channels == 32
+        || channels == 48
         || channels == 128
     else { return ([], false) }
-    #if canImport(UIKit) && canImport(CoreML)
+    #if canImport(CoreML)
       if canUseTAESD
         && (version == .flux1 || version == .hiDreamI1 || version == .zImage
           || version == .ernieImage
@@ -1360,7 +1321,7 @@ public enum ImageConverter {
           || version == .krea2
           || version == .cosmos2_5_2b
           || version == .wan21_1_3b || version == .wan21_14b || version == .ltx2
-          || version == .ltx2_3
+          || version == .ltx2_3 || version == .minimaxH3
           || version == .v1 || version == .v2 || version == .svdI2v || version == .sd3
           || version == .sd3Large || version == .sdxlBase || version == .sdxlRefiner
           || version == .ssd1b || version == .pixart || version == .auraflow)
@@ -1375,11 +1336,58 @@ public enum ImageConverter {
       guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
         return ([], false)
       }
+      // MiniMax H3 packs audio rows below the 24-channel video latent.
+      let imageHeight =
+        channels == 24
+        ? shape[1] - MiniMaxH3AudioHeight(videoLatentFrames: batchSize, latentWidth: imageWidth)
+        : shape[1]
+      guard imageHeight > 0 else { return ([], false) }
       var images = [CGImage]()
       for b in 0..<batchSize {
         let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: imageWidth * imageHeight * 4)
-        let fp16 = fp16 + b * imageHeight * imageWidth * channels
+        let fp16 = fp16 + b * shape[1] * imageWidth * channels
         switch version {
+        case _ where channels == 24:
+          for i in 0..<imageHeight * imageWidth {
+            let offset = i * channels
+            let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11) = (
+              fp16[offset], fp16[offset + 1], fp16[offset + 2],
+              fp16[offset + 3], fp16[offset + 4], fp16[offset + 5],
+              fp16[offset + 6], fp16[offset + 7], fp16[offset + 8],
+              fp16[offset + 9], fp16[offset + 10], fp16[offset + 11]
+            )
+            let (v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23) = (
+              fp16[offset + 12], fp16[offset + 13], fp16[offset + 14],
+              fp16[offset + 15], fp16[offset + 16], fp16[offset + 17],
+              fp16[offset + 18], fp16[offset + 19], fp16[offset + 20],
+              fp16[offset + 21], fp16[offset + 22], fp16[offset + 23]
+            )
+            let r: FloatType =
+              (-0.018555 * v0 + 0.150164 * v1 + 0.027367 * v2 - 0.000793 * v3 - 0.048556 * v4
+                + 0.011740 * v5 + 0.061517 * v6 + 0.035321 * v7 - 0.017426 * v8 + 0.531539
+                * v9 - 0.024968 * v10 - 0.032549 * v11 + 0.022609 * v12 - 0.084001 * v13
+                - 0.018830 * v14 + 0.020777 * v15 - 0.008390 * v16 - 0.013281 * v17 + 0.000260
+                * v18 + 0.105471 * v19 + 0.016529 * v20 - 0.014015 * v21 - 0.033787 * v22
+                + 0.004224 * v23 + 0.057426) * 127.5 + 127.5
+            let g: FloatType =
+              (0.024344 * v0 + 0.137244 * v1 - 0.050369 * v2 - 0.164622 * v3 + 0.013970 * v4
+                + 0.014172 * v5 + 0.061212 * v6 + 0.086879 * v7 + 0.002997 * v8 + 0.548819
+                * v9 - 0.040234 * v10 - 0.029096 * v11 + 0.020286 * v12 - 0.038131 * v13
+                + 0.010412 * v14 + 0.011196 * v15 - 0.012201 * v16 - 0.002924 * v17 + 0.001833
+                * v18 + 0.100482 * v19 + 0.015213 * v20 - 0.017438 * v21 - 0.009984 * v22
+                + 0.017284 * v23 - 0.022078) * 127.5 + 127.5
+            let b: FloatType =
+              (-0.017536 * v0 + 0.129221 * v1 - 0.208606 * v2 - 0.323161 * v3 - 0.074286 * v4
+                - 0.006906 * v5 + 0.110025 * v6 + 0.110059 * v7 + 0.035356 * v8 + 0.624404
+                * v9 - 0.034302 * v10 - 0.017221 * v11 + 0.050661 * v12 - 0.020805 * v13
+                + 0.061120 * v14 - 0.030994 * v15 - 0.025687 * v16 + 0.006331 * v17 - 0.011038
+                * v18 + 0.132106 * v19 + 0.009999 * v20 - 0.019134 * v21 - 0.019725 * v22
+                + 0.027196 * v23 - 0.071449) * 127.5 + 127.5
+            bytes[i * 4] = UInt8(min(max(Int(r.isFinite ? r : 0), 0), 255))
+            bytes[i * 4 + 1] = UInt8(min(max(Int(g.isFinite ? g : 0), 0), 255))
+            bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
+            bytes[i * 4 + 3] = 255
+          }
         case .v1, .v2, .svdI2v:
           for i in 0..<imageHeight * imageWidth {
             // We need to do some computations from the latent values.
