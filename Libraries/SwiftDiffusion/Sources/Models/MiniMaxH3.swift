@@ -83,12 +83,12 @@ public func MiniMaxH3RotaryEmbedding(
     pow(10_000, -Double($0) * 2 / 32)
   }
   var rotary = Tensor<Float>(.CPU, .NHWC(1, sequenceLength, 1, 128))
-  rotary.withUnsafeMutableBytes {
-    guard let fp32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+  rotary.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) -> Void in
+    guard let fp32 = bytes.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
     func write(row: Int, position: (Float, Float, Float)) {
       let rowStart = row * 128
       for axis in 0..<3 {
-        let value = axis == 0 ? position.0 : (axis == 1 ? position.1 : position.2)
+        let value: Float = axis == 0 ? position.0 : (axis == 1 ? position.1 : position.2)
         for frequency in 0..<16 {
           let angle = Double(value) * inverseFrequencies[frequency]
           let offset = rowStart + (axis * 16 + frequency) * 2
@@ -118,15 +118,15 @@ public func MiniMaxH3RotaryEmbedding(
       let area = sqrt(Double(image.height * image.width))
       let hRatio = Double(image.height) / area
       let wRatio = Double(image.width) / area
-      for y in 0..<(image.height / 2) {
-        for x in 0..<(image.width / 2) {
-          write(
-            row: referenceRow,
-            position: (
-              image.position,
-              Float(((1 - hRatio) / 2 + hRatio * Double(y) / Double(image.height / 2)) * 32),
-              Float(((1 - wRatio) / 2 + wRatio * Double(x) / Double(image.width / 2)) * 32)
-            ))
+      let height = image.height / 2
+      let width = image.width / 2
+      let hLeft: Double = (1 - hRatio) / 2
+      let wLeft: Double = (1 - wRatio) / 2
+      for y in 0..<height {
+        let yPosition = Float((hLeft + hRatio * Double(y) / Double(height)) * 32)
+        for x in 0..<width {
+          let xPosition = Float((wLeft + wRatio * Double(x) / Double(width)) * 32)
+          write(row: referenceRow, position: (image.position, yPosition, xPosition))
           referenceRow += 1
         }
       }
