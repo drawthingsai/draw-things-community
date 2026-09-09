@@ -157,7 +157,8 @@ extension FirstStage {
     let scalingFactor = latentsScaling.scalingFactor
     var z: DynamicGraph.Tensor<FloatType>
     var audioZ: DynamicGraph.Tensor<Float>?
-    if version == .minimaxH3 {
+    switch version {
+    case .minimaxH3:
       let latentFrames = shape[0]
       precondition(
         latentFrames == 1 || latentFrames == 2
@@ -182,7 +183,7 @@ extension FirstStage {
       audioZ = DynamicGraph.Tensor<Float>(
         from: audioSource[0..<audioRows, 0..<32].copied().reshaped(.HWC(2, audioRows / 2, 32)))
       z = x[0..<latentFrames, 0..<startHeight, 0..<startWidth, 0..<shape[3]].copied()
-    } else if version == .ltx2 || version == .ltx2_3 {
+    case .ltx2, .ltx2_3:
       // If it has audio, extract the audio track.
       let (audioFrames, audioHeight) = LTX2ExtractAudioFramesAndHeight(x.shape)
       startHeight = startHeight - audioHeight
@@ -190,7 +191,11 @@ extension FirstStage {
       audioZ = DynamicGraph.Tensor<Float>(
         from: x[0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]].copied()
           .reshaped(.HWC(1, audioFrames, shape[3])))
-    } else {
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
+      .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
+      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b, .seedvr2_7b,
+      .longcatVideoAvatar1_5:
       z = x
       audioZ = nil
     }
@@ -432,8 +437,8 @@ extension FirstStage {
       let tileWidth = decodingTileSize.width
       // H3 always needs temporal trimming, including when only one spatial tile is used.
       tiledDecoding = true
-      let dummy = graph.variable(
-        .GPU(0), .NHWC(temporalCount, tileHeight, tileWidth, 24), of: Float16.self)
+      let placeholder = graph.variable(
+        .GPU(0), .NHWC(temporalCount, tileHeight, tileWidth, 24), of: FloatType.self)
       let zero = graph.variable(.GPU(0), .HWC(1, 1, 2_048), of: Float.self)
       zero.full(0)
       // The reference decoder normalizes coordinates within each tile, not the full canvas.
@@ -454,7 +459,11 @@ extension FirstStage {
       audioDecoder[0].maxConcurrency = .limit(1)
       audioDecoder[0].compile(inputs: audioZ[0..<1, 0..<audioZ.shape[1], 0..<32].copied())
       if existingDecoder == nil {
-        decoder.compile(inputs: dummy, rotary, zero)
+        if highPrecision {
+          decoder.compile(inputs: DynamicGraph.Tensor<Float>(from: placeholder), rotary, zero)
+        } else {
+          decoder.compile(inputs: placeholder, rotary, zero)
+        }
       }
       graph.openStore(
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -1033,25 +1042,38 @@ extension FirstStage {
         && version != .longcatVideoAvatar1_5 && version != .minimaxH3
     else {
       let audio: DynamicGraph.Tensor<Float>?
-      if version == .minimaxH3, let audioZ {
-        var channels = [DynamicGraph.Tensor<Float>]()
-        for channel in 0..<2 {
-          channels.append(
-            audioDecoder[0](
-              inputs: audioZ[
-                channel..<(channel + 1), 0..<audioZ.shape[1], 0..<32
-              ].copied())[0].as(of: Float.self).reshaped(.NC(1, audioZ.shape[1] * 800)))
+      if let audioZ = audioZ {
+        switch version {
+        case .minimaxH3:
+          var channels = [DynamicGraph.Tensor<Float>]()
+          for channel in 0..<2 {
+            channels.append(
+              audioDecoder[0](
+                inputs: audioZ[
+                  channel..<(channel + 1), 0..<audioZ.shape[1], 0..<32
+                ].copied())[0].as(of: Float.self).reshaped(.NC(1, audioZ.shape[1] * 800)))
+          }
+          audio = Functional.concat(axis: 0, channels[0], channels[1])
+        case .ltx2, .ltx2_3:
+          if audioDecoder.count > 1 {
+            let decodedAudio = audioDecoder[0](inputs: audioZ)[0].as(of: Float.self)
+            let waveform = audioDecoder[1](inputs: decodedAudio)[0].as(of: Float.self)
+            audio = waveform.reshaped(.NC(waveform.shape[1], waveform.shape[3]))
+          } else {
+            audio = nil
+          }
+        case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+          .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
+          .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
+          .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b, .seedvr2_7b,
+          .longcatVideoAvatar1_5:
+          audio = nil
         }
-        audio = Functional.concat(axis: 0, channels[0], channels[1])
-      } else if audioDecoder.count > 1, let audioZ = audioZ {
-        let decodedAudio = audioDecoder[0](inputs: audioZ)[0].as(of: Float.self)
-        let waveform = audioDecoder[1](inputs: decodedAudio)[0].as(of: Float.self)
-        audio = waveform.reshaped(.NC(waveform.shape[1], waveform.shape[3]))
       } else {
         audio = nil
       }
-      if highPrecision || version == .minimaxH3 {
-        var result: DynamicGraph.Tensor<Float>
+      if highPrecision {
+        let result: DynamicGraph.Tensor<Float>
         if tiledDecoding {
           result = tiledDecode(
             DynamicGraph.Tensor<Float>(from: z), causalAttentionMask: causalAttentionMask,
@@ -1066,13 +1088,6 @@ extension FirstStage {
           result = internalDecode(
             DynamicGraph.Tensor<Float>(from: z), causalAttentionMask: causalAttentionMask,
             decoder: decoder, transparentDecoder: transparentDecoder, inputs: decoderInputs)
-        }
-        if version == .minimaxH3 {
-          let mean = graph.variable(
-            Tensor<Float>([0.485, 0.456, 0.406], .GPU(0), .NHWC(1, 1, 1, 3)))
-          let std = graph.variable(
-            Tensor<Float>([0.229, 0.224, 0.225], .GPU(0), .NHWC(1, 1, 1, 3)))
-          result = (std .* result + mean).clamped(0...1) * 2 - 1
         }
         let shape = result.shape
         return (
@@ -1091,14 +1106,15 @@ extension FirstStage {
             }, decoder: decoder, transparentDecoder: transparentDecoder, tileSize: decodingTileSize,
             tileOverlap: decodingTileOverlap, outputChannels: outputChannels,
             scaleFactor: (scaleFactor, scaleFactorZ),
-            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration
+            temporalTiledDecodingConfiguration: temporalTiledDecodingConfiguration,
+            inputs: decoderInputs
           )
         } else {
           result = internalDecode(
             z,
             causalAttentionMask: causalAttentionMask.map {
               DynamicGraph.Tensor<FloatType>(from: $0)
-            }, decoder: decoder, transparentDecoder: transparentDecoder)
+            }, decoder: decoder, transparentDecoder: transparentDecoder, inputs: decoderInputs)
         }
         let shape = result.shape
         return (
@@ -1171,6 +1187,23 @@ extension FirstStage {
   )
     -> (DynamicGraph.Tensor<FloatType>, DynamicGraph.Tensor<Float>?, Model?)
   {
+    func rescalePixels(_ result: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType> {
+      switch version {
+      case .minimaxH3:
+        let graph = result.graph
+        let mean = graph.variable(
+          Tensor<FloatType>([0.485, 0.456, 0.406], .GPU(0), .NHWC(1, 1, 1, 3)))
+        let std = graph.variable(
+          Tensor<FloatType>([0.229, 0.224, 0.225], .GPU(0), .NHWC(1, 1, 1, 3)))
+        return (std .* result + mean).clamped(0...1) * 2 - 1
+      case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+        .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
+        .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b, .longcatVideoAvatar1_5:
+        return result
+      }
+    }
     let (result, audio, decoder) = decode(
       x, decoder: existingDecoder, highPrecision: false, cancellation: cancellation)
     if highPrecisionFallback && !isCancelled.load(ordering: .acquiring)
@@ -1178,9 +1211,9 @@ extension FirstStage {
     {
       let (highPrecisionResult, audio, _) = decode(
         x, decoder: nil, highPrecision: true, cancellation: cancellation)
-      return (highPrecisionResult, audio, decoder)
+      return (rescalePixels(highPrecisionResult), audio, decoder)
     }
-    return (result, audio, decoder)
+    return (rescalePixels(result), audio, decoder)
   }
 
   public func decode(
@@ -2116,12 +2149,6 @@ extension FirstStage {
     _ z: DynamicGraph.Tensor<T>, causalAttentionMask: DynamicGraph.Tensor<T>?, decoder: Model,
     transparentDecoder: Model?, inputs: [DynamicGraph.AnyTensor] = []
   ) -> DynamicGraph.Tensor<T> {
-    if version == .minimaxH3 {
-      // H3 decodes in FP16, but blends spatial tiles in FP32.
-      return DynamicGraph.Tensor<T>(
-        from: decoder(inputs: DynamicGraph.Tensor<Float16>(from: z), inputs)[0].as(of: Float16.self)
-      )
-    }
     var pixel = decoder(inputs: z, (causalAttentionMask.map { [$0] } ?? []) + inputs)[0].as(
       of: T.self)
     if alternativeDecoderVersion == .transparent,
