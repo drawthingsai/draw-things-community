@@ -135,7 +135,8 @@ public final class Parameters {
     maskBlurParameter,
     clipWeightParameter, hiresFixStrengthParameter, refinerStartParameter, aestheticScoreParameter,
     negativeAestheticScoreParameter, guidingFrameNoiseParameter,
-    startFrameGuidanceParameter, sharpnessParameter, shiftParameter, stage2CfgParameter,
+    startFrameGuidanceParameter, sharpnessParameter, shiftParameter, shiftForAudioParameter,
+    stage2CfgParameter,
     stage2ShiftParameter, stochasticSamplingGammaParameter, guidanceEmbedParameter,
     teaCacheThresholdParameter, compressionArtifactsQualityParameter: DoubleParameter
   let seedModeParameter: EnumParameter<SeedMode>
@@ -234,6 +235,10 @@ public final class Parameters {
       titleKey: "shift", explanationKey: "shift_detail",
       defaultValue: Double(defaultConfiguration.shift), range: 0.1...12,
       commandLineFlag: "shift")
+    shiftForAudioParameter = DoubleParameter(
+      titleKey: "shift_for_audio", explanationKey: "shift_for_audio_detail",
+      defaultValue: Double(defaultConfiguration.shiftForAudio), range: 0.1...12,
+      commandLineFlag: "shift-for-audio")
     stage2StepsParameter = IntParameter(
       titleKey: "stage_2_steps", explanationKey: "stage_2_steps_detail",
       defaultValue: Int(defaultConfiguration.maskBlurOutset), range: 1...150,
@@ -546,6 +551,7 @@ public final class Parameters {
       guidingFrameNoiseParameter,
       startFrameGuidanceParameter,
       shiftParameter,
+      shiftForAudioParameter,
       stage2CfgParameter,
       stage2ShiftParameter,
       lorasParameter,

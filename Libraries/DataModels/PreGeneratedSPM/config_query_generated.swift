@@ -909,4 +909,15 @@ extension GenerationConfiguration {
   public static let expandPromptToJson: FieldExpr<Bool, GenerationConfiguration> = FieldExpr(
     name: "f178", primaryKey: false, hasIndex: false, tableReader: _tr__f178,
     objectReader: _or__f178)
+
+  private static func _tr__f180(_ table: ByteBuffer) -> Float32? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return tr0.shiftForAudio
+  }
+  private static func _or__f180(_ or0: GenerationConfiguration) -> Float32? {
+    return or0.shiftForAudio
+  }
+  public static let shiftForAudio: FieldExpr<Float32, GenerationConfiguration> = FieldExpr(
+    name: "f180", primaryKey: false, hasIndex: false, tableReader: _tr__f180,
+    objectReader: _or__f180)
 }

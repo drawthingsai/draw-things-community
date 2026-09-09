@@ -727,7 +727,7 @@ public enum LoRAImporter {
             isCfgEnabled: isCfgEnabled, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
             isGuidanceEmbedEnabled: isGuidanceEmbedEnabled, distilledGuidanceLayers: 0,
             modifier: .none,
-            textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0],
+            textEncoding: cArr.map({ $0.toGPU(0) }), timesteps: [0], audioShiftRatio: 1,
             batchSize: isCfgEnabled ? 2 : 1, startHeight: 64,
             startWidth: 64,
             tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],

@@ -154,6 +154,7 @@ public final class JSGenerationConfiguration: Codable {
   public var guidingFrameNoise: Float32
   public var startFrameGuidance: Float32
   public var shift: Float32
+  public var shiftForAudio: Float32?
   public var stage2Steps: UInt32
   public var stage2Guidance: Float32
   public var stage2Shift: Float32
@@ -240,6 +241,7 @@ public final class JSGenerationConfiguration: Codable {
     guidingFrameNoise = configuration.condAug
     startFrameGuidance = configuration.startFrameCfg
     shift = configuration.shift
+    shiftForAudio = configuration.shiftForAudio
     stage2Guidance = configuration.stage2Cfg
     stage2Shift = configuration.stage2Shift
     stage2Steps = configuration.stage2Steps
@@ -371,7 +373,8 @@ public final class JSGenerationConfiguration: Codable {
       compressionArtifacts: compressionArtifactsSetting,
       compressionArtifactsQuality: compressionArtifactsQuality,
       colorCalibration: colorCalibrationSetting,
-      expandPromptToJson: expandPromptToJson
+      expandPromptToJson: expandPromptToJson,
+      shiftForAudio: shiftForAudio
     )
   }
 }

@@ -10,6 +10,7 @@ where UNet.FloatType == FloatType {
   public let filePath: String
   public let modifier: SamplerModifier
   public let version: ModelVersion
+  public let audioShiftRatio: Float
   public let qkNorm: Bool
   public let dualAttentionLayers: [Int]
   public let distilledGuidanceLayers: Int
@@ -40,7 +41,8 @@ where UNet.FloatType == FloatType {
   private let discretization: Discretization
   private let weightsCache: WeightsCache
   public init(
-    filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
+    filePath: String, modifier: SamplerModifier, version: ModelVersion,
+    audioShiftRatio: Float, qkNorm: Bool,
     dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
@@ -58,6 +60,7 @@ where UNet.FloatType == FloatType {
     self.filePath = filePath
     self.modifier = modifier
     self.version = version
+    self.audioShiftRatio = audioShiftRatio
     self.qkNorm = qkNorm
     self.dualAttentionLayers = dualAttentionLayers
     self.distilledGuidanceLayers = distilledGuidanceLayers
@@ -225,7 +228,8 @@ extension EulerASampler: Sampler {
           isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
           guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
           distilledGuidanceLayers: distilledGuidanceLayers, modifier: modifier,
-          textEncoding: c, timesteps: timesteps, batchSize: batchSize, startHeight: startHeight,
+          textEncoding: c, timesteps: timesteps, audioShiftRatio: audioShiftRatio,
+          batchSize: batchSize, startHeight: startHeight,
           startWidth: startWidth,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, isBF16: isBF16,
@@ -443,7 +447,8 @@ extension EulerASampler: Sampler {
                 isCfgEnabled: isCfgEnabled, textGuidanceScale: textGuidanceScale,
                 guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
                 distilledGuidanceLayers: refiner.distilledGuidanceLayers, modifier: modifier,
-                textEncoding: oldC, timesteps: timesteps, batchSize: batchSize,
+                textEncoding: oldC, timesteps: timesteps, audioShiftRatio: audioShiftRatio,
+                batchSize: batchSize,
                 startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
@@ -548,7 +553,8 @@ extension EulerASampler: Sampler {
               controlNets: &controlNets)
           let cCond = Array(conditions[0..<(1 + (conditions.count - 1) / 2)])
           var etCond = unet(
-            timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, cCond,
+            timestep: (now: cNoise, next: cNoiseNext), audioShiftRatio: audioShiftRatio,
+            inputs: xIn, t, cCond,
             extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
@@ -563,7 +569,8 @@ extension EulerASampler: Sampler {
             xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, channels..<(channels * 2)].full(0)
             let cUncond = Array([conditions[0]] + conditions[(1 + (conditions.count - 1) / 2)...])
             let etUncond = unet(
-              timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, cUncond,
+              timestep: (now: cNoise, next: cNoiseNext), audioShiftRatio: audioShiftRatio,
+              inputs: xIn, t, cUncond,
               extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
@@ -612,7 +619,8 @@ extension EulerASampler: Sampler {
               mainUNetAndWeightMapper: unet.modelAndWeightMapper,
               controlNets: &controlNets)
           let etOut = unet(
-            timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t, conditions,
+            timestep: (now: cNoise, next: cNoiseNext), audioShiftRatio: audioShiftRatio,
+            inputs: xIn, t, conditions,
             extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,

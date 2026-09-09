@@ -711,7 +711,8 @@ public final class ImageHistoryManager {
         from: imageHistory.compressionArtifacts),
       compressionArtifactsQuality: imageHistory.compressionArtifactsQuality,
       colorCalibration: DataModels.ColorCalibration(from: imageHistory.colorCalibration),
-      expandPromptToJson: imageHistory.expandPromptToJson
+      expandPromptToJson: imageHistory.expandPromptToJson,
+      shiftForAudio: imageHistory.shiftForAudio
     )
     isVideo = imageHistory.clipId >= 0
     _profileData = imageHistory.profileData
@@ -1081,7 +1082,8 @@ public final class ImageHistoryManager {
         compressionArtifactsQuality: configuration.compressionArtifactsQuality,
         audio: audioId != nil,
         colorCalibration: ColorCalibration(from: configuration.colorCalibration),
-        expandPromptToJson: configuration.expandPromptToJson
+        expandPromptToJson: configuration.expandPromptToJson,
+        shiftForAudio: configuration.shiftForAudio
       )
       // Only needs to append
       clipData?.frames.append(

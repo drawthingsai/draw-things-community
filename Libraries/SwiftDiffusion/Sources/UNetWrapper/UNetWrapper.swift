@@ -127,7 +127,7 @@ extension UNetWrapper {
   }
 
   public func callAsFunction(
-    timestep t: (now: Float, next: Float),
+    timestep t: (now: Float, next: Float), audioShiftRatio: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
@@ -147,7 +147,8 @@ extension UNetWrapper {
 
       if preferCoreML {
         return unetFromCoreML(
-          timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
+          timestep: t, audioShiftRatio: audioShiftRatio, inputs: xT, timestep, c,
+          extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
           step: step, tokenLengthUncond: tokenLengthUncond,
@@ -157,7 +158,8 @@ extension UNetWrapper {
     #endif
 
     return unetFromNNC(
-      timestep: t, inputs: xT, timestep, c, extraProjection: extraProjection,
+      timestep: t, audioShiftRatio: audioShiftRatio, inputs: xT, timestep, c,
+      extraProjection: extraProjection,
       injectedControlsAndAdapters: injectedControlsAndAdapters,
       injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: step,
       tokenLengthUncond: tokenLengthUncond,

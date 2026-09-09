@@ -247,6 +247,7 @@ public protocol Sampler<FloatType, UNet> {
   var filePath: String { get }
   var modifier: SamplerModifier { get }
   var version: ModelVersion { get }
+  var audioShiftRatio: Float { get }
   var upcastAttention: Bool { get }
   var usesFlashAttention: UseFlashAttention { get }
   var externalOnDemand: Bool { get }
@@ -292,10 +293,30 @@ public protocol Sampler<FloatType, UNet> {
   func sampleScaleFactor(at step: Float, sampling: Sampling) -> Float
 }
 
+extension Sampler {
+  public func sampleAdd<T: TensorNumeric & BinaryFloatingPoint>(
+    _ sample: DynamicGraph.Tensor<T>, noise: DynamicGraph.Tensor<T>,
+    scale: (sample: Float, noise: Float), version: ModelVersion
+  ) -> DynamicGraph.Tensor<T> {
+    Diffusion.sampleAdd(
+      sample, noise: noise, scale: scale, version: version, audioShiftRatio: audioShiftRatio)
+  }
+
+  public func sampleScaledAdd<T: TensorNumeric & BinaryFloatingPoint>(
+    _ left: DynamicGraph.Tensor<T>, _ right: DynamicGraph.Tensor<T>,
+    sigma: (now: Float, next: Float), version: ModelVersion,
+    scale: (_ sigma: (now: Float, next: Float)) -> (left: Float, right: Float)
+  ) -> DynamicGraph.Tensor<T> {
+    Diffusion.sampleScaledAdd(
+      left, right, sigma: sigma, version: version, audioShiftRatio: audioShiftRatio, scale: scale)
+  }
+}
+
 // Add noise to a clean sample. H3's RF audio and video use different noise levels.
 public func sampleAdd<FloatType: TensorNumeric & BinaryFloatingPoint>(
   _ sample: DynamicGraph.Tensor<FloatType>, noise: DynamicGraph.Tensor<FloatType>,
-  scale: (sample: Float, noise: Float), version: ModelVersion
+  scale: (sample: Float, noise: Float), version: ModelVersion,
+  audioShiftRatio: Float
 ) -> DynamicGraph.Tensor<FloatType> {
   var result = Functional.add(
     left: sample, right: noise, leftScalar: scale.sample, rightScalar: scale.noise)
@@ -305,7 +326,7 @@ public func sampleAdd<FloatType: TensorNumeric & BinaryFloatingPoint>(
   let audioHeight = MiniMaxH3AudioHeight(videoLatentFrames: shape[0], latentWidth: shape[2])
   let videoHeight = shape[1] - audioHeight
   precondition(videoHeight > 0)
-  let audioSigma = MiniMaxH3AudioSigma(forVideoSigma: scale.noise)
+  let audioSigma = MiniMaxH3AudioSigma(forVideoSigma: scale.noise, audioShiftRatio: audioShiftRatio)
   result[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]] = Functional.add(
     left: sample[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
     right: noise[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),
@@ -318,6 +339,7 @@ public func sampleAdd<FloatType: TensorNumeric & BinaryFloatingPoint>(
 public func sampleScaledAdd<FloatType: TensorNumeric & BinaryFloatingPoint>(
   _ left: DynamicGraph.Tensor<FloatType>, _ right: DynamicGraph.Tensor<FloatType>,
   sigma: (now: Float, next: Float), version: ModelVersion,
+  audioShiftRatio: Float,
   scale: (_ sigma: (now: Float, next: Float)) -> (left: Float, right: Float)
 ) -> DynamicGraph.Tensor<FloatType> {
   let videoScale = scale(sigma)
@@ -331,8 +353,8 @@ public func sampleScaledAdd<FloatType: TensorNumeric & BinaryFloatingPoint>(
   precondition(videoHeight > 0)
   let audioScale = scale(
     (
-      now: MiniMaxH3AudioSigma(forVideoSigma: sigma.now),
-      next: MiniMaxH3AudioSigma(forVideoSigma: sigma.next)
+      now: MiniMaxH3AudioSigma(forVideoSigma: sigma.now, audioShiftRatio: audioShiftRatio),
+      next: MiniMaxH3AudioSigma(forVideoSigma: sigma.next, audioShiftRatio: audioShiftRatio)
     ))
   result[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]] = Functional.add(
     left: left[0..<shape[0], videoHeight..<shape[1], 0..<shape[2], 0..<shape[3]].copied(),

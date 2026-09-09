@@ -192,7 +192,8 @@ public struct Invocation {
       compressionArtifacts: parameters.compressionArtifactsParameter.value,
       compressionArtifactsQuality: parameters.compressionArtifactsQualityParameter.float32Value(),
       colorCalibration: parameters.colorCalibrationParameter.value,
-      expandPromptToJson: parameters.expandPromptToJsonParameter.value
+      expandPromptToJson: parameters.expandPromptToJsonParameter.value,
+      shiftForAudio: parameters.shiftForAudioParameter.float32Value()
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")

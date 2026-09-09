@@ -182,6 +182,7 @@ table GenerationConfiguration {
   compression_artifacts_quality: float = 43.1;
   color_calibration: ColorCalibration = Disabled;
   expand_prompt_to_json: bool = false;
+  shift_for_audio: float = 3.0;
 }
 
 root_type GenerationConfiguration;

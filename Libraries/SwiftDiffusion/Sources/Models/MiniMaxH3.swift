@@ -8,8 +8,6 @@ public enum MiniMaxH3Configuration {
   public static let spatialCompression = 16
   public static let framesPerSecond = 24
   public static let audioSampleRate = 32_000
-  public static let videoFlowShift: Float = 12
-  public static let audioFlowShift: Float = 3
 }
 
 public func MiniMaxH3AudioHeight(videoLatentFrames: Int, latentWidth: Int) -> Int {
@@ -33,13 +31,10 @@ public func MiniMaxH3AudioHeight(videoLatentFrames: Int, latentWidth: Int) -> In
   return height
 }
 
-func MiniMaxH3AudioSigma(forVideoSigma sigma: Float) -> Float {
-  let base =
-    sigma
-    / (MiniMaxH3Configuration.videoFlowShift
-      - (MiniMaxH3Configuration.videoFlowShift - 1) * sigma)
-  return MiniMaxH3Configuration.audioFlowShift * base
-    / (1 + (MiniMaxH3Configuration.audioFlowShift - 1) * base)
+func MiniMaxH3AudioSigma(forVideoSigma sigma: Float, audioShiftRatio: Float) -> Float {
+  // The shared unshifted schedule cancels out; only audio shift / video shift is needed.
+  if sigma == 0 || sigma == 1 { return sigma }
+  return audioShiftRatio * sigma / (1 + (audioShiftRatio - 1) * sigma)
 }
 
 public func MiniMaxH3RotaryEmbedding(

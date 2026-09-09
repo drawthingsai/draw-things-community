@@ -624,7 +624,8 @@ extension ModelPreloader {
             + fixedEncoder.encode(
               isCfgEnabled: true, textGuidanceScale: 3.5, guidanceEmbed: 3.5,
               isGuidanceEmbedEnabled: false, distilledGuidanceLayers: 0, modifier: .none,
-              textEncoding: cArr, timesteps: [0], batchSize: batchSize, startHeight: startHeight,
+              textEncoding: cArr, timesteps: [0], audioShiftRatio: 1, batchSize: batchSize,
+              startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
               tiledDiffusion: tiledDiffusion, teaCache: teaCache, isBF16: false,
               injectedControls: [], referenceImages: []

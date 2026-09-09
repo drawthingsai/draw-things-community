@@ -103,7 +103,7 @@ public struct LocalImageGenerator: ImageGenerator {
 extension LocalImageGenerator {
   public static func sampler<FloatType: TensorNumeric & BinaryFloatingPoint>(
     from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
-    version: ModelVersion, qkNorm: Bool, dualAttentionLayers: [Int],
+    version: ModelVersion, audioShiftRatio: Float, qkNorm: Bool, dualAttentionLayers: [Int],
     distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
@@ -180,7 +180,8 @@ extension LocalImageGenerator {
       switch type {
       case .dPMPP2MKarras, .DPMPP2MAYS, .dPMPP2MTrailing:
         return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -202,7 +203,8 @@ extension LocalImageGenerator {
           weightsCache: weightsCache)
       case .eulerA, .eulerASubstep, .eulerATrailing, .eulerAAYS:
         return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -224,7 +226,8 @@ extension LocalImageGenerator {
           weightsCache: weightsCache)
       case .DDIM, .dDIMTrailing:
         return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -246,7 +249,8 @@ extension LocalImageGenerator {
           weightsCache: weightsCache)
       case .PLMS:
         return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -268,7 +272,8 @@ extension LocalImageGenerator {
           weightsCache: weightsCache)
       case .dPMPPSDEKarras, .dPMPPSDESubstep, .dPMPPSDETrailing, .DPMPPSDEAYS:
         return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -290,7 +295,8 @@ extension LocalImageGenerator {
           weightsCache: weightsCache)
       case .uniPC, .uniPCAYS, .uniPCTrailing:
         return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -312,7 +318,8 @@ extension LocalImageGenerator {
           weightsCache: weightsCache)
       case .LCM:
         return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -333,7 +340,8 @@ extension LocalImageGenerator {
           weightsCache: weightsCache)
       case .TCD, .tCDTrailing:
         return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.CosineDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -358,7 +366,8 @@ extension LocalImageGenerator {
     switch type {
     case .dPMPP2MKarras:
       return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.KarrasDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -382,7 +391,8 @@ extension LocalImageGenerator {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -407,7 +417,8 @@ extension LocalImageGenerator {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -432,7 +443,8 @@ extension LocalImageGenerator {
         return DPMPP2MSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -456,7 +468,8 @@ extension LocalImageGenerator {
       }
     case .dPMPP2MTrailing:
       return DPMPP2MSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -478,7 +491,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .eulerA:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -499,7 +513,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .eulerATrailing:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -524,7 +539,8 @@ extension LocalImageGenerator {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -549,7 +565,8 @@ extension LocalImageGenerator {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -574,7 +591,8 @@ extension LocalImageGenerator {
         return EulerASampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -598,7 +616,8 @@ extension LocalImageGenerator {
       }
     case .DDIM:
       return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -620,7 +639,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .dDIMTrailing:
       return DDIMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -642,7 +662,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .PLMS:
       return PLMSSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -664,7 +685,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .dPMPPSDEKarras:
       return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.KarrasDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -685,7 +707,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .dPMPPSDETrailing:
       return DPMPPSDESampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -710,7 +733,8 @@ extension LocalImageGenerator {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -735,7 +759,8 @@ extension LocalImageGenerator {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -760,7 +785,8 @@ extension LocalImageGenerator {
         return DPMPPSDESampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -784,7 +810,8 @@ extension LocalImageGenerator {
       }
     case .uniPC:
       return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -806,7 +833,8 @@ extension LocalImageGenerator {
     case .uniPCAYS:
       if samplingTimesteps.isEmpty && samplingSigmas.isEmpty {
         return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -831,7 +859,8 @@ extension LocalImageGenerator {
         return UniPCSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedKarrasDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -856,7 +885,8 @@ extension LocalImageGenerator {
         return UniPCSampler<
           FloatType, UNetWrapper<FloatType>, Denoiser.AYSLogLinearInterpolatedTimestepDiscretization
         >(
-          filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+          filePath: filePath, modifier: modifier, version: version,
+          audioShiftRatio: audioShiftRatio, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
@@ -880,7 +910,8 @@ extension LocalImageGenerator {
       }
     case .uniPCTrailing:
       return UniPCSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -902,7 +933,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .LCM:
       return LCMSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -921,7 +953,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .TCD:
       return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -941,7 +974,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .tCDTrailing:
       return TCDSampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -962,7 +996,8 @@ extension LocalImageGenerator {
         weightsCache: weightsCache)
     case .eulerASubstep:
       return EulerASampler<FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization>(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -986,7 +1021,8 @@ extension LocalImageGenerator {
       return DPMPPSDESampler<
         FloatType, UNetWrapper<FloatType>, Denoiser.LinearManualDiscretization
       >(
-        filePath: filePath, modifier: modifier, version: version, qkNorm: qkNorm,
+        filePath: filePath, modifier: modifier, version: version, audioShiftRatio: audioShiftRatio,
+        qkNorm: qkNorm,
         dualAttentionLayers: dualAttentionLayers, distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -4103,7 +4139,9 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      version: modelVersion,
+      audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift), qkNorm: qkNorm,
+      dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
@@ -4947,7 +4985,9 @@ extension LocalImageGenerator {
       let secondPassSampler = LocalImageGenerator.sampler(
         from: configuration.sampler, isCfgEnabled: isCfgEnabled,
         filePath: secondPassModelFilePath, modifier: modifier,
-        version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+        version: secondPassModelVersion,
+        audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift),
+        qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
         distilledGuidanceLayers: distilledGuidanceLayers,
         activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -5033,7 +5073,8 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         xEnc = sampleAdd(
           sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
-          version: modelVersion)
+          version: modelVersion,
+          audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift))
         secondPassTextGuidance = textGuidanceScale
         secondPassSampling = sampling
       }
@@ -5449,7 +5490,9 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      version: modelVersion,
+      audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift), qkNorm: qkNorm,
+      dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
@@ -5879,7 +5922,8 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         let zEnc = sampleAdd(
           sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
-          version: modelVersion)
+          version: modelVersion,
+          audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift))
         x_T = zEnc
       } else {
         x_T = noise
@@ -5980,7 +6024,9 @@ extension LocalImageGenerator {
         let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
-          version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          version: secondPassModelVersion,
+          audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift),
+          qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
@@ -6016,7 +6062,8 @@ extension LocalImageGenerator {
             at: initTimestep.startStep, sampling: secondPassSampling)
           let zEnc = sampleAdd(
             sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
-            version: modelVersion)
+            version: modelVersion,
+            audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift))
           x_T = zEnc
         } else {
           x_T = noise
@@ -7009,7 +7056,9 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      version: modelVersion,
+      audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift), qkNorm: qkNorm,
+      dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
@@ -7316,7 +7365,8 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         let zEnc = sampleAdd(
           sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
-          version: modelVersion)
+          version: modelVersion,
+          audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift))
         x_T = zEnc
       } else {
         x_T = noise
@@ -7423,7 +7473,9 @@ extension LocalImageGenerator {
         let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
-          version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          version: secondPassModelVersion,
+          audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift),
+          qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
@@ -7469,7 +7521,8 @@ extension LocalImageGenerator {
             at: initTimestep.startStep, sampling: secondPassSampling)
           let zEnc = sampleAdd(
             sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
-            version: modelVersion)
+            version: modelVersion,
+            audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift))
           x_T = zEnc
         } else {
           x_T = noise
@@ -7936,7 +7989,9 @@ extension LocalImageGenerator {
     let sampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
-      version: modelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+      version: modelVersion,
+      audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift), qkNorm: qkNorm,
+      dualAttentionLayers: dualAttentionLayers,
       distilledGuidanceLayers: distilledGuidanceLayers,
       activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
@@ -8349,7 +8404,8 @@ extension LocalImageGenerator {
           at: initTimestep.startStep, sampling: sampling)
         zEnc = sampleAdd(
           sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
-          version: modelVersion)
+          version: modelVersion,
+          audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift))
         pureNoise = false
       } else {
         zEnc = noise
@@ -8486,7 +8542,9 @@ extension LocalImageGenerator {
         let secondPassSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
-          version: secondPassModelVersion, qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
+          version: secondPassModelVersion,
+          audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift),
+          qkNorm: qkNorm, dualAttentionLayers: dualAttentionLayers,
           distilledGuidanceLayers: distilledGuidanceLayers,
           activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
@@ -8566,7 +8624,8 @@ extension LocalImageGenerator {
             at: initTimestep.startStep, sampling: sampling)
           zEnc = sampleAdd(
             sample, noise: noise, scale: (sample: sampleScaleFactor, noise: noiseScaleFactor),
-            version: modelVersion)
+            version: modelVersion,
+            audioShiftRatio: Float(Double(configuration.shiftForAudio) / sampling.shift))
           pureNoise = false
         } else {
           zEnc = noise

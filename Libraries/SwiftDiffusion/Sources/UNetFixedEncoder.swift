@@ -213,7 +213,8 @@ extension UNetFixedEncoder {
     isCfgEnabled: Bool, textGuidanceScale: Float, guidanceEmbed: Float,
     isGuidanceEmbedEnabled: Bool, distilledGuidanceLayers: Int, modifier: SamplerModifier,
     textEncoding: [DynamicGraph.Tensor<FloatType>],
-    timesteps: [Float], batchSize: Int, startHeight: Int, startWidth: Int, tokenLengthUncond: Int,
+    timesteps: [Float], audioShiftRatio: Float, batchSize: Int, startHeight: Int, startWidth: Int,
+    tokenLengthUncond: Int,
     tokenLengthCond: Int, lora: [LoRAConfiguration], tiledDiffusion: TiledConfiguration,
     teaCache teaCacheConfiguration: TeaCacheConfiguration, isBF16: Bool,
     injectedControls: [(
@@ -330,7 +331,8 @@ extension UNetFixedEncoder {
         .CPU, .HWC(timesteps.count, referenceImageCount > 0 ? 3 : 2, 256))
       for index in timesteps.indices {
         let videoSigma = timesteps[index] / 1_000
-        let audioSigma = MiniMaxH3AudioSigma(forVideoSigma: videoSigma)
+        let audioSigma = MiniMaxH3AudioSigma(
+          forVideoSigma: videoSigma, audioShiftRatio: audioShiftRatio)
         let values =
           [1 - videoSigma, 1 - audioSigma]
           + (referenceImageCount > 0 ? [max(1 - videoSigma, 0.999)] : [])

@@ -10,6 +10,7 @@ where UNet.FloatType == FloatType {
   public let filePath: String
   public let modifier: SamplerModifier
   public let version: ModelVersion
+  public let audioShiftRatio: Float
   public let qkNorm: Bool
   public let dualAttentionLayers: [Int]
   public let distilledGuidanceLayers: Int
@@ -38,7 +39,8 @@ where UNet.FloatType == FloatType {
   private let discretization: Discretization
   private let weightsCache: WeightsCache
   public init(
-    filePath: String, modifier: SamplerModifier, version: ModelVersion, qkNorm: Bool,
+    filePath: String, modifier: SamplerModifier, version: ModelVersion,
+    audioShiftRatio: Float, qkNorm: Bool,
     dualAttentionLayers: [Int], distilledGuidanceLayers: Int, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
@@ -55,6 +57,7 @@ where UNet.FloatType == FloatType {
     self.filePath = filePath
     self.modifier = modifier
     self.version = version
+    self.audioShiftRatio = audioShiftRatio
     self.qkNorm = qkNorm
     self.dualAttentionLayers = dualAttentionLayers
     self.distilledGuidanceLayers = distilledGuidanceLayers
@@ -257,6 +260,7 @@ extension LCMSampler: Sampler {
           distilledGuidanceLayers: distilledGuidanceLayers, modifier: modifier,
           textEncoding: c,
           timesteps: timesteps[startStep.integral..<endStep.integral].map { Float($0) },
+          audioShiftRatio: audioShiftRatio,
           batchSize: batchSize, startHeight: startHeight,
           startWidth: startWidth,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
@@ -471,6 +475,7 @@ extension LCMSampler: Sampler {
                 guidanceEmbed: guidanceEmbed, isGuidanceEmbedEnabled: isGuidanceEmbedEnabled,
                 distilledGuidanceLayers: refiner.distilledGuidanceLayers, modifier: modifier,
                 textEncoding: oldC, timesteps: timesteps[i..<endStep.integral].map { Float($0) },
+                audioShiftRatio: audioShiftRatio,
                 batchSize: batchSize, startHeight: startHeight,
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
@@ -579,7 +584,8 @@ extension LCMSampler: Sampler {
           newC = conditions
         }
         var etOut = unet(
-          timestep: (now: cNoise, next: cNoiseNext), inputs: xIn, t.map { $0 + cfgCond }, newC,
+          timestep: (now: cNoise, next: cNoiseNext), audioShiftRatio: audioShiftRatio, inputs: xIn,
+          t.map { $0 + cfgCond }, newC,
           extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: i,

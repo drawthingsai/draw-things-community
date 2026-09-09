@@ -491,6 +491,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     case compressionArtifactsQuality = 174
     case colorCalibration = 176
     case expandPromptToJson = 178
+    case shiftForAudio = 180
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -887,8 +888,12 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     let o = _accessor.offset(VTOFFSET.expandPromptToJson.v)
     return o == 0 ? false : 0 != _accessor.readBuffer(of: Byte.self, at: o)
   }
+  public var shiftForAudio: Float32 {
+    let o = _accessor.offset(VTOFFSET.shiftForAudio.v)
+    return o == 0 ? 3.0 : _accessor.readBuffer(of: Float32.self, at: o)
+  }
   public static func startGenerationConfiguration(_ fbb: inout FlatBufferBuilder) -> UOffset {
-    fbb.startTable(with: 88)
+    fbb.startTable(with: 89)
   }
   public static func add(id: Int64, _ fbb: inout FlatBufferBuilder) {
     fbb.add(element: id, def: 0, at: VTOFFSET.id.p)
@@ -1182,6 +1187,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
       element: expandPromptToJson, def: false,
       at: VTOFFSET.expandPromptToJson.p)
   }
+  public static func add(shiftForAudio: Float32, _ fbb: inout FlatBufferBuilder) {
+    fbb.add(element: shiftForAudio, def: 3.0, at: VTOFFSET.shiftForAudio.p)
+  }
   public static func endGenerationConfiguration(_ fbb: inout FlatBufferBuilder, start: UOffset)
     -> Offset
   {
@@ -1275,7 +1283,8 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     compressionArtifacts: zzz_DflatGen_CompressionMethod = .disabled,
     compressionArtifactsQuality: Float32 = 43.1,
     colorCalibration: zzz_DflatGen_ColorCalibration = .disabled,
-    expandPromptToJson: Bool = false
+    expandPromptToJson: Bool = false,
+    shiftForAudio: Float32 = 3.0
   ) -> Offset {
     let __start = zzz_DflatGen_GenerationConfiguration.startGenerationConfiguration(&fbb)
     zzz_DflatGen_GenerationConfiguration.add(id: id, &fbb)
@@ -1371,6 +1380,7 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
       compressionArtifactsQuality: compressionArtifactsQuality, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(colorCalibration: colorCalibration, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(expandPromptToJson: expandPromptToJson, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(shiftForAudio: shiftForAudio, &fbb)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(&fbb, start: __start)
   }
 
@@ -1599,6 +1609,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     try _v.visit(
       field: VTOFFSET.expandPromptToJson.p, fieldName: "expandPromptToJson", required: false,
       type: Bool.self)
+    try _v.visit(
+      field: VTOFFSET.shiftForAudio.p, fieldName: "shiftForAudio", required: false,
+      type: Float32.self)
     _v.finish()
   }
 }

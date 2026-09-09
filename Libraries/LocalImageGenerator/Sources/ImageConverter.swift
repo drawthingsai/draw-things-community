@@ -1871,6 +1871,10 @@ public enum ImageConverter {
           description +=
             ", Negative Prompt for Image Prior: \(configuration.negativePromptForImagePrior ? "true" : "false")"
         }
+        if modelVersion == .minimaxH3 {
+          json["shift_for_audio"] = configuration.shiftForAudio
+          description += ", Audio Shift: \(configuration.shiftForAudio)"
+        }
         if modelVersion == .ideogram4 {
           json["expand_prompt_to_json"] = configuration.expandPromptToJson
           description +=
@@ -2308,6 +2312,12 @@ public enum ImageConverter {
 
         if let zeroNegativePrompt = commentsJsonDictionary["zero_negative_prompt"] as? Bool {
           configurationBuilder.zeroNegativePrompt = zeroNegativePrompt
+        }
+
+        if let shiftForAudio = commentsJsonDictionary["shift_for_audio"] as? Float,
+          shiftForAudio.isFinite && shiftForAudio > 0
+        {
+          configurationBuilder.shiftForAudio = shiftForAudio
         }
 
         if let expandPromptToJson = commentsJsonDictionary["expand_prompt_to_json"] as? Bool {

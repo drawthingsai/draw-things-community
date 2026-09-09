@@ -257,6 +257,7 @@ extension GenerationConfiguration: FlatBuffersEncodable {
       colorCalibration: __colorCalibration, &flatBufferBuilder)
     zzz_DflatGen_GenerationConfiguration.add(
       expandPromptToJson: self.expandPromptToJson, &flatBufferBuilder)
+    zzz_DflatGen_GenerationConfiguration.add(shiftForAudio: self.shiftForAudio, &flatBufferBuilder)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(
       &flatBufferBuilder, start: start)
   }
@@ -370,6 +371,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
   public var compressionArtifactsQuality: Float32
   public var colorCalibration: ColorCalibration
   public var expandPromptToJson: Bool
+  public var shiftForAudio: Float32
   private init(type _type: ChangeRequestType) {
     _o = nil
     self._type = _type
@@ -460,6 +462,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     compressionArtifactsQuality = 43.1
     colorCalibration = .disabled
     expandPromptToJson = false
+    shiftForAudio = 3.0
   }
   private init(type _type: ChangeRequestType, _ _o: GenerationConfiguration) {
     self._o = _o
@@ -551,6 +554,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     compressionArtifactsQuality = _o.compressionArtifactsQuality
     colorCalibration = _o.colorCalibration
     expandPromptToJson = _o.expandPromptToJson
+    shiftForAudio = _o.shiftForAudio
   }
   public static func changeRequest(_ o: GenerationConfiguration)
     -> GenerationConfigurationChangeRequest?
@@ -632,7 +636,7 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
       causalInferencePad: causalInferencePad, cfgZeroStar: cfgZeroStar,
       cfgZeroInitSteps: cfgZeroInitSteps, compressionArtifacts: compressionArtifacts,
       compressionArtifactsQuality: compressionArtifactsQuality, colorCalibration: colorCalibration,
-      expandPromptToJson: expandPromptToJson)
+      expandPromptToJson: expandPromptToJson, shiftForAudio: shiftForAudio)
     atom._rowid = _rowid
     return atom
   }

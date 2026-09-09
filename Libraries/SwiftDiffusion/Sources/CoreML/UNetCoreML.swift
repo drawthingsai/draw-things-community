@@ -321,7 +321,7 @@ extension UNetFromCoreML {
   }
 
   public func callAsFunction(
-    timestep: (now: Float, next: Float),
+    timestep: (now: Float, next: Float), audioShiftRatio: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (

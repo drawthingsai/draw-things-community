@@ -82,7 +82,7 @@ public protocol UNetProtocol {
   ) -> Bool
 
   func callAsFunction(
-    timestep: (now: Float, next: Float),
+    timestep: (now: Float, next: Float), audioShiftRatio: Float,
     inputs: DynamicGraph.Tensor<FloatType>, _: DynamicGraph.Tensor<FloatType>?,
     _: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
@@ -3424,7 +3424,8 @@ extension UNetFromNNC {
   }
 
   private func callAsFunction(
-    referenceImageCount: Int, step: Int, timestep: (now: Float, next: Float), index: Int,
+    referenceImageCount: Int, step: Int, timestep: (now: Float, next: Float),
+    audioShiftRatio: Float, index: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
     _ restInputs: [DynamicGraph.AnyTensor]
@@ -3462,8 +3463,9 @@ extension UNetFromNNC {
       let videoDelta = videoSigma - nextVideoSigma
       let audioScale =
         videoDelta > 0
-        ? (MiniMaxH3AudioSigma(forVideoSigma: videoSigma)
-          - MiniMaxH3AudioSigma(forVideoSigma: nextVideoSigma)) / videoDelta : 0
+        ? (MiniMaxH3AudioSigma(forVideoSigma: videoSigma, audioShiftRatio: audioShiftRatio)
+          - MiniMaxH3AudioSigma(forVideoSigma: nextVideoSigma, audioShiftRatio: audioShiftRatio))
+          / videoDelta : 0
       let text = DynamicGraph.Tensor<Float>(restInputs[0])
       let rotary = DynamicGraph.Tensor<FloatType>(restInputs[1])
       let textLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
@@ -4986,6 +4988,7 @@ extension UNetFromNNC {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ), referenceImageCount: Int, step: Int, timestep: (now: Float, next: Float),
+    audioShiftRatio: Float,
     tokenLengthUncond: Int,
     tokenLengthCond: Int,
     isCfgEnabled: Bool, audioFrames: Int, audioHeight: Int,
@@ -5036,7 +5039,7 @@ extension UNetFromNNC {
       tokenLength: isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond)
     return self(
       referenceImageCount: referenceImageCount,
-      step: step, timestep: timestep, index: index,
+      step: step, timestep: timestep, audioShiftRatio: audioShiftRatio, index: index,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled, inputs: x, inputs + injectedAttentionKVs)
   }
@@ -5053,6 +5056,7 @@ extension UNetFromNNC {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ), referenceImageCount: Int, step: Int, timestep: (now: Float, next: Float),
+    audioShiftRatio: Float,
     tokenLengthUncond: Int,
     tokenLengthCond: Int,
     isCfgEnabled: Bool,
@@ -5066,7 +5070,7 @@ extension UNetFromNNC {
           xT, inputs, 0, 0, 0, 0, &controlNets)
       return self(
         referenceImageCount: referenceImageCount,
-        step: step, timestep: timestep, index: 0,
+        step: step, timestep: timestep, audioShiftRatio: audioShiftRatio, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         inputs: xT, inputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)
@@ -5132,7 +5136,8 @@ extension UNetFromNNC {
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
             referenceImageCount: referenceImageCount,
-            step: step, timestep: timestep, tokenLengthUncond: tokenLengthUncond,
+            step: step, timestep: timestep, audioShiftRatio: audioShiftRatio,
+            tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, audioFrames: audioFrames, audioHeight: audioHeight,
             controlNets: &controlNets))
@@ -5257,7 +5262,7 @@ extension UNetFromNNC {
   }
 
   public func callAsFunction(
-    timestep timestepValue: (now: Float, next: Float),
+    timestep timestepValue: (now: Float, next: Float), audioShiftRatio: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: (
@@ -5282,11 +5287,13 @@ extension UNetFromNNC {
           tiledDiffusion: tiledDiffusion, xT: xT, inputs: [embGPU, c[0]],
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+          audioShiftRatio: audioShiftRatio,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
       } else {
         return self(
-          referenceImageCount: referenceImageCount, step: step, timestep: timestepValue, index: 0,
+          referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+          audioShiftRatio: audioShiftRatio, index: 0,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, inputs: xT, [embGPU, c[0]])
       }
@@ -5342,6 +5349,7 @@ extension UNetFromNNC {
         tiledDiffusion: tiledDiffusion, xT: xT, inputs: (timestep.map { [$0] } ?? []) + c,
         injectedControlsAndAdapters: injectedControlsAndAdapters,
         referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+        audioShiftRatio: audioShiftRatio,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
     } else {
@@ -5350,7 +5358,8 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, runtimeInputs, 0, 0, 0, 0, &controlNets)
       return self(
-        referenceImageCount: referenceImageCount, step: step, timestep: timestepValue, index: 0,
+        referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+        audioShiftRatio: audioShiftRatio, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, inputs: xT,
         runtimeInputs + injectedControls + injectedT2IAdapters + injectedAttentionKVs)
