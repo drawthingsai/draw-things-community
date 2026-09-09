@@ -9,10 +9,13 @@
     var currentURL: URL?
     var html = "<html>Loading</html>"
     var onLoad: ((URLRequest) -> Void)?
+    var onMore: (() -> Bool)?
+    var onSnapshot: (() -> Void)?
     override var url: URL? { currentURL }
 
     override func load(_ request: URLRequest) -> WKNavigation? {
       currentURL = request.url
+      navigationDelegate?.webView?(self, didStartProvisionalNavigation: nil)
       onLoad?(request)
       navigationDelegate?.webView?(self, didCommit: nil)
       navigationDelegate?.webView?(self, didFinish: nil)
@@ -23,7 +26,12 @@
       _ javaScriptString: String,
       completionHandler: (@MainActor @Sendable (Any?, Error?) -> Void)? = nil
     ) {
-      completionHandler?(javaScriptString.contains("button.click") ? false : html, nil)
+      if javaScriptString.contains("button.click") {
+        completionHandler?(onMore?() ?? false, nil)
+      } else {
+        onSnapshot?()
+        completionHandler?(html, nil)
+      }
     }
   }
 
@@ -171,6 +179,105 @@
         done.fulfill()
       }
       wait(for: [done], timeout: 3)
+    }
+
+    func testPaginationChallengeRecoveryRestartsFromFirstPage() {
+      for addsResults in [true, false] {
+        let done = expectation(description: "pagination challenge recovered")
+        var loads = 0
+        var clicks = 0
+        var dismissed = 0
+        let browser = WebKitDuckDuckGoSearch(
+          challengeHandler: { webView, _ in
+            let webView = webView as! SearchWebView
+            webView.html = "<p>Verification complete</p>"
+            webView.currentURL = URL(string: "https://duckduckgo.com/anomaly.js")!
+            return { dismissed += 1 }
+          },
+          makeWebView: { configuration in
+            let webView = SearchWebView(frame: .zero, configuration: configuration)
+            webView.onLoad = { [weak webView] _ in
+              loads += 1
+              webView?.html = self.results
+            }
+            webView.onMore = { [weak webView] in
+              clicks += 1
+              if loads == 1 {
+                webView?.html = "<form id='challenge-form'></form>"
+              } else if addsResults {
+                webView?.html += self.results.replacingOccurrences(of: "/doc", with: "/second")
+              }
+              return true
+            }
+            return webView
+          })
+        browser.search(
+          query: "example", options: DuckDuckGoSearchOptions(maxResults: 10, pages: 2, timeout: 2)
+        ) { result in
+          XCTAssertEqual(try? result.get().map(\.rank), addsResults ? [1, 2] : [1])
+          done.fulfill()
+        }
+        wait(for: [done], timeout: 7)
+        XCTAssertEqual(loads, 2)
+        XCTAssertEqual(clicks, 2)
+        XCTAssertEqual(dismissed, 1)
+      }
+    }
+
+    func testExhaustedPaginationPreservesExistingResults() {
+      for nextHTML in [results + results, "<html>Loading</html>", "<div class='no-results'></div>"]
+      {
+        let done = expectation(description: "exhausted pagination")
+        var clicks = 0
+        let browser = WebKitDuckDuckGoSearch(makeWebView: { configuration in
+          let webView = SearchWebView(frame: .zero, configuration: configuration)
+          webView.html = self.results
+          webView.onMore = { [weak webView] in
+            clicks += 1
+            webView?.html = nextHTML
+            webView?.onMore = { false }
+            return true
+          }
+          return webView
+        })
+        browser.search(
+          query: "example", options: DuckDuckGoSearchOptions(maxResults: 10, pages: 2, timeout: 2)
+        ) { result in
+          XCTAssertEqual(try? result.get().map(\.url.absoluteString), ["https://example.com/doc"])
+          done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        XCTAssertEqual(clicks, 1)
+      }
+    }
+
+    func testSlowPaginationWaitsForAdditionalResults() {
+      let done = expectation(description: "slow pagination")
+      var snapshotsAfterClick = 0
+      let browser = WebKitDuckDuckGoSearch(makeWebView: { configuration in
+        let webView = SearchWebView(frame: .zero, configuration: configuration)
+        webView.html = self.results
+        webView.onMore = { [weak webView] in
+          // The button is temporarily disabled while the additional page is loading.
+          webView?.onMore = { false }
+          webView?.onSnapshot = { [weak webView] in
+            snapshotsAfterClick += 1
+            if snapshotsAfterClick == 4 {
+              webView?.html += self.results.replacingOccurrences(of: "/doc", with: "/second")
+            }
+          }
+          return true
+        }
+        return webView
+      })
+      browser.search(
+        query: "example", options: DuckDuckGoSearchOptions(maxResults: 10, pages: 2, timeout: 3)
+      ) { result in
+        XCTAssertEqual(try? result.get().map(\.rank), [1, 2])
+        done.fulfill()
+      }
+      wait(for: [done], timeout: 5)
+      XCTAssertGreaterThanOrEqual(snapshotsAfterClick, 4)
     }
 
     func testConcurrentBrowserQueriesRemainIndependent() {

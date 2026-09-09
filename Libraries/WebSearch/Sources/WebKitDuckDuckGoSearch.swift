@@ -78,6 +78,7 @@
       private var evaluating = false
       private var finished = false
       private var presentedChallenge = false
+      private var awaitingChallenge = false
       private var resumedAfterChallenge = false
       private var reloaded = false
       private var initialRequest: URLRequest?
@@ -136,8 +137,12 @@
       private func poll() {
         guard !finished else { return }
         if Date() >= deadline {
-          if presentedChallenge {
+          if awaitingChallenge {
             finish(.failure(blockedError))
+          } else if countBeforeNextPage > 0, !results.isEmpty {
+            // An additional page may contain no new unique results. Keep the results already
+            // collected, but allow the full timeout so a slow page is not mistaken for exhaustion.
+            finish(.success(normalizedResults))
           } else if results.isEmpty, !reloaded, let initialRequest, let webView {
             // The page shell can load while its asynchronous results request fails.
             // Allow one ordinary navigation retry, never a loop around a challenge.
@@ -176,6 +181,11 @@
                 let initialRequest = self.initialRequest
               {
                 self.resumedAfterChallenge = true
+                self.page = 1
+                self.previousCount = 0
+                self.stableCount = 0
+                self.countBeforeNextPage = 0
+                self.results = []
                 self.deadline = Date().addingTimeInterval(max(1, self.options.timeout))
                 webView.load(initialRequest)
               }
@@ -183,9 +193,11 @@
             }
             let parsed = try DuckDuckGoHTMLParser.parse(html: html, baseURL: url)
             if parsed.isEmptyResult && parsed.results.isEmpty {
-              self.finish(.success([]))
+              self.finish(.success(self.normalizedResults))
               return
             }
+            guard !parsed.results.isEmpty else { return }
+            self.awaitingChallenge = false
             var seen = Set<String>()
             self.results = parsed.results.filter { seen.insert($0.url.absoluteString).inserted }
             guard self.results.count > self.countBeforeNextPage else { return }
@@ -240,6 +252,7 @@
       }
 
       private func presentChallenge(in webView: WKWebView) {
+        awaitingChallenge = true
         guard !presentedChallenge else { return }
         presentedChallenge = true
         deadline = Date().addingTimeInterval(max(1, challengeTimeout))

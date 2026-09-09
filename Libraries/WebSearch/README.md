@@ -18,6 +18,8 @@ Loading DuckDuckGo's regular site in WKWebView returned usable responses. The fa
 
 The HTTP timeout and browser timeout apply to their individual attempts; a browser reload or additional page can take another timeout interval. Human verification has a separate 120-second default timeout. Headless callers must keep the main run loop available to use WebKit, or explicitly select HTTP. Non-WebKit platforms retain HTTP-only behavior.
 
+If an additional browser page produces no new unique results before its timeout, the search returns the results already collected. An explicit no-results page also preserves earlier results. A pending verification challenge still fails on timeout. Restarting the original query after verification resets pagination so later pages can be requested again.
+
 The parser distinguishes genuine no-results pages from incomplete pages, including pages with related-search suggestions before the no-results message. Query matching decodes form-style `+` spaces while preserving literal `+` characters. Challenge wording inside result snippets or scripts does not by itself trigger verification.
 
 ## Alternatives considered
