@@ -100,7 +100,8 @@ final class WebSearchTests: XCTestCase {
       httpVersion: nil,
       headerFields: ["Content-Type": "text/html"])!
     let search = DuckDuckGoSearch(
-      httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) })
+      httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) },
+      browserSearch: nil)
 
     do {
       _ = try await search.search(query: "site:github.com ios_system")
@@ -399,7 +400,8 @@ final class WebSearchTests: XCTestCase {
       httpVersion: nil,
       headerFields: ["Content-Type": "text/html"])!
     let search = DuckDuckGoSearch(
-      httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) })
+      httpTransport: StubHttpTransport { _ in .success((Data(html.utf8), response)) },
+      browserSearch: nil)
     var didComplete = false
 
     search.search(query: "example") { result in

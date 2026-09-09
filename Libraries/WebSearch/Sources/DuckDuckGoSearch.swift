@@ -5,14 +5,34 @@ import SwiftSoup
   import FoundationNetworking
 #endif
 
-/// Searches DuckDuckGo's HTML endpoint.
+/// Browser fallback used when DuckDuckGo's HTML endpoint cannot return a search page.
+public protocol DuckDuckGoBrowserSearch {
+  func search(
+    query: String, options: DuckDuckGoSearchOptions,
+    completion: @escaping (Result<[SearchResult], Error>) -> Void)
+}
+
+/// Searches DuckDuckGo's HTML endpoint, falling back to a browser when available.
 public struct DuckDuckGoSearch {
   private let httpTransport: HttpTransport
+  private let browserSearch: DuckDuckGoBrowserSearch?
   private static let endpoint = URL(string: "https://html.duckduckgo.com/html/")!
 
-  /// Creates a DuckDuckGo search tool.
-  public init(httpTransport: HttpTransport = URLSessionHttpTransport()) {
+  public static var defaultBrowserSearch: DuckDuckGoBrowserSearch? {
+    #if canImport(WebKit)
+      return WebKitDuckDuckGoSearch()
+    #else
+      return nil
+    #endif
+  }
+
+  /// Pass `nil` for `browserSearch` to use only HTTP (for example on a headless server).
+  public init(
+    httpTransport: HttpTransport = URLSessionHttpTransport(),
+    browserSearch: DuckDuckGoBrowserSearch? = DuckDuckGoSearch.defaultBrowserSearch
+  ) {
     self.httpTransport = httpTransport
+    self.browserSearch = browserSearch
   }
 
   /// Searches DuckDuckGo and calls `completion` with normalized, de-duplicated results.
@@ -29,7 +49,30 @@ public struct DuckDuckGoSearch {
 
     searchPage(
       query: normalizedQuery, options: options, page: 0, nextParameters: nil, results: [],
-      seenURLs: [], completion: completion)
+      seenURLs: []
+    ) { result in
+      if case .failure(let error) = result, Self.shouldUseBrowser(after: error),
+        let browserSearch = self.browserSearch
+      {
+        browserSearch.search(query: normalizedQuery, options: options, completion: completion)
+      } else {
+        completion(result)
+      }
+    }
+  }
+
+  static func shouldUseBrowser(after error: Error) -> Bool {
+    switch error {
+    case WebSearchError.searchBlocked, WebSearchError.unexpectedSearchResponse,
+      WebSearchError.bodyDecodingFailed:
+      return true
+    case WebSearchError.httpStatus(let status, _, _, _, _):
+      return status == 403 || status == 408 || status == 429 || (500..<600).contains(status)
+    case let error as URLError:
+      return error.code == .timedOut || error.code == .networkConnectionLost
+    default:
+      return false
+    }
   }
 
   /// Searches DuckDuckGo with async/await by wrapping the completion-handler API.
@@ -90,6 +133,9 @@ public struct DuckDuckGoSearch {
         }
 
         let parsed = try DuckDuckGoHTMLParser.parse(html: html, baseURL: Self.endpoint)
+        guard !parsed.results.isEmpty || parsed.isEmptyResult else {
+          throw WebSearchError.unexpectedSearchResponse(response.url)
+        }
         var updatedResults = results
         var updatedSeenURLs = seenURLs
         for result in parsed.results {
@@ -143,6 +189,8 @@ public struct DuckDuckGoSearch {
       queryItems.append(URLQueryItem(name: "df", value: timeFilter.duckDuckGoValue))
     }
     components.queryItems = queryItems
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
+      of: "+", with: "%2B")
     guard let url = components.url else {
       throw WebSearchError.invalidURL(endpoint.absoluteString)
     }
@@ -171,7 +219,10 @@ public struct DuckDuckGoSearch {
   static func formURLEncodedData(_ parameters: [(String, String)]) -> Data {
     var components = URLComponents()
     components.queryItems = parameters.map { URLQueryItem(name: $0.0, value: $0.1) }
-    let encoded = components.percentEncodedQuery?.replacingOccurrences(of: "%20", with: "+") ?? ""
+    let encoded =
+      components.percentEncodedQuery?
+      .replacingOccurrences(of: "+", with: "%2B")
+      .replacingOccurrences(of: "%20", with: "+") ?? ""
     return Data(encoded.utf8)
   }
 
@@ -180,10 +231,20 @@ public struct DuckDuckGoSearch {
   }
 
   static func isAccessChallenge(statusCode: Int, body: String?) -> Bool {
-    guard let body else {
+    guard let body, let document = try? SwiftSoup.parse(body) else {
       return false
     }
-    let lowercased = body.lowercased()
+    if (try? document.select("form#challenge-form, form[action*=anomaly.js], .anomaly-modal")
+      .isEmpty()) == false
+    {
+      return true
+    }
+    // A query or snippet may quote the challenge wording. Only use the text heuristic
+    // when there are no result links, and ignore scripts containing UI string tables.
+    if (try? document.select("a.result__a, a[data-testid=result-title-a]").isEmpty()) == false {
+      return false
+    }
+    let lowercased = ((try? document.body()?.text()) ?? "").lowercased()
     if lowercased.contains("unfortunately, bots use duckduckgo too")
       || lowercased.contains("please complete the following challenge")
       || lowercased.contains("select all squares containing a duck")
@@ -198,15 +259,18 @@ public struct DuckDuckGoSearch {
 struct DuckDuckGoParsedPage {
   var results: [SearchResult]
   var nextParameters: [(String, String)]?
+  var isEmptyResult: Bool
 }
 
 enum DuckDuckGoHTMLParser {
   static func parse(html: String, baseURL: URL) throws -> DuckDuckGoParsedPage {
     let document = try SwiftSoup.parse(html, baseURL.absoluteString)
-    let elements = try document.select("div.result.web-result")
+    let elements = try document.select("div.result.web-result, article[data-testid=result]")
     var results = [SearchResult]()
     for element in elements {
-      guard let titleElement = try element.select("a.result__a").first() else {
+      guard
+        let titleElement = try element.select("a.result__a, a[data-testid=result-title-a]").first()
+      else {
         continue
       }
       let rawHref = try titleElement.attr("href")
@@ -218,9 +282,10 @@ enum DuckDuckGoHTMLParser {
         continue
       }
       let snippet = normalizeWhitespace(
-        try element.select("a.result__snippet").first()?.text() ?? "")
+        try element.select(".result__snippet, [data-result=snippet]").first()?.text() ?? "")
       let displayURL = normalizeWhitespace(
-        try element.select("a.result__url").first()?.text() ?? "")
+        try element.select("a.result__url, a[data-testid=result-extras-url-link]").first()?.text()
+          ?? "")
       results.append(
         SearchResult(
           rank: results.count + 1,
@@ -231,7 +296,11 @@ enum DuckDuckGoHTMLParser {
           source: "duckduckgo"))
     }
     return DuckDuckGoParsedPage(
-      results: results, nextParameters: try nextFormParameters(from: document))
+      results: results, nextParameters: try nextFormParameters(from: document),
+      isEmptyResult: try !document.select(".no-results, .no-results__title").isEmpty()
+        || document.select("[data-testid=mainline] p").contains(where: {
+          try $0.text().hasPrefix("No results found for ")
+        }))
   }
 
   static func decodeDuckDuckGoURL(_ rawHref: String, baseURL: URL) -> URL? {
@@ -242,15 +311,16 @@ enum DuckDuckGoHTMLParser {
     } else {
       candidate = URL(string: trimmed, relativeTo: baseURL)?.absoluteURL
     }
-    guard let url = candidate else {
+    guard let url = candidate, ["https", "http"].contains(url.scheme?.lowercased() ?? "") else {
       return nil
     }
     guard
-      url.host?.lowercased().contains("duckduckgo.com") == true,
+      url.host?.lowercased() == "duckduckgo.com",
       url.path == "/l/" || url.path == "/l",
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
       let encoded = components.queryItems?.first(where: { $0.name == "uddg" })?.value,
-      let decoded = URL(string: encoded)
+      let decoded = URL(string: encoded),
+      ["https", "http"].contains(decoded.scheme?.lowercased() ?? "")
     else {
       return url
     }

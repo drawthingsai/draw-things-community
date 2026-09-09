@@ -363,6 +363,8 @@ public enum WebSearchError: LocalizedError {
   case invalidURL(String)
   /// The transport returned a non-HTTP response.
   case invalidResponse
+  /// A search page contained neither recognizable results nor an explicit no-results message.
+  case unexpectedSearchResponse(URL?)
   /// The HTTP response status was not successful.
   case httpStatus(Int, URL?, body: String?, headers: [String: String], byteCount: Int)
   /// The response body could not be decoded as text.
@@ -383,6 +385,9 @@ public enum WebSearchError: LocalizedError {
       return "Invalid URL: \(value)"
     case .invalidResponse:
       return "Expected an HTTP response."
+    case .unexpectedSearchResponse(let url):
+      return
+        "The search provider returned an unrecognized page\(url.map { " from \($0.absoluteString)" } ?? "")."
     case .httpStatus(let status, let url, _, _, _):
       if let url {
         return "HTTP \(status) from \(url.absoluteString)"
