@@ -552,6 +552,8 @@ extension ModelPreloader {
     let cfgChannels: Int
     let numberOfChannels: Int
     switch modelModifier {
+    case .fl2va, .ref2va:
+      fatalError()
     case .depth, .canny:
       cfgChannels = 2
       numberOfChannels = 5

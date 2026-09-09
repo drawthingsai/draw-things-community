@@ -72,6 +72,21 @@ swift_test(
 )
 
 swift_test(
+    name = "MiniMaxH3Tests",
+    srcs = ["Tests/MiniMaxH3Tests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":SwiftDiffusion",
+        "//Libraries/BinaryResources",
+        "//Libraries/Tokenizer",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
     name = "SamplerTests",
     srcs = ["Tests/SamplerTests.swift"],
     tags = [

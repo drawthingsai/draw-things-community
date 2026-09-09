@@ -128,6 +128,8 @@ extension LCMSampler: Sampler {
       inChannels = channels * 2
     } else {
       switch modifier {
+      case .fl2va, .ref2va:
+        fatalError()
       case .inpainting, .depth, .canny:
         inChannels = channels + (conditionImage?.shape[3] ?? 0)
       case .editing:
@@ -145,6 +147,8 @@ extension LCMSampler: Sampler {
       of: FloatType.self
     )
     switch modifier {
+    case .fl2va, .ref2va:
+      fatalError()
     case .inpainting, .depth, .canny:
       if let conditionImage = conditionImage {
         let shape = conditionImage.shape
@@ -174,8 +178,8 @@ extension LCMSampler: Sampler {
     var c = c
     var extraProjection = extraProjection
     // There is no tokenLengthUncond any more.
-    let tokenLengthUncond = tokenLengthCond
-    if version != .svdI2v {
+    let tokenLengthUncond = version == .minimaxH3 ? tokenLengthUncond : tokenLengthCond
+    if version != .svdI2v && version != .minimaxH3 {
       for i in 0..<c.count {
         let shape = c[i].shape
         let batchSize = shape[0] / 2

@@ -43,7 +43,9 @@ func MiniMaxH3AudioSigma(forVideoSigma sigma: Float) -> Float {
 }
 
 public func MiniMaxH3RotaryEmbedding(
-  textLength: Int, audioLength: Int, videoFrames: Int, videoHeight: Int, videoWidth: Int
+  textLength: Int, audioLength: Int = 0, videoFrames: Int = 0, videoHeight: Int = 0,
+  videoWidth: Int = 0, referenceImages: [(height: Int, width: Int, position: Float)] = [],
+  videoPosition: Float? = nil, visionTokenRanges: [Range<Int>] = []
 ) -> Tensor<Float> {
   precondition(audioLength % 2 == 0)
   precondition(videoHeight % 2 == 0)
@@ -53,8 +55,11 @@ public func MiniMaxH3RotaryEmbedding(
   let width = videoWidth / 2
   let rowsPerFrame = height * width
   let videoLength = videoFrames * rowsPerFrame
-  let sequenceLength = textLength + audioLength + videoLength
-  let squareRootArea = sqrt(Double(videoHeight * videoWidth))
+  let conditionLength = referenceImages.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
+  let visionLength = visionTokenRanges.reduce(0) { $0 + $1.count }
+  let mediaPosition = videoPosition ?? Float(textLength)
+  let sequenceLength = textLength + conditionLength + audioLength + videoLength
+  let squareRootArea = max(1, sqrt(Double(videoHeight * videoWidth)))
   let heightRatio = Double(videoHeight) / squareRootArea
   let widthRatio = Double(videoWidth) / squareRootArea
   let heightLeft = (1 - heightRatio) / 2
@@ -69,7 +74,7 @@ public func MiniMaxH3RotaryEmbedding(
   let frameRescale = 5.0 / 3.0
   let framesPerLatent = [1.0, 4.0, 4.0, 4.0, 4.0]
   var temporalGrid = [Float](repeating: 0, count: videoFrames)
-  var temporalPosition = Double(textLength)
+  var temporalPosition = Double(mediaPosition)
   for frame in 0..<videoFrames {
     temporalGrid[frame] = Float(temporalPosition)
     temporalPosition += frameRescale * framesPerLatent[frame % framesPerLatent.count]
@@ -95,19 +100,47 @@ public func MiniMaxH3RotaryEmbedding(
         fp32[rowStart + index] = index % 2 == 0 ? 1 : 0
       }
     }
+    var textRow = 0
+    var visionRow = textLength - visionLength + conditionLength + audioLength
     for token in 0..<textLength {
-      write(row: token, position: (Float(token), 0, 0))
+      if visionTokenRanges.contains(where: { $0.contains(token) }) {
+        write(row: visionRow, position: (Float(token), 0, 0))
+        visionRow += 1
+      } else {
+        write(row: textRow, position: (Float(token), 0, 0))
+        textRow += 1
+      }
     }
-    let audioOffset = textLength
-    for channel in 0..<2 {
+    var referenceRow = textLength - visionLength
+    for image in referenceImages {
+      precondition(
+        image.height > 0 && image.width > 0 && image.height % 2 == 0 && image.width % 2 == 0)
+      let area = sqrt(Double(image.height * image.width))
+      let hRatio = Double(image.height) / area
+      let wRatio = Double(image.width) / area
+      for y in 0..<(image.height / 2) {
+        for x in 0..<(image.width / 2) {
+          write(
+            row: referenceRow,
+            position: (
+              image.position,
+              Float(((1 - hRatio) / 2 + hRatio * Double(y) / Double(image.height / 2)) * 32),
+              Float(((1 - wRatio) / 2 + wRatio * Double(x) / Double(image.width / 2)) * 32)
+            ))
+          referenceRow += 1
+        }
+      }
+    }
+    let audioOffset = textLength - visionLength + conditionLength
+    for channel in 0..<(audioLatents > 0 ? 2 : 0) {
       let spatialPosition = channel == 0 ? widthGrid.first! : widthGrid.last!
       for index in 0..<audioLatents {
         write(
           row: audioOffset + channel * audioLatents + index,
-          position: (Float(textLength + index), 0, spatialPosition))
+          position: (mediaPosition + Float(index), 0, spatialPosition))
       }
     }
-    let videoOffset = textLength + audioLength
+    let videoOffset = audioOffset + audioLength + visionLength
     for frame in 0..<videoFrames {
       for y in 0..<height {
         for x in 0..<width {
@@ -123,7 +156,7 @@ public func MiniMaxH3RotaryEmbedding(
 
 private func H3Attention(
   hiddenSize: Int, sequenceLength: Int, isRoPEEnabled: Bool, scaleFactor: Int,
-  usesFlashAttention: FlashAttentionLevel, name: String = ""
+  usesFlashAttention: FlashAttentionLevel, segments: [Int] = [], name: String = ""
 ) -> Model {
   let x = Input()
   let rot = isRoPEEnabled ? Input() : nil
@@ -153,7 +186,24 @@ private func H3Attention(
   let attention = ScaledDotProductAttention(
     scale: 1,
     flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
-  let attentionOutput = attention(q, k, v)
+  let attentionOutput: Model.IO
+  if segments.isEmpty {
+    attentionOutput = attention(q, k, v)
+  } else {
+    precondition(segments.reduce(0, +) == sequenceLength)
+    var offset = 0
+    let outputs = segments.map { length in
+      let inputs = [q, k, v].map {
+        $0.reshaped(
+          [1, length, 56, 128], offset: [0, offset, 0, 0],
+          strides: [sequenceLength * 7_168, 7_168, 128, 1]
+        ).contiguous()
+      }
+      offset += length
+      return attention(inputs)
+    }
+    attentionOutput = Concat(axis: 1)(outputs)
+  }
   let attended = attentionOutput.reshaped([1, sequenceLength, 7_168])
   let out = Dense(
     count: hiddenSize, noBias: true, name: name.isEmpty ? "o" : "\(name)_o")
@@ -184,74 +234,76 @@ private func H3SwiGLU(hiddenSize: Int, scaleFactor: Int? = nil, name: String = "
 
 private func H3TransformerBlock(
   hiddenSize: Int, textLength: Int, audioLength: Int, videoLength: Int,
+  conditionLength: Int,
   usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?
 ) -> Model {
-  let sequenceLength = textLength + audioLength + videoLength
+  let sequenceLength = textLength + conditionLength + audioLength + videoLength
   let x = Input()
   let rot = Input()
-  let modulations = (0..<18).map { _ in Input() }
-  let offsets = [0, textLength, textLength + audioLength]
-  let lengths = [textLength, audioLength, videoLength]
-  // Token order is text, audio, video, while AdaLN modality order is video, text, audio.
-  let modalities = [1, 2, 0]
+  let modulationCount = conditionLength > 0 ? 4 : 3
+  let modulations = (0..<(6 * modulationCount)).map { _ in Input() }
+  // Modulation order: video, text, audio, and (when present) the fixed video keyframe.
+  var spans: [(range: Range<Int>, modality: Int)] = [(0..<textLength, 1)]
+  if conditionLength > 0 {
+    spans.append((textLength..<(textLength + conditionLength), 3))
+  }
+  spans += [
+    ((textLength + conditionLength)..<(textLength + conditionLength + audioLength), 2),
+    ((textLength + conditionLength + audioLength)..<sequenceLength, 0),
+  ]
+  spans.removeAll { $0.range.isEmpty }
   let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm1")
   let attention = H3Attention(
     hiddenSize: hiddenSize, sequenceLength: sequenceLength, isRoPEEnabled: true, scaleFactor: 8,
     usesFlashAttention: usesFlashAttention)
   let normed1 = norm1(x).to(.Float16)
-  let attentionInputs = (0..<3).map { index in
-    let modality = modalities[index]
+  let attentionInputs = spans.map { span in
+    let modality = span.modality
     let shift = modulations[modality]
-    let scale = 1 + modulations[3 + modality]
+    let scale = 1 + modulations[modulationCount + modality]
     return
       (normed1.reshaped(
-        [1, lengths[index], hiddenSize], offset: [0, offsets[index], 0],
+        [1, span.range.count, hiddenSize], offset: [0, span.range.lowerBound, 0],
         strides: [sequenceLength * hiddenSize, hiddenSize, 1]
       ).contiguous()
       .* scale + shift)
   }
-  let attentionInput = Functional.concat(
-    axis: 1, attentionInputs[0], attentionInputs[1], attentionInputs[2])
+  let attentionInput = Concat(axis: 1)(attentionInputs)
   let attentionOutput = attention(attentionInput, rot)
-  let gatedAttention = (0..<3).map { index in
-    let modality = modalities[index]
-    return modulations[6 + modality].to(.Float32)
+  let gatedAttention = spans.map { span in
+    return modulations[2 * modulationCount + span.modality].to(.Float32)
       .* attentionOutput.reshaped(
-        [1, lengths[index], hiddenSize], offset: [0, offsets[index], 0],
+        [1, span.range.count, hiddenSize], offset: [0, span.range.lowerBound, 0],
         strides: [sequenceLength * hiddenSize, hiddenSize, 1]
       ).contiguous()
   }
   var out =
     x
-    + Functional.concat(
-      axis: 1, gatedAttention[0], gatedAttention[1], gatedAttention[2])
+    + Concat(axis: 1)(gatedAttention)
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm2")
   let feedForward = H3SwiGLU(hiddenSize: hiddenSize, scaleFactor: scaleFactor)
   let normed2 = norm2(out).to(.Float16)
-  let feedForwardInputs = (0..<3).map { index in
-    let modality = modalities[index]
-    let shift = modulations[9 + modality]
-    let scale = 1 + modulations[12 + modality]
+  let feedForwardInputs = spans.map { span in
+    let modality = span.modality
+    let shift = modulations[3 * modulationCount + modality]
+    let scale = 1 + modulations[4 * modulationCount + modality]
     return
       (normed2.reshaped(
-        [1, lengths[index], hiddenSize], offset: [0, offsets[index], 0],
+        [1, span.range.count, hiddenSize], offset: [0, span.range.lowerBound, 0],
         strides: [sequenceLength * hiddenSize, hiddenSize, 1]
       ).contiguous()
       .* scale + shift)
   }
-  let feedForwardInput = Functional.concat(
-    axis: 1, feedForwardInputs[0], feedForwardInputs[1], feedForwardInputs[2])
+  let feedForwardInput = Concat(axis: 1)(feedForwardInputs)
   let rawFeedForwardOutput = feedForward(feedForwardInput)
-  let gatedFeedForward = (0..<3).map { index in
-    let modality = modalities[index]
-    return modulations[15 + modality].to(.Float32)
+  let gatedFeedForward = spans.map { span in
+    return modulations[5 * modulationCount + span.modality].to(.Float32)
       .* rawFeedForwardOutput.reshaped(
-        [1, lengths[index], hiddenSize], offset: [0, offsets[index], 0],
+        [1, span.range.count, hiddenSize], offset: [0, span.range.lowerBound, 0],
         strides: [sequenceLength * hiddenSize, hiddenSize, 1]
       ).contiguous()
   }
-  let feedForwardOutput = Functional.concat(
-    axis: 1, gatedFeedForward[0], gatedFeedForward[1], gatedFeedForward[2])
+  let feedForwardOutput = Concat(axis: 1)(gatedFeedForward)
   if let scaleFactor {
     out = out + Float(scaleFactor) * feedForwardOutput
   } else {
@@ -261,13 +313,13 @@ private func H3TransformerBlock(
 }
 
 private func H3TokenRefinerBlock(
-  hiddenSize: Int, sequenceLength: Int, usesFlashAttention: FlashAttentionLevel
+  hiddenSize: Int, sequenceLength: Int, usesFlashAttention: FlashAttentionLevel, segments: [Int]
 ) -> Model {
   let x = Input()
   let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "refiner_norm1")
   let attention = H3Attention(
     hiddenSize: hiddenSize, sequenceLength: sequenceLength, isRoPEEnabled: false, scaleFactor: 1,
-    usesFlashAttention: usesFlashAttention, name: "refiner")
+    usesFlashAttention: usesFlashAttention, segments: segments, name: "refiner")
   let attentionInput = norm1(x).to(.Float16)
   let attentionOutput = attention(attentionInput)
   var out = x + attentionOutput
@@ -278,14 +330,14 @@ private func H3TokenRefinerBlock(
 }
 
 private func H3TokenRefiner(
-  hiddenSize: Int, sequenceLength: Int, usesFlashAttention: FlashAttentionLevel
+  hiddenSize: Int, sequenceLength: Int, usesFlashAttention: FlashAttentionLevel, segments: [Int]
 ) -> Model {
   let x = Input()
   var out: Model.IO = x
   for _ in 0..<2 {
     let block = H3TokenRefinerBlock(
       hiddenSize: hiddenSize, sequenceLength: sequenceLength,
-      usesFlashAttention: usesFlashAttention)
+      usesFlashAttention: usesFlashAttention, segments: segments)
     out = block(out)
   }
   let norm = RMSNorm(epsilon: 1e-5, axis: [2], name: "refiner_final_norm")
@@ -301,14 +353,84 @@ private func H3TimestepEmbedding(hiddenSize: Int) -> Model {
   return Model([frequencies], [out])
 }
 
-public func MiniMaxH3Fixed(timesteps: Int, hiddenSize: Int, layers: Int) -> Model {
+public func MiniMaxH3Fixed(
+  timesteps: Int, hiddenSize: Int, layers: Int, textLength: (Int, Int),
+  usesFlashAttention: FlashAttentionLevel, referenceImageCount: Int = 0,
+  visionLength: Int = 0
+) -> Model {
   precondition(timesteps > 0 && hiddenSize > 0 && layers > 0)
+  precondition(textLength.0 >= 0 && textLength.1 > 0)
+  let text = Input()
+  let referenceImages = (0..<referenceImageCount).map { _ in Input() }
+  let paddedLength = max(textLength.0, textLength.1)
+  let contextInput: Model.IO
+  if textLength.0 > 0 {
+    // Remove CFG padding before refinement; vision rows follow the padded text in each branch.
+    let branches = [textLength.0, textLength.1].enumerated().map { batch, length in
+      var branch = text.reshaped(
+        [1, length - visionLength, 5_120], offset: [batch, 0, 0],
+        strides: [paddedLength * 5_120, 5_120, 1]
+      ).contiguous()
+      if visionLength > 0 {
+        branch = Functional.concat(
+          axis: 1, branch,
+          text.reshaped(
+            [1, visionLength, 5_120], offset: [batch, paddedLength - visionLength, 0],
+            strides: [paddedLength * 5_120, 5_120, 1]
+          ).contiguous())
+      }
+      return branch
+    }
+    contextInput = Concat(axis: 1)(branches)
+  } else {
+    contextInput = text
+  }
+  let textInput = Dense(count: hiddenSize, name: "context_embedder")
+  let refiner = H3TokenRefiner(
+    hiddenSize: hiddenSize, sequenceLength: textLength.0 + textLength.1,
+    usesFlashAttention: usesFlashAttention,
+    segments: textLength.0 > 0 ? [textLength.0, textLength.1] : [])
+  // UNetFixedEncoder scales the text bias by 1/4 to match the pre-scaled input.
+  let textProjected = 4 * textInput(0.25 * contextInput).to(.Float32)
+  var context = refiner(textProjected)
+  if textLength.0 > 0 {
+    let refined = context
+    var offset = 0
+    let branches = [textLength.0, textLength.1].map { length in
+      var branch = refined.reshaped(
+        [1, length - visionLength, hiddenSize], offset: [0, offset, 0],
+        strides: [(textLength.0 + textLength.1) * hiddenSize, hiddenSize, 1]
+      ).contiguous()
+      if length < paddedLength {
+        branch = branch.padded(.zero, begin: [0, 0, 0], end: [0, paddedLength - length, 0])
+      }
+      if visionLength > 0 {
+        branch = Functional.concat(
+          axis: 1, branch,
+          refined.reshaped(
+            [1, visionLength, hiddenSize], offset: [0, offset + length - visionLength, 0],
+            strides: [(textLength.0 + textLength.1) * hiddenSize, hiddenSize, 1]
+          ).contiguous())
+      }
+      offset += length
+      return branch
+    }
+    context = Concat(axis: 0)(branches)
+  }
   let timestepFrequencies = Input()
   let timeEmbedding = H3TimestepEmbedding(hiddenSize: hiddenSize)
   let activatedTimestep = timeEmbedding(timestepFrequencies).swish()
-  var outputs = [Model.IO]()
+  let timestepCount = referenceImages.isEmpty ? 2 : 3
+  var outputs = [context]
+  if !referenceImages.isEmpty {
+    let xEmbedder = Convolution(
+      groups: 1, filters: hiddenSize, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "proj_in")
+    outputs += referenceImages.map { xEmbedder($0) }
+  }
   for _ in 0..<layers {
     for chunk in 0..<6 {
+      var condition: Model.IO? = nil
       for modality in 0..<3 {
         let projected = Dense(
           count: hiddenSize, name: "adaln_\(chunk)_\(modality)"
@@ -317,9 +439,16 @@ public func MiniMaxH3Fixed(timesteps: Int, hiddenSize: Int, layers: Int) -> Mode
         outputs.append(
           projected.reshaped(
             [timesteps, 1, hiddenSize], offset: [0, timestep, 0],
-            strides: [2 * hiddenSize, hiddenSize, 1]
+            strides: [timestepCount * hiddenSize, hiddenSize, 1]
           ).contiguous())
+        if !referenceImages.isEmpty && modality == 0 {
+          condition = projected.reshaped(
+            [timesteps, 1, hiddenSize], offset: [0, 2, 0],
+            strides: [timestepCount * hiddenSize, hiddenSize, 1]
+          ).contiguous()
+        }
       }
+      if let condition { outputs.append(condition) }
     }
   }
   let outputShift = Dense(count: hiddenSize, name: "norm_out_shift")
@@ -330,46 +459,68 @@ public func MiniMaxH3Fixed(timesteps: Int, hiddenSize: Int, layers: Int) -> Mode
     outputs.append(
       outputShifts.reshaped(
         [timesteps, 1, hiddenSize], offset: [0, timestep, 0],
-        strides: [2 * hiddenSize, hiddenSize, 1]
+        strides: [timestepCount * hiddenSize, hiddenSize, 1]
       ).contiguous())
     outputs.append(
       outputScales.reshaped(
         [timesteps, 1, hiddenSize], offset: [0, timestep, 0],
-        strides: [2 * hiddenSize, hiddenSize, 1]
+        strides: [timestepCount * hiddenSize, hiddenSize, 1]
       ).contiguous())
   }
-  precondition(outputs.count == layers * 18 + 4)
-  return Model([timestepFrequencies], outputs)
+  precondition(
+    outputs.count == layers * (referenceImages.isEmpty ? 18 : 24) + 5 + referenceImages.count)
+  return Model([text, timestepFrequencies] + referenceImages, outputs)
 }
 
 public func MiniMaxH3(
   hiddenSize: Int, layers: Int, textLength: Int, audioLength: Int, videoFrames: Int,
-  videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel
+  videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel,
+  referenceImageSizes: [(height: Int, width: Int)] = [], visionLength: Int = 0
 ) -> Model {
   precondition(hiddenSize > 0 && layers > 0)
   precondition(videoHeight % 2 == 0 && videoWidth % 2 == 0)
   let video = Input()
   let audio = Input()
-  let text = Input()
+  let contextRows = Input()
   let rot = Input()
-  let fixedConditions = (0..<(layers * 18 + 4)).map { _ in Input() }
+  let referenceImages = referenceImageSizes.map { _ in Input() }
+  let perLayerConditions = referenceImages.isEmpty ? 18 : 24
+  let fixedConditions = (0..<(layers * perLayerConditions + 4)).map { _ in Input() }
   let videoLength = videoFrames * videoHeight / 2 * videoWidth / 2
-  let sequenceLength = textLength + audioLength + videoLength
+  let conditionLength = referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
+  let sequenceLength = textLength + conditionLength + audioLength + videoLength
 
   let xEmbedder = Convolution(
     groups: 1, filters: hiddenSize, filterSize: [2, 2],
     hint: Hint(stride: [2, 2]), format: .OIHW, name: "proj_in")
   let audioInput = Dense(count: hiddenSize, name: "audio_proj_in")
-  let textInput = Dense(count: hiddenSize, name: "context_embedder")
-  let refiner = H3TokenRefiner(
-    hiddenSize: hiddenSize, sequenceLength: textLength,
-    usesFlashAttention: usesFlashAttention)
-  // UNet's weight loader scales the text bias by 1/4 to match the pre-scaled input.
-  let textProjected = 4 * textInput(0.25 * text).to(.Float32)
-  let textRows = refiner(textProjected)
   let audioRows = audioInput(audio).to(.Float32)
   let videoRows = xEmbedder(video).reshaped(.HWC(1, videoLength, hiddenSize)).to(.Float32)
-  var out = Functional.concat(axis: 1, textRows, audioRows, videoRows)
+  let textRows: Model.IO
+  if visionLength > 0 {
+    textRows = contextRows.reshaped(
+      [1, textLength - visionLength, hiddenSize],
+      strides: [textLength * hiddenSize, hiddenSize, 1]
+    ).contiguous()
+  } else {
+    textRows = contextRows
+  }
+  // Each modulation group stays contiguous throughout all transformer blocks.
+  var rows = [textRows]
+  for (image, size) in zip(referenceImages, referenceImageSizes) {
+    rows.append(
+      image.reshaped(.HWC(1, size.height / 2 * (size.width / 2), hiddenSize)).to(.Float32))
+  }
+  rows.append(audioRows)
+  if visionLength > 0 {
+    rows.append(
+      contextRows.reshaped(
+        [1, visionLength, hiddenSize], offset: [0, textLength - visionLength, 0],
+        strides: [textLength * hiddenSize, hiddenSize, 1]
+      ).contiguous())
+  }
+  rows.append(videoRows)
+  var out = Concat(axis: 1)(rows)
   for layer in 0..<layers {
     // Keep FFN outliers in FP16 range; the residual branch restores the factor in FP32.
     let scaleFactor: Int
@@ -392,35 +543,35 @@ public func MiniMaxH3(
       scaleFactor = 2
     }
     let block = H3TransformerBlock(
-      hiddenSize: hiddenSize, textLength: textLength, audioLength: audioLength,
-      videoLength: videoLength,
+      hiddenSize: hiddenSize, textLength: textLength - visionLength, audioLength: audioLength,
+      videoLength: visionLength + videoLength, conditionLength: conditionLength,
       usesFlashAttention: usesFlashAttention,
       scaleFactor: scaleFactor)
-    let conditionOffset = layer * 18
+    let conditionOffset = layer * perLayerConditions
     out =
       block(
         [out, rot]
           + Array(
             fixedConditions[
-              conditionOffset..<(conditionOffset + 18)
+              conditionOffset..<(conditionOffset + perLayerConditions)
             ]))[0]
   }
 
   let outputNorm = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm_out")
   let normalized = outputNorm(out)
-  let finalConditionOffset = layers * 18
+  let finalConditionOffset = layers * perLayerConditions
   let videoShift = fixedConditions[finalConditionOffset]
   let videoScale = fixedConditions[finalConditionOffset + 1]
   let audioShift = fixedConditions[finalConditionOffset + 2]
   let audioScale = fixedConditions[finalConditionOffset + 3]
   let audioOutRows =
     normalized.reshaped(
-      [1, audioLength, hiddenSize], offset: [0, textLength, 0],
+      [1, audioLength, hiddenSize], offset: [0, textLength - visionLength + conditionLength, 0],
       strides: [sequenceLength * hiddenSize, hiddenSize, 1]
     ).contiguous() .* (1 + audioScale).to(.Float32) + audioShift.to(.Float32)
   let videoOutRows =
     normalized.reshaped(
-      [1, videoLength, hiddenSize], offset: [0, textLength + audioLength, 0],
+      [1, videoLength, hiddenSize], offset: [0, textLength + conditionLength + audioLength, 0],
       strides: [sequenceLength * hiddenSize, hiddenSize, 1]
     ).contiguous() .* (1 + videoScale).to(.Float32) + videoShift.to(.Float32)
   let videoOutput = Dense(count: 96, name: "proj_out")
@@ -432,6 +583,7 @@ public func MiniMaxH3(
   ])
   let projectedAudio = -audioOutput(audioOutRows)
   return Model(
-    [video, audio, text, rot] + fixedConditions,
+    [video, audio, contextRows, rot] + referenceImages
+      + fixedConditions,
     [projectedVideo.to(of: video), projectedAudio.to(of: audio)])
 }

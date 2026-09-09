@@ -2,6 +2,10 @@ import ModelZoo
 import XCTest
 
 final class ModelZooTests: XCTestCase {
+  func testMiniMaxH3CheckpointSupportsFirstFrameConditioning() {
+    XCTAssertEqual(ModelZoo.modifierForModel("minimax_h3_i8x.ckpt"), .fl2va)
+  }
+
   func testMiniMaxH3DefaultLatentsScaling() {
     let name = "test-minimax-h3-default-latents.ckpt"
     let previous = ModelZoo.overrideMapping[name]

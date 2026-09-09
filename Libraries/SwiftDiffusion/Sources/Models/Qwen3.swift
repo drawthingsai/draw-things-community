@@ -2,7 +2,8 @@ import Foundation
 import NNC
 
 public func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
-  sequenceLength: Int, of dataType: FloatType.Type = FloatType.self
+  sequenceLength: Int, images: [(start: Int, height: Int, width: Int)] = [],
+  of dataType: FloatType.Type = FloatType.self
 ) -> Tensor<FloatType> {
   let headDim = 128
   let half = headDim / 2
@@ -10,7 +11,27 @@ public func QwenVLRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint
   var rotary = Tensor<FloatType>(.CPU, .NHWC(1, sequenceLength, 1, headDim))
   for i in 0..<sequenceLength {
     for k in 0..<half {
-      let angle = Double(i) / pow(theta, Double(k * 2) / Double(headDim))
+      var position = i
+      var offset = 0
+      for image in images {
+        guard i >= image.start else { break }
+        let imageLength = image.height * image.width
+        if i < image.start + imageLength {
+          // Interleaved M-RoPE sections [24, 20, 20].
+          if k % 3 == 1 && k < 60 {
+            position = image.start - offset + (i - image.start) / image.width
+          } else if k % 3 == 2 && k < 60 {
+            position = image.start - offset + (i - image.start) % image.width
+          } else {
+            position = image.start - offset
+          }
+          break
+        } else {
+          offset += imageLength - max(image.height, image.width)
+          position = i - offset
+        }
+      }
+      let angle = Double(position) / pow(theta, Double(k * 2) / Double(headDim))
       rotary[0, i, 0, k * 2] = FloatType(cos(angle))
       rotary[0, i, 0, k * 2 + 1] = FloatType(sin(angle))
     }
@@ -139,7 +160,8 @@ private func TextEmbedding<T: TensorNumeric & BinaryFloatingPoint>(
 public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
   _ dataType: T.Type, vocabularySize: Int, width: Int, tokenLength: Int,
   layers: Int, MLP: Int, heads: Int, outputHiddenStates: [Int], noFinalNormalizedOutput: Bool,
-  batchSize: Int, usesFlashAttention: Bool
+  batchSize: Int, usesFlashAttention: Bool, injectEmbeddings: Bool = false,
+  deepStackLayers: Int = 0
 ) -> Model {
   let tokens = Input()
   let rot = Input()
@@ -148,6 +170,15 @@ public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
     T.self, batchSize: batchSize, vocabularySize: vocabularySize,
     embeddingSize: width)
   var out = embedding(tokens).to(.Float32)
+  var inputs = [tokens, rot, causalAttentionMask]
+  if injectEmbeddings {
+    let mask = Input()
+    let injected = Input()
+    inputs += [mask, injected]
+    out = out .* mask.to(.Float32) + injected.to(.Float32)
+  }
+  let deepStack = (0..<deepStackLayers).map { _ in Input() }
+  inputs += deepStack
   var hiddenStates = [Model.IO]()
   for i in 0..<layers {
     let layer = TransformerBlock(
@@ -155,6 +186,9 @@ public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
       prefix: "layers.\(i)", width: width, k: 128, h: heads, hk: 8, b: batchSize,
       t: tokenLength, MLP: MLP, usesFlashAttention: usesFlashAttention)
     out = layer(out, rot, causalAttentionMask)
+    if i < deepStackLayers {
+      out = out + deepStack[i].to(.Float32)
+    }
     if outputHiddenStates.contains(i) {
       hiddenStates.append(out.to(T.dataType))
     }
@@ -163,5 +197,5 @@ public func Qwen3<T: TensorNumeric & BinaryFloatingPoint>(
   if !noFinalNormalizedOutput {
     hiddenStates.append(norm(out).to(T.dataType))
   }
-  return Model([tokens, rot, causalAttentionMask], hiddenStates)
+  return Model(inputs, hiddenStates)
 }

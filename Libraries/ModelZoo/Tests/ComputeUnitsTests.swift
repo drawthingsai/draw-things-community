@@ -425,13 +425,54 @@ final class ComputeUnitsTests: XCTestCase {
     }
   }
 
-  func testMiniMaxH3FixedInstructionCountMatchesProjections() {
+  func testMiniMaxH3MainInstructionCountExcludesRefiner() {
+    let videoRows = 24 * 24
+    let audioRows = 4
+    let rows = videoRows + audioRows + 45
+    let expected =
+      (videoRows * 96 + audioRows * 32) * 5_376 * 2
+      + 50
+      * (4 * rows * 5_376 * 7_168 + 3 * rows * 5_376 * 14_336
+        + 56 * (2 * 128 + 5) * rows * rows)
+    XCTAssertEqual(
+      MiniMaxH3InstructionCount(
+        videoTime: 1, videoHeight: 48, videoWidth: 48, audioLength: audioRows, textLength: 45),
+      expected)
+    let referenceRows = 2 * 24 * 24
+    let conditionedRows = rows + referenceRows
+    XCTAssertEqual(
+      MiniMaxH3InstructionCount(
+        videoTime: 1, videoHeight: 48, videoWidth: 48, audioLength: audioRows, textLength: 45,
+        referenceSequenceLength: referenceRows),
+      expected + 50
+        * (4 * referenceRows * 5_376 * 7_168 + 3 * referenceRows * 5_376 * 14_336
+          + 56 * (2 * 128 + 5) * (conditionedRows * conditionedRows - rows * rows)))
+  }
+
+  func testMiniMaxH3FixedInstructionCountIncludesRefinerOnce() {
     for timesteps in [1, 21, 50] {
       for layers in [1, 50] {
-        let expected = 2 * timesteps * (256 * 5_376 + 5_376 * 2_688 * (1 + 18 * layers + 2))
+        let textLength = 45
+        let refiner =
+          textLength * 5_120 * 5_376
+          + 2
+          * (4 * textLength * 5_376 * 7_168 + 3 * textLength * 5_376 * 14_336
+            + 56 * (2 * 128 + 5) * textLength * textLength)
+        let modulation = 2 * timesteps * (256 * 5_376 + 5_376 * 2_688 * (1 + 18 * layers + 2))
         XCTAssertEqual(
-          MiniMaxH3FixedInstructionCount(timesteps: timesteps, hiddenSize: 5_376, layers: layers),
-          expected)
+          MiniMaxH3FixedInstructionCount(
+            timesteps: timesteps, hiddenSize: 5_376, layers: layers, textLength: (0, textLength)),
+          modulation + refiner)
+        XCTAssertEqual(
+          MiniMaxH3FixedInstructionCount(
+            timesteps: timesteps, hiddenSize: 5_376, layers: layers,
+            textLength: (textLength, textLength)),
+          modulation + 2 * refiner)
+        XCTAssertEqual(
+          MiniMaxH3FixedInstructionCount(
+            timesteps: timesteps, hiddenSize: 5_376, layers: layers, textLength: (0, textLength),
+            referenceSequenceLength: 2 * 24 * 24),
+          modulation / 2 * 3 + refiner + 2 * 24 * 24 * 96 * 5_376)
       }
     }
   }
@@ -442,9 +483,10 @@ final class ComputeUnitsTests: XCTestCase {
     let mainCount = MiniMaxH3InstructionCount(
       videoTime: 1, videoHeight: 48, videoWidth: 48, audioLength: 4, textLength: 512)
     for steps: UInt32 in [1, 21, 50] {
-      let fixedCount = MiniMaxH3FixedInstructionCount(
-        timesteps: Int(steps), hiddenSize: 5_376, layers: 50)
       for guidanceScale: Float in [1, 2] {
+        let fixedCount = MiniMaxH3FixedInstructionCount(
+          timesteps: Int(steps), hiddenSize: 5_376, layers: 50,
+          textLength: (guidanceScale == 1 ? 0 : 512, 512))
         let cfg = GenerationConfiguration(
           id: 1, startWidth: 12, startHeight: 12, steps: steps, guidanceScale: guidanceScale,
           strength: 1, model: modelName, batchSize: 4, numFrames: 1)

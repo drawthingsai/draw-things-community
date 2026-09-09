@@ -250,7 +250,7 @@ extension UNetFixedEncoder {
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     switch version {
     case .minimaxH3:
-      precondition(lora.isEmpty, "MiniMax H3 LoRA loading is not supported yet.")
+      let referenceImageCount = referenceImages.count
       let videoLatentFrames = batchSize
       let audioHeight = MiniMaxH3AudioHeight(
         videoLatentFrames: videoLatentFrames, latentWidth: startWidth)
@@ -261,35 +261,80 @@ extension UNetFixedEncoder {
         * Int(
           (Double(frames) / Double(MiniMaxH3Configuration.framesPerSecond) * 40).rounded())
       let videoHeight = startHeight - audioHeight
-      let textLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
       let textBatchSize = isCfgEnabled ? 2 : 1
       let textBatchOffset = isCfgEnabled ? 0 : textEncoding[0].shape[0] - 1
-      let text = textEncoding[0][
+      let textLength =
+        isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
+      // Select text and its packed rotary rows together, including when CFG=1 skips
+      // the unconditional branch. Generic sampler trimming only handles rank-2/3 inputs.
+      let contextTextLength =
+        textEncoding[0].shape[0] > 1 ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
+      let visionLength = textEncoding[0].shape[1] - contextTextLength
+      var text = textEncoding[0][
         textBatchOffset..<(textBatchOffset + textBatchSize), 0..<textLength,
         0..<textEncoding[0].shape[2]
       ].copied()
-      let mediaLength = audioRows + videoLatentFrames * videoHeight / 2 * (startWidth / 2)
+      if visionLength > 0 {
+        text = Functional.concat(
+          axis: 1, text,
+          textEncoding[0][
+            textBatchOffset..<(textBatchOffset + textBatchSize),
+            contextTextLength..<(contextTextLength + visionLength), 0..<textEncoding[0].shape[2]
+          ].copied())
+      }
+      let referenceLength = referenceImages.reduce(0) { $0 + $1.shape[1] / 2 * ($1.shape[2] / 2) }
+      let videoLength = videoLatentFrames * videoHeight / 2 * (startWidth / 2)
+      let mediaLength = referenceLength + audioRows + visionLength + videoLength
       var rotary = graph.variable(
         .GPU(0), .NHWC(textBatchSize, textLength + mediaLength, 1, 128), of: FloatType.self)
       rotary.full(0)
       let textLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
       for (batch, length) in textLengths.enumerated() {
+        let contextLength = length + visionLength
+        let positions = referenceImages.enumerated().map { index, image in
+          (
+            height: image.shape[1], width: image.shape[2],
+            position: Float(contextLength)
+              + (modifier == .fl2va
+                ? (index == 0 ? 0 : Float(frames - 1) * 5 / 3) : Float(index))
+          )
+        }
         let embedding = graph.variable(
           Tensor<FloatType>(
             from: MiniMaxH3RotaryEmbedding(
-              textLength: length, audioLength: audioRows, videoFrames: videoLatentFrames,
-              videoHeight: videoHeight, videoWidth: startWidth)
+              textLength: 0, audioLength: audioRows,
+              videoFrames: videoLatentFrames,
+              videoHeight: videoHeight, videoWidth: startWidth, referenceImages: positions,
+              videoPosition: Float(contextLength + (modifier == .ref2va ? referenceImageCount : 0)))
           ).toGPU(0))
+        let contextBatch = (batch + textBatchOffset)..<(batch + textBatchOffset + 1)
         rotary[batch..<(batch + 1), 0..<length, 0..<1, 0..<128] =
-          embedding[0..<1, 0..<length, 0..<1, 0..<128]
-        rotary[batch..<(batch + 1), textLength..<(textLength + mediaLength), 0..<1, 0..<128] =
-          embedding[0..<1, length..<(length + mediaLength), 0..<1, 0..<128]
+          textEncoding[1][contextBatch, 0..<length, 0..<1, 0..<128]
+        let visionOffset = textLength + referenceLength + audioRows
+        rotary[batch..<(batch + 1), textLength..<visionOffset, 0..<1, 0..<128] =
+          embedding[0..<1, 0..<(referenceLength + audioRows), 0..<1, 0..<128]
+        if visionLength > 0 {
+          rotary[
+            batch..<(batch + 1), visionOffset..<(visionOffset + visionLength), 0..<1, 0..<128] =
+            textEncoding[1][
+              contextBatch, contextTextLength..<(contextTextLength + visionLength), 0..<1, 0..<128]
+        }
+        rotary[
+          batch..<(batch + 1), (visionOffset + visionLength)..<(textLength + mediaLength), 0..<1,
+          0..<128] =
+          embedding[
+            0..<1, (referenceLength + audioRows)..<(referenceLength + audioRows + videoLength),
+            0..<1, 0..<128]
       }
-      var frequencies = Tensor<Float>(.CPU, .HWC(timesteps.count, 2, 256))
+      var frequencies = Tensor<Float>(
+        .CPU, .HWC(timesteps.count, referenceImageCount > 0 ? 3 : 2, 256))
       for index in timesteps.indices {
         let videoSigma = timesteps[index] / 1_000
         let audioSigma = MiniMaxH3AudioSigma(forVideoSigma: videoSigma)
-        for (modality, timestep) in [1 - videoSigma, 1 - audioSigma].enumerated() {
+        let values =
+          [1 - videoSigma, 1 - audioSigma]
+          + (referenceImageCount > 0 ? [max(1 - videoSigma, 0.999)] : [])
+        for (modality, timestep) in values.enumerated() {
           frequencies[
             index..<(index + 1), modality..<(modality + 1),
             0..<256
@@ -299,10 +344,22 @@ extension UNetFixedEncoder {
         }
       }
       let timestepFrequencies = graph.variable(Tensor<FloatType>(from: frequencies).toGPU(0))
+      let references = referenceImages.map { image in
+        // Augment once, then keep the projected references fixed throughout denoising.
+        let noise = graph.variable(like: image)
+        noise.randn()
+        return 0.999 * image + 0.001 * noise
+      }
       let unetFixed = MiniMaxH3Fixed(
-        timesteps: timesteps.count, hiddenSize: 5_376, layers: 50)
+        timesteps: timesteps.count, hiddenSize: 5_376, layers: 50,
+        textLength: (
+          isCfgEnabled ? tokenLengthUncond + visionLength : 0, tokenLengthCond + visionLength
+        ),
+        usesFlashAttention: valueOr(usesFlashAttention, .scale1),
+        referenceImageCount: referenceImageCount,
+        visionLength: visionLength)
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: timestepFrequencies)
+      unetFixed.compile(inputs: [text, timestepFrequencies] + references)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
       if !loadedFromWeightsCache {
@@ -311,16 +368,32 @@ extension UNetFixedEncoder {
         ) { store in
           try! store.read(
             "dit", model: unetFixed, strict: true,
-            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+          ) { name, _, _, _ in
+            // Match the text bias to the 1/4 pre-scaling of the context embedder input.
+            if name.hasSuffix("[t-context_embedder-0-1]"),
+              let tensor = store.read(
+                name,
+                codec: [
+                  .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap), .q6p,
+                  .q8p, .i8x,
+                ])
+            {
+              return .final(
+                graph.withNoGrad {
+                  (0.25 * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
+                })
+            }
+            return .continue(name)
+          }
         }
       }
-      let fixedConditions = unetFixed(inputs: timestepFrequencies).map {
-        $0.as(of: FloatType.self)
-      }
-      let fixedConditionCount = 50 * 18 + 4
-      precondition(fixedConditions.count == fixedConditionCount)
+      let fixedConditions = unetFixed(inputs: text, [timestepFrequencies] + references)
+      let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
+      precondition(fixedConditions.count == fixedConditionCount + 1 + referenceImageCount)
+      let context = fixedConditions[0]
       weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
-      return ([text, rotary] + fixedConditions, nil)
+      return ([context, rotary] + fixedConditions.dropFirst(), nil)
     case .ideogram4:
       let c0 = textEncoding[0]
       let featureLength = c0.shape[2]

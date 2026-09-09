@@ -122,8 +122,10 @@ public enum ComputeUnits {
     switch context.samplerModifier {
     case .qwenimageLayered:
       return baseReferenceCount
-    case .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageEdit2511:
+    case .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageEdit2511, .ref2va:
       return baseReferenceCount + extraReferenceCount
+    case .fl2va:
+      return hasImage ? 1 + min(extraReferenceCount, 1) : 0
     default:
       return 0
     }
@@ -221,9 +223,12 @@ public enum ComputeUnits {
           (Double(frames) / Double(MiniMaxH3Configuration.framesPerSecond) * 40).rounded())
       let mainCount = MiniMaxH3InstructionCount(
         videoTime: numFrames, videoHeight: startHeight, videoWidth: startWidth,
-        audioLength: audioLength, textLength: baseTokenLength)
+        audioLength: audioLength, textLength: baseTokenLength,
+        referenceSequenceLength: referenceSequenceLength)
       let fixedCount = MiniMaxH3FixedInstructionCount(
-        timesteps: max(1, Int(configuration.steps)), hiddenSize: 5_376, layers: 50)
+        timesteps: max(1, Int(configuration.steps)), hiddenSize: 5_376, layers: 50,
+        textLength: (cfgChannels > 1 ? baseTokenLength : 0, baseTokenLength),
+        referenceSequenceLength: referenceSequenceLength)
       return (main: mainCount * batchSize, fixed: fixedCount)
     case .v1:
       let mainCount = UNetInstructionCount(

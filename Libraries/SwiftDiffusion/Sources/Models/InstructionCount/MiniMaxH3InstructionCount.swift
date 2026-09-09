@@ -1,7 +1,6 @@
 import Foundation
 
-private func MiniMaxH3AttentionInstructionCount(rows: Int) -> Int {
-  let hiddenSize = 5_376
+private func MiniMaxH3AttentionInstructionCount(rows: Int, hiddenSize: Int = 5_376) -> Int {
   let heads = 56
   let headDimension = 128
   let attentionSize = heads * headDimension
@@ -12,8 +11,7 @@ private func MiniMaxH3AttentionInstructionCount(rows: Int) -> Int {
     + DenseInstructionCount(rows: rows, input: attentionSize, output: hiddenSize)
 }
 
-private func MiniMaxH3FeedForwardInstructionCount(rows: Int) -> Int {
-  let hiddenSize = 5_376
+private func MiniMaxH3FeedForwardInstructionCount(rows: Int, hiddenSize: Int = 5_376) -> Int {
   let intermediateSize = 14_336
   return 2 * DenseInstructionCount(rows: rows, input: hiddenSize, output: intermediateSize)
     + DenseInstructionCount(rows: rows, input: intermediateSize, output: hiddenSize)
@@ -21,23 +19,18 @@ private func MiniMaxH3FeedForwardInstructionCount(rows: Int) -> Int {
 
 public func MiniMaxH3InstructionCount(
   videoTime: Int, videoHeight: Int, videoWidth: Int, audioLength: Int, textLength: Int,
-  layers: Int = 50
+  layers: Int = 50, referenceSequenceLength: Int = 0
 ) -> Int {
   precondition(videoTime > 0 && videoHeight > 0 && videoWidth > 0)
   precondition(videoHeight.isMultiple(of: 2) && videoWidth.isMultiple(of: 2))
   precondition(audioLength > 0 && textLength > 0 && layers > 0)
   let hiddenSize = 5_376
   let videoRows = videoTime * (videoHeight / 2) * (videoWidth / 2)
-  let rows = textLength + audioLength + videoRows
+  let rows = textLength + audioLength + videoRows + referenceSequenceLength
 
   var total = 0
   total += DenseInstructionCount(rows: videoRows, input: 96, output: hiddenSize)
   total += DenseInstructionCount(rows: audioLength, input: 32, output: hiddenSize)
-  total += DenseInstructionCount(rows: textLength, input: 5_120, output: hiddenSize)
-  for _ in 0..<2 {
-    total += MiniMaxH3AttentionInstructionCount(rows: textLength)
-    total += MiniMaxH3FeedForwardInstructionCount(rows: textLength)
-  }
   for _ in 0..<layers {
     total += MiniMaxH3AttentionInstructionCount(rows: rows)
     total += MiniMaxH3FeedForwardInstructionCount(rows: rows)
@@ -47,12 +40,23 @@ public func MiniMaxH3InstructionCount(
   return total
 }
 
-public func MiniMaxH3FixedInstructionCount(timesteps: Int, hiddenSize: Int, layers: Int) -> Int {
+public func MiniMaxH3FixedInstructionCount(
+  timesteps: Int, hiddenSize: Int, layers: Int, textLength: (Int, Int),
+  referenceSequenceLength: Int = 0
+) -> Int {
   precondition(timesteps > 0 && hiddenSize > 0 && layers > 0)
-  // Each projection runs on both video and audio timesteps before the modality slice.
-  let rows = timesteps * 2
+  precondition(textLength.0 >= 0 && textLength.1 > 0)
+  // Modulations are shared across CFG; each context is refined once, independently of timesteps.
+  let rows = timesteps * (referenceSequenceLength > 0 ? 3 : 2)
   var total = DenseInstructionCount(rows: rows, input: 256, output: hiddenSize)
   total += DenseInstructionCount(rows: rows, input: hiddenSize, output: 2_688)
   total += (layers * 18 + 2) * DenseInstructionCount(rows: rows, input: 2_688, output: hiddenSize)
+  total += DenseInstructionCount(
+    rows: textLength.0 + textLength.1, input: 5_120, output: hiddenSize)
+  total += DenseInstructionCount(rows: referenceSequenceLength, input: 96, output: hiddenSize)
+  for length in [textLength.0, textLength.1] where length > 0 {
+    total += 2 * MiniMaxH3AttentionInstructionCount(rows: length, hiddenSize: hiddenSize)
+    total += 2 * MiniMaxH3FeedForwardInstructionCount(rows: length, hiddenSize: hiddenSize)
+  }
   return total
 }

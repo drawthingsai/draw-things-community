@@ -1,6 +1,7 @@
 import Collections
 import DiffusionMappings
 import Foundation
+import LLM
 import NNC
 import WeightsCache
 
@@ -46,15 +47,187 @@ public struct TextEncoder<FloatType: TensorNumeric & BinaryFloatingPoint> {
 
 extension TextEncoder {
   private func encodeMiniMaxH3(
-    tokens: [DynamicGraph.Tensor<Int32>], tokenLengthCond: Int
+    images: [DynamicGraph.Tensor<FloatType>], tokens: [DynamicGraph.Tensor<Int32>],
+    tokenLengthUncond: inout Int, tokenLengthCond: inout Int, modifier: SamplerModifier
   ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
     let graph = tokens[0].graph
-    let tokenLength = tokens[0].shape[0] / 2
+    let originalTokenLength = tokens[0].shape[0] / 2
+    var tokenLength = originalTokenLength
     let batchSize = isCfgEnabled ? 2 : 1
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity != .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    var imageStarts = [Int]()
+    var imageGrids = [(t: Int, h: Int, w: Int)]()
+    var imageFeatures = [DynamicGraph.Tensor<FloatType>]()
+    if (modifier == .fl2va || modifier == .ref2va) && !images.isEmpty {
+      let tokenIDs = tokens[0].rawValue.toCPU()
+      imageStarts = (0..<tokenLengthCond).filter {
+        tokenIDs[originalTokenLength + $0] == 151_655
+      }
+      precondition(imageStarts.count == images.count)
+      let configuration = Qwen3_5VisionConfiguration(
+        hiddenSize: 1_152, intermediateSize: 4_304, outputHiddenSize: 5_120, layers: 27)
+      var imagePatches = [DynamicGraph.Tensor<Float>]()
+      for image in images {
+        // H3 uses Qwen3-VL's image resize policy, not the Qwen3.5 chat token budget.
+        let height = image.shape[1]
+        let width = image.shape[2]
+        var resizedHeight = max(32, Int((Double(height) / 32).rounded()) * 32)
+        var resizedWidth = max(32, Int((Double(width) / 32).rounded()) * 32)
+        if resizedHeight * resizedWidth > 12_845_056 {
+          let scale = sqrt(Double(height * width) / 12_845_056)
+          resizedHeight = max(32, Int(floor(Double(height) / scale / 32)) * 32)
+          resizedWidth = max(32, Int(floor(Double(width) / scale / 32)) * 32)
+        } else if resizedHeight * resizedWidth < 3_136 {
+          let scale = sqrt(3_136 / Double(height * width))
+          resizedHeight = Int(ceil(Double(height) * scale / 32)) * 32
+          resizedWidth = Int(ceil(Double(width) * scale / 32)) * 32
+        }
+        let (patches, grid) = Qwen3_5VisionPreprocess(
+          image[0..<1, 0..<height, 0..<width, 0..<3].copied().rawValue.toCPU(),
+          configuration: configuration, size: (resizedHeight, resizedWidth))
+        imageGrids.append(grid)
+        imagePatches.append(graph.variable(patches.toGPU(0)))
+        let imageLength = grid.h * grid.w / 4
+        tokenLength += imageLength - 1
+        tokenLengthUncond += imageLength - 1
+        tokenLengthCond += imageLength - 1
+      }
+      let rotary = graph.variable(
+        Qwen3_5VisionRotaryEmbedding(
+          gridThw: imageGrids, configuration: configuration, of: Float.self
+        ).toGPU(0))
+      let offsets = graph.variable(
+        Qwen3_5VisionSequenceOffsets(gridThw: imageGrids).offsets.toGPU(0))
+      let patchesGPU =
+        imagePatches.count == 1
+        ? imagePatches[0]
+        : Concat(axis: 0)(inputs: imagePatches[0], Array(imagePatches.dropFirst()))[0].as(
+          of: Float.self)
+      let visionModel = Qwen3_5VisionTransformer(
+        Float.self, gridThw: imageGrids, configuration: configuration,
+        deepStackLayers: [8, 16, 24],
+        attentionDataType: .Float16)
+      visionModel.maxConcurrency = .limit(1)
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        let positionWeight = store.read(
+          "__vision_model__[t-pos_embed-0-0]", codec: [.jit, .q8p, .i8x, .ezm7, externalData])!
+        let positions = graph.variable(
+          Qwen3_5VisionPositionEmbedding(
+            weight: positionWeight, gridThw: imageGrids, configuration: configuration,
+            of: Float.self
+          ).toGPU(0))
+        visionModel.compile(inputs: patchesGPU, positions, rotary, offsets)
+        // The H3 checkpoint uses the converter's short names for the shared Qwen vision tower.
+        var names = [String: String]()
+        for parameter in 0..<2 {
+          names["__vision_model__[t-model.visual.patch_embed.proj-0-\(parameter)]"] =
+            "__vision_model__[t-conv_in-0-\(parameter)]"
+          for layer in 0..<27 {
+            for (source, target) in [
+              ("attn.q_proj", "q_proj"), ("attn.k_proj", "k_proj"),
+              ("attn.v_proj", "v_proj"), ("attn.proj", "out_proj"),
+              ("norm1", "norm1"), ("norm2", "norm2"),
+              ("mlp.linear_fc1", "mlp_fc1"), ("mlp.linear_fc2", "mlp_fc2"),
+            ] {
+              names["__vision_model__[t-model.visual.blocks.\(layer).\(source)-0-\(parameter)]"] =
+                "__vision_model__[t-\(target)-\(layer)-\(parameter)]"
+            }
+          }
+          for (source, target) in [
+            ("norm", "norm_out"), ("linear_fc1", "merger_mlp_0"),
+            ("linear_fc2", "merger_mlp_1"),
+          ] {
+            names["__vision_model__[t-model.visual.merger.\(source)-0-\(parameter)]"] =
+              "__vision_model__[t-\(target)-0-\(parameter)]"
+          }
+          for layer in 0..<3 {
+            for (source, target) in [
+              ("norm", "norm"), ("linear_fc1", "mlp_0"), ("linear_fc2", "mlp_1"),
+            ] {
+              names[
+                "__vision_model__[t-model.visual.deepstack_merger_list.\(layer).\(source)-0-\(parameter)]"
+              ] =
+                "__vision_model__[t-deepstack_\(layer)_\(target)-0-\(parameter)]"
+            }
+          }
+        }
+        try! store.read(
+          "vision_model", model: visionModel, strict: true,
+          codec: [.jit, .q8p, .i8x, .ezm7, externalData]
+        ) { name, _, _, _ in
+          return .continue(names[name] ?? name)
+        }
+        imageFeatures = visionModel(inputs: patchesGPU, positions, rotary, offsets).map {
+          DynamicGraph.Tensor<FloatType>(from: $0)
+        }
+      }
+    }
+    var tokensGPU = tokens[0][(isCfgEnabled ? 0 : originalTokenLength)..<(originalTokenLength * 2)]
+      .toGPU(0)
+    var additionalInputs = [DynamicGraph.AnyTensor]()
+    var expandedImageStarts = [Int]()
+    var expansion = 0
+    for (start, grid) in zip(imageStarts, imageGrids) {
+      expandedImageStarts.append(start + expansion)
+      expansion += grid.h * grid.w / 4 - 1
+    }
+    if !imageStarts.isEmpty {
+      let originalTokens = tokens[0].rawValue.toCPU()
+      var expanded = Tensor<Int32>(
+        Array(repeating: 151_643, count: batchSize * tokenLength), .CPU, .C(batchSize * tokenLength)
+      )
+      var mask = Tensor<FloatType>(
+        Array(repeating: 1, count: batchSize * tokenLength), .CPU, .WC(batchSize * tokenLength, 1))
+      for batch in 0..<batchSize {
+        let offset = (isCfgEnabled ? batch : 1) * originalTokenLength
+        var imageIndex = 0
+        var output = 0
+        for i in 0..<originalTokenLength {
+          if imageIndex < imageStarts.count && i == imageStarts[imageIndex] {
+            precondition(originalTokens[offset + i] == 151_655)
+            let length = imageGrids[imageIndex].h * imageGrids[imageIndex].w / 4
+            for j in output..<(output + length) {
+              expanded[batch * tokenLength + j] = 151_655
+              mask[batch * tokenLength + j, 0] = 0
+            }
+            output += length
+            imageIndex += 1
+          } else {
+            expanded[batch * tokenLength + output] = originalTokens[offset + i]
+            output += 1
+          }
+        }
+      }
+      tokensGPU = graph.variable(expanded.toGPU(0))
+      additionalInputs.append(graph.variable(mask.toGPU(0)))
+      for features in imageFeatures {
+        var injected = graph.variable(
+          .GPU(0), .WC(batchSize * tokenLength, 5_120), of: FloatType.self)
+        injected.full(0)
+        for batch in 0..<batchSize {
+          var featureStart = 0
+          for (imageStart, grid) in zip(expandedImageStarts, imageGrids) {
+            let imageLength = grid.h * grid.w / 4
+            injected[
+              (batch * tokenLength + imageStart)..<(batch * tokenLength + imageStart + imageLength),
+              0..<5_120] = features[featureStart..<(featureStart + imageLength), 0..<5_120].copied()
+            featureStart += imageLength
+          }
+        }
+        additionalInputs.append(injected)
+      }
+    }
     let textModel = Qwen3(
       FloatType.self, vocabularySize: 151_936, width: 5_120, tokenLength: tokenLength,
       layers: 50, MLP: 25_600, heads: 64, outputHiddenStates: [49],
-      noFinalNormalizedOutput: true, batchSize: batchSize, usesFlashAttention: usesFlashAttention)
+      noFinalNormalizedOutput: true, batchSize: batchSize, usesFlashAttention: usesFlashAttention,
+      injectEmbeddings: !imageStarts.isEmpty, deepStackLayers: imageStarts.isEmpty ? 0 : 3)
     var causalAttentionMask = Tensor<FloatType>(
       Array(repeating: 0, count: tokenLength * tokenLength), .CPU,
       .NHWC(1, 1, tokenLength, tokenLength))
@@ -63,15 +236,17 @@ extension TextEncoder {
         causalAttentionMask[0, 0, row, column] = -FloatType.greatestFiniteMagnitude
       }
     }
-    let tokensGPU = tokens[0][(isCfgEnabled ? 0 : tokenLength)..<(tokenLength * 2)].toGPU(0)
     let rotaryGPU = graph.variable(
-      QwenVLRotaryEmbedding(sequenceLength: tokenLength, of: FloatType.self).toGPU(0))
+      QwenVLRotaryEmbedding(
+        sequenceLength: tokenLength,
+        images: zip(expandedImageStarts, imageGrids).map { ($0.0, $0.1.h / 2, $0.1.w / 2) },
+        of: FloatType.self
+      ).toGPU(0))
     let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
     textModel.maxConcurrency = .limit(1)
-    textModel.compile(inputs: tokensGPU, rotaryGPU, causalAttentionMaskGPU)
-    let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
-      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    let inputs: [DynamicGraph.AnyTensor] =
+      [tokensGPU, rotaryGPU, causalAttentionMaskGPU] + additionalInputs
+    textModel.compile(inputs: inputs)
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
@@ -83,13 +258,57 @@ extension TextEncoder {
           codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData])
       }
     }
-    let encoding = textModel(inputs: tokensGPU, rotaryGPU, causalAttentionMaskGPU)[0].as(
+    let encoding = textModel(inputs: tokensGPU, Array(inputs.dropFirst()))[0].as(
       of: FloatType.self
     ).reshaped(.HWC(batchSize, tokenLength, 5_120))[
-      0..<batchSize, 0..<(isCfgEnabled ? tokenLength : tokenLengthCond), 0..<5_120
+      0..<batchSize, 0..<(isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond),
+      0..<5_120
     ].copied()
     weightsCache.attach(filePaths[0], from: textModel.parameters)
-    return ([encoding], [textModel])
+    let visionRanges = zip(expandedImageStarts, imageGrids).map {
+      ($0.0 - 1)..<($0.0 + $0.1.h * $0.1.w / 4 + 1)
+    }
+    let visionLength = visionRanges.reduce(0) { $0 + $1.count }
+    let textLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
+    var rotary = graph.variable(
+      .GPU(0), .NHWC(batchSize, encoding.shape[1], 1, 128), of: FloatType.self)
+    rotary.full(0)
+    for (batch, length) in textLengths.enumerated() {
+      let rows = graph.variable(
+        Tensor<FloatType>(
+          from: MiniMaxH3RotaryEmbedding(
+            textLength: length, visionTokenRanges: visionRanges)
+        ).toGPU(0))
+      let count = length - visionLength
+      rotary[batch..<(batch + 1), 0..<count, 0..<1, 0..<128] =
+        rows[0..<1, 0..<count, 0..<1, 0..<128]
+      if visionLength > 0 {
+        rotary[
+          batch..<(batch + 1), (encoding.shape[1] - visionLength)..<encoding.shape[1], 0..<1,
+          0..<128] =
+          rows[0..<1, count..<length, 0..<1, 0..<128]
+      }
+    }
+    tokenLengthUncond -= visionLength
+    tokenLengthCond -= visionLength
+    guard !visionRanges.isEmpty else { return ([encoding, rotary], [textModel]) }
+    // Qwen remains causal in the original presentation order. Pack its output once for H3,
+    // keeping the corresponding rotary rows alongside it, including unequal CFG padding.
+    var textRows = [DynamicGraph.Tensor<FloatType>]()
+    var start = 0
+    for range in visionRanges {
+      if start < range.lowerBound {
+        textRows.append(encoding[0..<batchSize, start..<range.lowerBound, 0..<5_120].copied())
+      }
+      start = range.upperBound
+    }
+    if start < encoding.shape[1] {
+      textRows.append(encoding[0..<batchSize, start..<encoding.shape[1], 0..<5_120].copied())
+    }
+    textRows += visionRanges.map { encoding[0..<batchSize, $0, 0..<5_120].copied() }
+    let context = Concat(axis: 1)(inputs: textRows[0], Array(textRows.dropFirst()))[0].as(
+      of: FloatType.self)
+    return ([context, rotary], [textModel])
   }
 
   private func encodeHiDreamO1(
@@ -3753,7 +3972,9 @@ extension TextEncoder {
     let conditionalLength: Int
     switch version {
     case .minimaxH3:
-      return encodeMiniMaxH3(tokens: tokens, tokenLengthCond: tokenLengthCond)
+      return encodeMiniMaxH3(
+        images: images, tokens: tokens, tokenLengthUncond: &tokenLengthUncond,
+        tokenLengthCond: &tokenLengthCond, modifier: modifier)
     case .seedvr2_3b, .seedvr2_7b:
       return encodeSeedVR2(
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond, tokens: tokens)

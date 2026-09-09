@@ -168,15 +168,16 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
 {
   switch version {
   case .minimaxH3:
-    let fixedConditionCount = 50 * 18 + 4
-    precondition(conditions.count == fixedConditionCount + 2)
-    let fixedConditions = conditions[2...].map {
+    let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
+    let prefixCount = 2 + referenceImageCount
+    precondition(conditions.count == fixedConditionCount + prefixCount)
+    let fixedConditions = conditions[prefixCount...].map {
       let shape = $0.shape
       return DynamicGraph.Tensor<FloatType>($0)[
         index..<(index + 1), 0..<shape[1], 0..<shape[2]
       ].copied().reshaped(.WC(shape[1], shape[2]))
     }
-    return Array(conditions[0..<2]) + fixedConditions
+    return Array(conditions[0..<prefixCount]) + fixedConditions
   case .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
     .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
     return conditions
@@ -711,6 +712,8 @@ extension UNetFromNNC {
     case .minimaxH3:
       precondition(lora.isEmpty, "MiniMax H3 LoRA loading is not supported yet.")
       precondition(!isTeaCacheEnabled, "MiniMax H3 does not support TeaCache.")
+      let textLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
+      let visionLength = c[0].shape[1] - textLength
       let videoLatentFrames = batchSize / (isCfgEnabled ? 2 : 1)
       startHeight -= MiniMaxH3AudioHeight(
         videoLatentFrames: videoLatentFrames, latentWidth: startWidth)
@@ -727,10 +730,15 @@ extension UNetFromNNC {
         ModelBuilder {
           let videoShape = $0[0].shape
           return MiniMaxH3(
-            hiddenSize: 5_376, layers: 50, textLength: $0[2].shape[1],
+            hiddenSize: 5_376, layers: 50,
+            textLength: $0[2].shape[1],
             audioLength: $0[1].shape[1],
             videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
-            usesFlashAttention: valueOr(useFlashAttention, .scale1))
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            referenceImageSizes: $0[4..<(4 + referenceImageCount)].map {
+              (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
+            },
+            visionLength: visionLength)
         })
     case .ideogram4:
       precondition(c.count >= Ideogram4ConditionCount)
@@ -2067,7 +2075,8 @@ extension UNetFromNNC {
       let inputs = sliceInputs(
         inputs, originalShape: shape, xyTiles: xTiles * yTiles, index: 0, inputStartYPad: 0,
         inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth, modifier: modifier,
-        referenceImageCount: referenceImageCount)
+        referenceImageCount: referenceImageCount,
+        tokenLength: isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond)
       compile(
         unet, unconditionalUNet: unconditionalUNet, tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
@@ -2443,21 +2452,6 @@ extension UNetFromNNC {
                     .rawValue.toCPU()
                 })
             }
-            // Match the text bias to the 1/4 pre-scaling of the context embedder input.
-            if version == .minimaxH3 && name.hasSuffix("[t-context_embedder-0-1]"),
-              let tensor = store.read(
-                name,
-                codec: [
-                  .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap), .q6p,
-                  .q8p, .i8x,
-                ])
-            {
-              return .final(
-                graph.withNoGrad {
-                  return (0.25 * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0))
-                    .rawValue.toCPU()
-                })
-            }
             if shouldOffload(name: name) {
               return .continue(name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit])
             }
@@ -2508,7 +2502,7 @@ extension UNetFromNNC {
   private func sliceInputs(
     _ inputs: [DynamicGraph.AnyTensor], originalShape: TensorShape, xyTiles: Int,
     index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
-    modifier: SamplerModifier, referenceImageCount: Int
+    modifier: SamplerModifier, referenceImageCount: Int, tokenLength: Int
   ) -> [DynamicGraph.AnyTensor] {
     let count = inputs.count
     return inputs.enumerated().map {
@@ -2536,9 +2530,35 @@ extension UNetFromNNC {
             frames * ((inputEndYPad - inputStartYPad) / 2)
             * ((inputEndXPad - inputStartXPad) / 2)
           videoRotary = videoRotary.reshaped(.NHWC(shape[0], videoLength, 1, 128))
+          if modifier == .fl2va && referenceImageCount > 0 {
+            let frameLength = height / 2 * (width / 2)
+            let conditionEnd = tokenLength + referenceImageCount * frameLength
+            let conditionRotary = (0..<referenceImageCount).map { index in
+              rotary[
+                0..<shape[0],
+                (tokenLength + index * frameLength)..<(tokenLength + (index + 1) * frameLength),
+                0..<1, 0..<128
+              ].copied().reshaped(.NHWC(shape[0], height / 2, width / 2, 128))[
+                0..<shape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
+                (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<128
+              ].copied().reshaped(.NHWC(shape[0], videoLength / frames, 1, 128))
+            }
+            return Concat(axis: 1)(
+              inputs: rotary[0..<shape[0], 0..<tokenLength, 0..<1, 0..<128].copied(),
+              conditionRotary + [
+                rotary[0..<shape[0], conditionEnd..<prefixLength, 0..<1, 0..<128].copied(),
+                videoRotary,
+              ])[0]
+          }
           return Functional.concat(
             axis: 1, rotary[0..<shape[0], 0..<prefixLength, 0..<1, 0..<128].copied(),
             videoRotary)
+        }
+        if modifier == .fl2va && (2..<(2 + referenceImageCount)).contains($0.0) {
+          return DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<1, (inputStartYPad / 2)..<(inputEndYPad / 2),
+            (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<$0.1.shape[3]
+          ].copied()
         }
         return $0.1
       case .flux1:
@@ -2946,8 +2966,8 @@ extension UNetFromNNC {
   ) {
     switch version {
     case .minimaxH3:
-      let fixedConditionCount = 50 * 18 + 4
-      precondition(inputs.count == fixedConditionCount + 3)
+      let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
+      precondition(inputs.count == fixedConditionCount + 3 + referenceImageCount)
       let firstInput = DynamicGraph.Tensor<FloatType>(inputs[0])
       let shape = firstInput.shape
       precondition(shape[3] == MiniMaxH3Configuration.videoChannels)
@@ -2974,14 +2994,15 @@ extension UNetFromNNC {
       ].copied().reshaped(.WC(audioCapacity, MiniMaxH3Configuration.audioChannels))[
         0..<audioRows, 0..<MiniMaxH3Configuration.audioChannels
       ].copied().reshaped(.HWC(1, audioRows, MiniMaxH3Configuration.audioChannels))
-      let text = DynamicGraph.Tensor<FloatType>(inputs[1])
+      let text = DynamicGraph.Tensor<Float>(inputs[1])
       let rotary = DynamicGraph.Tensor<FloatType>(inputs[2])
       unet.compile(
         inputs: [
           video, audio,
           text[0..<1, 0..<text.shape[1], 0..<text.shape[2]].copied(),
           rotary[0..<1, 0..<rotary.shape[1], 0..<1, 0..<128].copied(),
-        ] + Array(inputs[3...]))
+        ]
+          + inputs[3...])
       return
     case .hunyuanVideo:
       guard isCfgEnabled else {
@@ -3411,8 +3432,8 @@ extension UNetFromNNC {
     guard let unet = unet else { return firstInput }
     switch version {
     case .minimaxH3:
-      let fixedConditionCount = 50 * 18 + 4
-      precondition(restInputs.count == fixedConditionCount + 2)
+      let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
+      precondition(restInputs.count == fixedConditionCount + 2 + referenceImageCount)
       let graph = firstInput.graph
       // The RF schedule repeats alpha = 1 at the clean endpoint. The reference stops before this
       // zero-delta evaluation, and evaluating H3 at timestep zero can produce non-finite FP16 values.
@@ -3443,8 +3464,9 @@ extension UNetFromNNC {
         videoDelta > 0
         ? (MiniMaxH3AudioSigma(forVideoSigma: videoSigma)
           - MiniMaxH3AudioSigma(forVideoSigma: nextVideoSigma)) / videoDelta : 0
-      let text = DynamicGraph.Tensor<FloatType>(restInputs[0])
+      let text = DynamicGraph.Tensor<Float>(restInputs[0])
       let rotary = DynamicGraph.Tensor<FloatType>(restInputs[1])
+      let textLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
       var velocity = graph.variable(like: firstInput)
       // Compile and evaluate the longest text branch first, like the other video models.
       for branch in (isCfgEnabled ? (tokenLengthCond > tokenLengthUncond ? [1, 0] : [0, 1]) : [0]) {
@@ -3459,14 +3481,25 @@ extension UNetFromNNC {
           0..<audioRows, 0..<MiniMaxH3Configuration.audioChannels
         ].copied().reshaped(.HWC(1, audioRows, MiniMaxH3Configuration.audioChannels))
         let length = isCfgEnabled && branch == 0 ? tokenLengthUncond : tokenLengthCond
-        let branchText = text[branch..<(branch + 1), 0..<length, 0..<text.shape[2]].copied()
+        let branchText: DynamicGraph.Tensor<Float>
+        if length < textLength && text.shape[1] > textLength {
+          branchText = Functional.concat(
+            axis: 1, text[branch..<(branch + 1), 0..<length, 0..<text.shape[2]].copied(),
+            text[branch..<(branch + 1), textLength..<text.shape[1], 0..<text.shape[2]].copied())
+        } else {
+          branchText = text[
+            branch..<(branch + 1), 0..<(length + text.shape[1] - textLength), 0..<text.shape[2]
+          ].copied()
+        }
         let branchRotary = Functional.concat(
           axis: 1,
           rotary[branch..<(branch + 1), 0..<length, 0..<1, 0..<128].copied(),
-          rotary[branch..<(branch + 1), text.shape[1]..<rotary.shape[1], 0..<1, 0..<128].copied())
+          rotary[
+            branch..<(branch + 1), textLength..<rotary.shape[1], 0..<1, 0..<128
+          ].copied())
         let result = unet(
           inputs: video,
-          [audio, branchText, branchRotary] + Array(restInputs[2...]))
+          [audio, branchText, branchRotary] + restInputs[2...])
         let videoVelocity = DynamicGraph.Tensor<FloatType>(from: result[0])
         let audioVelocity = DynamicGraph.Tensor<FloatType>(from: result[1]) * audioScale
         var packedAudio = graph.variable(
@@ -4999,7 +5032,8 @@ extension UNetFromNNC {
       inputs + injectedControls + injectedT2IAdapters, originalShape: shape, xyTiles: xyTiles,
       index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
-      modifier: modifier, referenceImageCount: referenceImageCount)
+      modifier: modifier, referenceImageCount: referenceImageCount,
+      tokenLength: isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond)
     return self(
       referenceImageCount: referenceImageCount,
       step: step, timestep: timestep, index: index,

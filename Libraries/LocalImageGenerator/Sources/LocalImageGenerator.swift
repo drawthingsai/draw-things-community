@@ -1609,9 +1609,13 @@ extension LocalImageGenerator {
         return result
       }
     case .minimaxH3:
+      let imagePrefix =
+        (modifier == .fl2va || modifier == .ref2va) && images > 0
+        ? (1...images).map { "<Picture \($0)>: <|vision_start|><|image_pad|><|vision_end|>" }
+          .joined() : ""
       return tokenize(
-        graph: graph, tokenizer: tokenizerQwen3, text: text.isEmpty ? " " : text,
-        negativeText: negativeText.isEmpty ? " " : negativeText,
+        graph: graph, tokenizer: tokenizerQwen3, text: imagePrefix + (text.isEmpty ? " " : text),
+        negativeText: imagePrefix + (negativeText.isEmpty ? " " : negativeText),
         paddingToken: nil, addSpecialTokens: false, conditionalLength: 5120, modifier: .qwen3,
         potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
     case .zImage:
@@ -3482,6 +3486,35 @@ extension LocalImageGenerator {
         }
         return (nil, referenceEncoded)
       }
+    case .fl2va, .ref2va:
+      var images = image.map { [$0] } ?? []
+      images += shuffles.map {
+        graph.variable($0.0.toGPU(0))
+      }
+      let encoded = images.map { image in
+        let shape = image.shape
+        var image = image[0..<1, 0..<shape[1], 0..<shape[2], 0..<3].copied()
+        let height: Int
+        let width: Int
+        if modifier == .fl2va {
+          height = startHeight * 16
+          width = startWidth * 16
+        } else {
+          let scale = min(
+            1, sqrt(Double(startHeight * startWidth * 256) / Double(shape[1] * shape[2])))
+          height = max(32, Int((Double(shape[1]) * scale / 32).rounded()) * 32)
+          width = max(32, Int((Double(shape[2]) * scale / 32).rounded()) * 32)
+        }
+        if height != shape[1] || width != shape[2] {
+          image = Upsample(
+            .bilinear, widthScale: Float(width) / Float(shape[2]),
+            heightScale: Float(height) / Float(shape[1]))(image)
+        }
+        let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
+        return firstStage.scale(
+          encoded[0..<1, 0..<encoded.shape[1], 0..<encoded.shape[2], 0..<24].copied())
+      }
+      return (nil, encoded)
     case .double, .editing, .inpainting, .none:
       return (nil, [])
     }
@@ -3493,7 +3526,7 @@ extension LocalImageGenerator {
   ) -> DynamicGraph.Tensor<FloatType> {
     switch modifier {
     case .depth, .canny, .qwenimageEditPlus, .qwenimageLayered, .qwenimageEdit2511, .double,
-      .editing, .inpainting, .none:
+      .editing, .inpainting, .none, .fl2va, .ref2va:
       return x
     case .kontext, .kontextKv:
       switch version {
@@ -3763,6 +3796,9 @@ extension LocalImageGenerator {
       }) ?? ModelZoo.defaultSpecification.file
     let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
+    let shuffles =
+      modifier == .fl2va
+      ? Array(shuffles.filter { $0.1 > 0 }.prefix(1)) : shuffles.filter { $0.1 > 0 }
     let modelVersion = ModelZoo.versionForModel(file)
     let inputImage = image
     let image: Tensor<FloatType>?
@@ -4289,7 +4325,7 @@ extension LocalImageGenerator {
       }
       let textImages: [DynamicGraph.Tensor<FloatType>]
       if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
-        || modifier == .qwenimageEdit2511
+        || modifier == .qwenimageEdit2511 || modifier == .fl2va || modifier == .ref2va
       {
         textImages = (image.map { [$0] } ?? []) + shuffles.map { graph.variable($0.0) }
       } else {
@@ -4337,7 +4373,7 @@ extension LocalImageGenerator {
       var firstPassImage: DynamicGraph.Tensor<FloatType>? = nil
       if modifier == .inpainting || modifier == .editing || modifier == .double
         || modifier == .depth || modifier == .canny || modifier == .kontext
-        || modifier == .kontextKv
+        || modifier == .kontextKv || modifier == .fl2va || modifier == .ref2va
         || modifier == .qwenimageEditPlus || modifier == .qwenimageEdit2511
         || modifier == .qwenimageLayered || canInjectControls
         || canInjectT2IAdapters || !injectIPAdapterLengths.isEmpty
@@ -4496,7 +4532,8 @@ extension LocalImageGenerator {
       }
       var firstPassImageCond = encodeImageCond(
         startHeight: firstPassStartHeight, startWidth: firstPassStartWidth, graph: graph,
-        image: firstPassImage, depth: firstPassDepthImage, custom: firstPassCustomImage,
+        image: firstPassImage, depth: firstPassDepthImage,
+        custom: firstPassCustomImage,
         shuffles: shuffles, modifier: modifier, version: modelVersion, firstStage: firstStage,
         usesFlashAttention: isMFAEnabled)
       if modelVersion == .longcatVideoAvatar1_5,
@@ -5161,6 +5198,9 @@ extension LocalImageGenerator {
       }) ?? ModelZoo.defaultSpecification.file
     let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
+    let shuffles =
+      modifier == .fl2va
+      ? Array(shuffles.filter { $0.1 > 0 }.prefix(1)) : shuffles.filter { $0.1 > 0 }
     let colorCalibrationReference = image
     let modelVersion = ModelZoo.versionForModel(file)
     let (
@@ -5616,7 +5656,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
       if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
-        || modifier == .qwenimageEdit2511
+        || modifier == .qwenimageEdit2511 || modifier == .fl2va || modifier == .ref2va
       {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
@@ -5846,7 +5886,8 @@ extension LocalImageGenerator {
       }
       let imageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,
-        image: firstPassImage, depth: depthImage, custom: customImage, shuffles: shuffles,
+        image: firstPassImage, depth: depthImage, custom: customImage,
+        shuffles: shuffles,
         modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       guard
@@ -6640,6 +6681,9 @@ extension LocalImageGenerator {
       }) ?? ModelZoo.defaultSpecification.file
     let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
+    let shuffles =
+      modifier == .fl2va
+      ? Array(shuffles.filter { $0.1 > 0 }.prefix(1)) : shuffles.filter { $0.1 > 0 }
     let modelVersion = ModelZoo.versionForModel(file)
     let (
       qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
@@ -7071,7 +7115,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
       if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
-        || modifier == .qwenimageEdit2511
+        || modifier == .qwenimageEdit2511 || modifier == .fl2va || modifier == .ref2va
       {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
@@ -7293,7 +7337,8 @@ extension LocalImageGenerator {
       }
       let imageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,
-        image: firstPassImage, depth: depthImage, custom: customImage, shuffles: shuffles,
+        image: firstPassImage, depth: depthImage, custom: customImage,
+        shuffles: shuffles,
         modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       var initMaskMaybe: DynamicGraph.Tensor<FloatType>? = initMask
@@ -7563,6 +7608,9 @@ extension LocalImageGenerator {
       }) ?? ModelZoo.defaultSpecification.file
     let modifier = ImageGeneratorUtils.modifierForModel(
       file, LoRAs: configuration.loras.compactMap(\.file))
+    let shuffles =
+      modifier == .fl2va
+      ? Array(shuffles.filter { $0.1 > 0 }.prefix(1)) : shuffles.filter { $0.1 > 0 }
     let modelVersion = ModelZoo.versionForModel(file)
     let (
       qkNorm, dualAttentionLayers, distilledGuidanceLayers, activationQkScaling,
@@ -7993,7 +8041,7 @@ extension LocalImageGenerator {
         graph.variable(image), scaleFactor: imageScaleFactor)
       let textImages: [DynamicGraph.Tensor<FloatType>]
       if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
-        || modifier == .qwenimageEdit2511
+        || modifier == .qwenimageEdit2511 || modifier == .fl2va || modifier == .ref2va
       {
         textImages = [image] + shuffles.map { graph.variable($0.0) }
       } else {
@@ -8239,7 +8287,8 @@ extension LocalImageGenerator {
       }
       let imageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,
-        image: firstPassImage, depth: depthImage, custom: customImage, shuffles: shuffles,
+        image: firstPassImage, depth: depthImage, custom: customImage,
+        shuffles: shuffles,
         modifier: modifier,
         version: modelVersion, firstStage: firstStage, usesFlashAttention: isMFAEnabled)
       var initMask1Maybe: DynamicGraph.Tensor<FloatType>? = initMask1

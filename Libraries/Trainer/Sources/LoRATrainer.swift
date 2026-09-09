@@ -6642,6 +6642,8 @@ public struct LoRATrainer {
       let latents: DynamicGraph.Tensor<FloatType>
       let modifier = ModelZoo.modifierForModel(model)
       switch modifier {
+      case .fl2va, .ref2va:
+        fatalError()
       case .inpainting:
         latents = graph.variable(
           .GPU(0), .NHWC(1, latentsHeight, latentsWidth, 9), of: FloatType.self)

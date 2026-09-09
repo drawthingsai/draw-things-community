@@ -79,7 +79,8 @@ public func Qwen3_5VisionTokenCount(
 }
 
 public func Qwen3_5VisionPreprocess<FloatType: TensorNumeric>(
-  _ input: Tensor<FloatType>, configuration: Qwen3_5VisionConfiguration = .qwen3_5_4B
+  _ input: Tensor<FloatType>, configuration: Qwen3_5VisionConfiguration = .qwen3_5_4B,
+  size: (height: Int, width: Int)? = nil
 ) -> (patches: Tensor<Float>, grid: (t: Int, h: Int, w: Int)) {
   let shape = input.shape
   precondition(shape.count == 4)
@@ -99,6 +100,12 @@ public func Qwen3_5VisionPreprocess<FloatType: TensorNumeric>(
     let beta = sqrt(Double(256 * 256) / Double(shape[2] * shape[1]))
     resizedHeight = Int(ceil(Double(shape[1]) * beta / Double(factor))) * factor
     resizedWidth = Int(ceil(Double(shape[2]) * beta / Double(factor))) * factor
+  }
+  if let size {
+    precondition(
+      size.height > 0 && size.width > 0 && size.height % factor == 0 && size.width % factor == 0)
+    resizedHeight = size.height
+    resizedWidth = size.width
   }
   let resizedTensor: Tensor<Float>
   if resizedWidth == shape[2] && resizedHeight == shape[1] {
@@ -415,7 +422,8 @@ public func Qwen3_5VisionSequenceOffsets(gridThw: [(t: Int, h: Int, w: Int)]) ->
 
 private func Qwen3_5VisionAttention(
   prefix: String, configuration: Qwen3_5VisionConfiguration, tokenLength: Int,
-  maxSequenceLength: Int, x: Model.IO, rotary: Model.IO, sequenceOffsets: Model.IO
+  maxSequenceLength: Int, attentionDataType: DataType,
+  x: Model.IO, rotary: Model.IO, sequenceOffsets: Model.IO
 ) -> Model.IO {
   let heads = configuration.heads
   let headDim = configuration.headDim
@@ -425,9 +433,9 @@ private func Qwen3_5VisionAttention(
   let tovalues = Dense(count: hiddenSize, flags: [], name: "\(prefix).attn.v_proj")
   var queries = toqueries(x).reshaped([1, tokenLength, heads, headDim])
   var keys = tokeys(x).reshaped([1, tokenLength, heads, headDim])
-  let values = tovalues(x).reshaped([1, tokenLength, heads, headDim]).to(.BFloat16)
-  queries = Functional.cmul(left: queries, right: rotary).to(.BFloat16)
-  keys = Functional.cmul(left: keys, right: rotary).to(.BFloat16)
+  let values = tovalues(x).reshaped([1, tokenLength, heads, headDim]).to(attentionDataType)
+  queries = Functional.cmul(left: queries, right: rotary).to(attentionDataType)
+  keys = Functional.cmul(left: keys, right: rotary).to(attentionDataType)
   let attentionOut = ScaledDotProductAttention(
     scale: 1.0 / Float(headDim).squareRoot(), isVariableLength: true,
     maxSequenceLength: (query: maxSequenceLength, keyValue: maxSequenceLength),
@@ -442,13 +450,15 @@ private func Qwen3_5VisionAttention(
 
 private func Qwen3_5VisionBlock(
   prefix: String, configuration: Qwen3_5VisionConfiguration, tokenLength: Int,
-  maxSequenceLength: Int, x: Model.IO, rotary: Model.IO, sequenceOffsets: Model.IO
+  maxSequenceLength: Int, attentionDataType: DataType,
+  x: Model.IO, rotary: Model.IO, sequenceOffsets: Model.IO
 ) -> Model.IO {
   let norm1 = LayerNorm(
     epsilon: configuration.layerNormEpsilon, axis: [1], name: "\(prefix).norm1")
   let attention = Qwen3_5VisionAttention(
     prefix: prefix, configuration: configuration, tokenLength: tokenLength,
-    maxSequenceLength: maxSequenceLength, x: norm1(x), rotary: rotary,
+    maxSequenceLength: maxSequenceLength, attentionDataType: attentionDataType,
+    x: norm1(x), rotary: rotary,
     sequenceOffsets: sequenceOffsets)
   var out = x + attention
   let norm2 = LayerNorm(
@@ -483,7 +493,8 @@ private func Qwen3_5VisionMerger<T: TensorNumeric>(
 
 public func Qwen3_5VisionTransformer<T: TensorNumeric>(
   _ dataType: T.Type, gridThw: [(t: Int, h: Int, w: Int)],
-  configuration: Qwen3_5VisionConfiguration
+  configuration: Qwen3_5VisionConfiguration, deepStackLayers: [Int] = [],
+  attentionDataType: DataType = .BFloat16
 ) -> Model {
   let tokenLength = gridThw.reduce(0) { $0 + $1.t * $1.h * $1.w }
   let maxSequenceLength = Qwen3_5VisionSequenceOffsets(gridThw: gridThw).maxSequenceLength
@@ -495,15 +506,32 @@ public func Qwen3_5VisionTransformer<T: TensorNumeric>(
     count: configuration.hiddenSize, name: "model.visual.patch_embed.proj")
   var out = patchEmbed(patches)
   out = out + positionEmbedding.to(T.dataType)
+  var deepStack = [Model.IO]()
   for i in 0..<configuration.layers {
     let block = Qwen3_5VisionBlock(
       prefix: "model.visual.blocks.\(i)", configuration: configuration, tokenLength: tokenLength,
-      maxSequenceLength: maxSequenceLength, x: out, rotary: rotary,
+      maxSequenceLength: maxSequenceLength, attentionDataType: attentionDataType,
+      x: out, rotary: rotary,
       sequenceOffsets: sequenceOffsets)
     out = block
+    if let index = deepStackLayers.firstIndex(of: i) {
+      let prefix = "model.visual.deepstack_merger_list.\(index)"
+      // Qwen3-VL DeepStack normalizes after the spatial merge, unlike the final merger.
+      let norm = LayerNorm(
+        epsilon: configuration.layerNormEpsilon, axis: [1], name: "\(prefix).norm")
+      let merged = norm(
+        out.reshaped([
+          tokenLength / (configuration.spatialMergeSize * configuration.spatialMergeSize),
+          configuration.mergedHiddenSize,
+        ]))
+      let fc1 = Dense(
+        count: configuration.mergedHiddenSize, flags: [.Float16], name: "\(prefix).linear_fc1")
+      let fc2 = Dense(count: configuration.outputHiddenSize, name: "\(prefix).linear_fc2")
+      deepStack.append(fc2(fc1(merged).GELU()))
+    }
   }
   let merger = Qwen3_5VisionMerger(
     T.self, tokenLength: tokenLength, configuration: configuration, x: out)
   out = merger.out
-  return Model([patches, positionEmbedding, rotary, sequenceOffsets], [out])
+  return Model([patches, positionEmbedding, rotary, sequenceOffsets], [out] + deepStack)
 }

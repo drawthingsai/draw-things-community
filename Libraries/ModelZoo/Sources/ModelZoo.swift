@@ -874,7 +874,7 @@ public struct ModelZoo: DownloadZoo {
       name: "MiniMax H3 (8-bit S)", file: "minimax_h3_i8x.ckpt", prefix: "",
       version: .minimaxH3, defaultScale: 12,
       textEncoder: "qwen_3_vl_32b_50_i8x.ckpt",
-      autoencoder: "minimax_h3_vae_f16.ckpt",
+      autoencoder: "minimax_h3_vae_f16.ckpt", modifier: .fl2va,
       objective: .u(conditionScale: 1_000),
       framesPerSecond: 24,
       note:
