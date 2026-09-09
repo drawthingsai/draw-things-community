@@ -2,9 +2,9 @@
   import Foundation
   import WebKit
 
-  /// Searches the regular DuckDuckGo site with JavaScript and persistent website data.
+  /// Searches the regular Sogou site with JavaScript and persistent website data.
   /// Browser operations are serialized on the main run loop; HTTP transport remains thread-agnostic.
-  public struct WebKitDuckDuckGoSearch: DuckDuckGoBrowserSearch {
+  public struct WebKitSogouSearch: SogouBrowserSearch {
     /// Called on the main thread with the live challenge view and a cancel action.
     /// Return a dismissal action, or nil if presentation is unavailable. Search resumes automatically.
     public typealias ChallengeHandler = (WKWebView, @escaping () -> Void) -> (() -> Void)?
@@ -29,14 +29,15 @@
     }
 
     public func search(
-      query: String, options: DuckDuckGoSearchOptions,
+      query: String, options: SogouSearchOptions,
       completion: @escaping (Result<[SearchResult], Error>) -> Void
     ) {
       // WebKit requires the main thread even when the caller is a background agent or a CLI.
       DispatchQueue.main.async {
         WebKitSearchSession.shared.enqueue(
           Request(
-            query: query, options: options, challengeTimeout: self.challengeTimeout,
+            query: query.trimmingCharacters(in: .whitespacesAndNewlines), options: options,
+            challengeTimeout: self.challengeTimeout,
             challengeHandler: self.challengeHandler, makeWebView: self.makeWebView,
             completion: completion))
       }
@@ -44,7 +45,7 @@
 
     private final class Request: NSObject, WKNavigationDelegate, WebKitSearchRequest {
       let query: String
-      let options: DuckDuckGoSearchOptions
+      let options: SogouSearchOptions
       let challengeTimeout: TimeInterval
       let challengeHandler: ChallengeHandler?
       let makeWebView: (WKWebViewConfiguration) -> WKWebView
@@ -64,13 +65,13 @@
       private var dismissChallenge: (() -> Void)?
       private var onFinish: (() -> Void)?
       private var page = 1
-      private var previousCount = 0
       private var stableCount = 0
-      private var countBeforeNextPage = 0
+      private var previousURLs = [URL]()
       private var results = [SearchResult]()
+      private var upgradedNavigationURLs = Set<URL>()
 
       init(
-        query: String, options: DuckDuckGoSearchOptions, challengeTimeout: TimeInterval,
+        query: String, options: SogouSearchOptions, challengeTimeout: TimeInterval,
         challengeHandler: ChallengeHandler?,
         makeWebView: @escaping (WKWebViewConfiguration) -> WKWebView,
         completion: @escaping (Result<[SearchResult], Error>) -> Void
@@ -92,14 +93,18 @@
           return
         }
         do {
-          var request = try DuckDuckGoSearch.makeInitialRequest(
-            endpoint: URL(string: "https://duckduckgo.com/")!, query: query, options: options)
+          var request = try SogouSearch.makeRequest(
+            endpoint: URL(string: "https://www.sogou.com/web")!, query: query, page: 1,
+            options: options)
           // Use WebKit's native user agent, cookie handling and navigation headers.
           request.setValue(nil, forHTTPHeaderField: "User-Agent")
           request.cachePolicy = .reloadIgnoringLocalCacheData
           initialRequest = request
           let configuration = WKWebViewConfiguration()
           configuration.websiteDataStore = .default()
+          #if os(iOS)
+            configuration.defaultWebpagePreferences.preferredContentMode = .desktop
+          #endif
           let webView = makeWebView(configuration)
           self.webView = webView
           webView.navigationDelegate = self
@@ -118,7 +123,7 @@
         if Date() >= deadline {
           if awaitingChallenge {
             finish(.failure(blockedError))
-          } else if countBeforeNextPage > 0, !results.isEmpty {
+          } else if page > 1, !results.isEmpty {
             // An additional page may contain no new unique results. Keep the results already
             // collected, but allow the full timeout so a slow page is not mistaken for exhaustion.
             finish(.success(normalizedResults))
@@ -142,7 +147,7 @@
           self.evaluating = false
           guard let html = value as? String, let url = webView.url else { return }
           do {
-            if DuckDuckGoSearch.isAccessChallenge(statusCode: 200, body: html) {
+            if SogouSearch.isAccessChallenge(statusCode: 200, body: html) {
               self.presentChallenge(in: webView)
               return
             }
@@ -152,7 +157,11 @@
             }
             components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
               of: "+", with: "%20")
-            guard components.queryItems?.first(where: { $0.name == "q" })?.value == self.query
+            let queryItems = components.queryItems ?? []
+            let responsePage = queryItems.first(where: { $0.name == "page" })?.value ?? "1"
+            guard url.path == "/web",
+              queryItems.first(where: { $0.name == "query" })?.value == self.query,
+              responsePage == String(self.page)
             else {
               // Some verification forms finish on a confirmation URL instead of redirecting
               // back to search. Resume once, using the same browser's updated cookie store.
@@ -161,55 +170,49 @@
               {
                 self.resumedAfterChallenge = true
                 self.page = 1
-                self.previousCount = 0
                 self.stableCount = 0
-                self.countBeforeNextPage = 0
+                self.previousURLs = []
                 self.results = []
                 self.deadline = Date().addingTimeInterval(max(1, self.options.timeout))
                 webView.load(initialRequest)
               }
               return
             }
-            let parsed = try DuckDuckGoHTMLParser.parse(html: html, baseURL: url)
+            let parsed = try SogouHTMLParser.parse(html: html, baseURL: url)
             if parsed.isEmptyResult && parsed.results.isEmpty {
               self.finish(.success(self.normalizedResults))
               return
             }
             guard !parsed.results.isEmpty else { return }
             self.awaitingChallenge = false
-            var seen = Set<String>()
-            self.results = parsed.results.filter { seen.insert($0.url.absoluteString).inserted }
-            guard self.results.count > self.countBeforeNextPage else { return }
-            // React renders incrementally. Require an unchanged count across several snapshots.
-            self.stableCount = self.results.count == self.previousCount ? self.stableCount + 1 : 0
-            self.previousCount = self.results.count
+            // Sogou navigates to a separate document per page, unlike DuckDuckGo's
+            // cumulative More results list. Wait for stable URLs before appending this page.
+            var seen = Set<URL>()
+            let pageResults = parsed.results.filter { seen.insert($0.url).inserted }
+            let urls = pageResults.map(\.url)
+            self.stableCount = urls == self.previousURLs ? self.stableCount + 1 : 0
+            self.previousURLs = urls
             guard self.stableCount >= 2 else { return }
-            if self.results.count >= self.options.maxResults || self.page >= self.options.pages {
+            seen = Set(self.results.map(\.url))
+            let newResults = pageResults.filter { seen.insert($0.url).inserted }
+            self.results.append(contentsOf: newResults)
+            guard !newResults.isEmpty, self.results.count < self.options.maxResults,
+              self.page < self.options.pages
+            else {
               self.finish(.success(self.normalizedResults))
               return
             }
-            self.evaluating = true
-            webView.evaluateJavaScript(
-              """
-              (() => {
-                const button = document.querySelector('#more-results');
-                if (!button || button.disabled) return false;
-                button.click();
-                return true;
-              })()
-              """
-            ) { [weak self] clicked, error in
-              guard let self, !self.finished else { return }
-              self.evaluating = false
-              guard clicked as? Bool == true else {
-                self.finish(.success(self.normalizedResults))
-                return
-              }
-              self.page += 1
-              self.countBeforeNextPage = self.results.count
-              self.stableCount = 0
-              self.deadline = Date().addingTimeInterval(max(1, self.options.timeout))
-            }
+            self.page += 1
+            self.previousURLs = []
+            self.stableCount = 0
+            var request = try SogouSearch.makeRequest(
+              endpoint: URL(string: "https://www.sogou.com/web")!, query: self.query,
+              page: self.page, options: self.options)
+            request.setValue(nil, forHTTPHeaderField: "User-Agent")
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            self.deadline = Date().addingTimeInterval(max(1, self.options.timeout))
+            self.didCommit = false
+            webView.load(request)
           } catch {
             self.finish(.failure(error))
           }
@@ -226,7 +229,7 @@
 
       private var blockedError: WebSearchError {
         .searchBlocked(
-          "DuckDuckGo requires verification. Complete the challenge in the search browser and retry if needed.",
+          "Sogou requires verification. Complete the challenge in the search browser and retry if needed.",
           webView?.url)
       }
 
@@ -281,13 +284,32 @@
         _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
       ) {
-        // This browser is only for search and verification. Do not follow result links or !bangs.
+        // Keep main-frame navigation on the provider. Challenge resources may use CDNs.
         if navigationAction.targetFrame?.isMainFrame != false {
           let url = navigationAction.request.url
           let host = url?.host?.lowercased() ?? ""
-          guard url?.scheme == "https",
-            host == "duckduckgo.com" || host.hasSuffix(".duckduckgo.com")
-          else {
+          guard host == "sogou.com" || host == "www.sogou.com" else {
+            decisionHandler(.cancel)
+            finish(.failure(WebSearchError.invalidResponse))
+            return
+          }
+          // Live Sogou search redirects to an HTTP antispider URL. Load its HTTPS
+          // equivalent instead of rejecting verification or submitting it over HTTP.
+          if url?.scheme == "http",
+            url?.path == "/antispider" || url?.path.hasPrefix("/antispider/") == true,
+            var components = url.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) })
+          {
+            components.scheme = "https"
+            if let upgradedURL = components.url {
+              var request = navigationAction.request
+              request.url = upgradedURL
+              if let url { upgradedNavigationURLs.insert(url) }
+              decisionHandler(.cancel)
+              webView.load(request)
+              return
+            }
+          }
+          guard url?.scheme == "https" else {
             decisionHandler(.cancel)
             finish(.failure(WebSearchError.invalidResponse))
             return
@@ -300,13 +322,27 @@
         _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
       ) {
-        if (error as? URLError)?.code != .cancelled { finish(.failure(error)) }
+        handleNavigationFailure(error)
       }
 
       func webView(
         _ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error
       ) {
-        if (error as? URLError)?.code != .cancelled { finish(.failure(error)) }
+        handleNavigationFailure(error)
+      }
+
+      private func handleNavigationFailure(_ error: Error) {
+        if (error as? URLError)?.code == .cancelled { return }
+        // WebKit reports a policy cancellation as legacy WebKitErrorDomain/102 on both
+        // platforms. Ignore only a navigation we deliberately replaced with HTTPS.
+        let failure = error as NSError
+        let failingURL = failure.userInfo[NSURLErrorFailingURLErrorKey] as? URL
+        if failure.domain == "WebKitErrorDomain", failure.code == 102,
+          let failingURL, upgradedNavigationURLs.remove(failingURL) != nil
+        {
+          return
+        }
+        finish(.failure(error))
       }
 
       func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

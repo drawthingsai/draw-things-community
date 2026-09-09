@@ -51,27 +51,13 @@ public struct DuckDuckGoSearch {
       query: normalizedQuery, options: options, page: 0, nextParameters: nil, results: [],
       seenURLs: []
     ) { result in
-      if case .failure(let error) = result, Self.shouldUseBrowser(after: error),
+      if case .failure(let error) = result, WebSearchBrowserFallback.shouldUseBrowser(after: error),
         let browserSearch = self.browserSearch
       {
         browserSearch.search(query: normalizedQuery, options: options, completion: completion)
       } else {
         completion(result)
       }
-    }
-  }
-
-  static func shouldUseBrowser(after error: Error) -> Bool {
-    switch error {
-    case WebSearchError.searchBlocked, WebSearchError.unexpectedSearchResponse,
-      WebSearchError.bodyDecodingFailed:
-      return true
-    case WebSearchError.httpStatus(let status, _, _, _, _):
-      return status == 403 || status == 408 || status == 429 || (500..<600).contains(status)
-    case let error as URLError:
-      return error.code == .timedOut || error.code == .networkConnectionLost
-    default:
-      return false
     }
   }
 

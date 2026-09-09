@@ -1,4 +1,8 @@
-# DuckDuckGo browser fallback
+# Browser-backed web search
+
+DuckDuckGo and Sogou offer an HTTP path with persistent WebKit fallback. The [Sogou study](#sogou-browser-fallback-and-quality-study--2026-09-08) includes its transport and relevance measurements.
+
+## DuckDuckGo browser fallback
 
 `DuckDuckGoSearch()` first uses the HTML endpoint and falls back to `WebKitDuckDuckGoSearch` on Apple platforms when it receives a challenge, an unrecognized page, HTTP 403/408/429/5xx, or a transient timeout/connection loss. A successful HTTP search stays on that path. Offline, cancellation and TLS errors do not launch a browser. Pass `browserSearch: nil` to explicitly use HTTP only.
 
@@ -60,3 +64,50 @@ bazel build //Apps/LocalCode:LocalCodeLib --platforms=@build_bazel_apple_support
 ```
 
 The full `//Apps/LocalCode:LocalCode` bundle cannot link in this checkout because the NodeMobile and Python iOS archives are Git LFS pointers rather than binary archives. This is independent of the WebSearch code.
+
+## Sogou browser fallback and quality study — 2026-09-08
+
+`SogouSearch()` now uses the same selective HTTP-to-browser fallback policy through `WebKitSogouSearch`. Pass `browserSearch: nil` for HTTP only. `WebSearchCLI search` and `benchmark` accept `--provider sogou --transport automatic|http|browser`. Local Code supplies the existing verification presenter for Sogou too; the sheet title is now provider-neutral.
+
+Both browser providers share a main-thread request queue, so their verification sessions cannot run concurrently. Each request owns its web view and uses `WKWebsiteDataStore.default()`. Sogou requests desktop content on iOS to match its result parser. Region and safe-search remain DuckDuckGo-only options; Sogou preserves its query, freshness filter, page limit, result limit and timeout.
+
+Sogou uses separate result documents for pagination. The browser checks both query and page number, waits for stable result URLs, appends and deduplicates each page, and stops on duplicate-only or explicit empty pages. A stalled additional page returns already collected results after its timeout. A challenge remains an explicit failure until resolved; returning from verification to the original query resets pagination. The HTTP implementation also stops when a page adds no results.
+
+Two live-provider details matter:
+
+- The current verification page uses `seccodeForm` / `seccodeInput`, rather than the `captcha` wording the original detector expected. Unrecognized pages now fail explicitly; they cannot become successful empty searches. Genuine site-search empty responses use `.vrTips .icon_noRes`. Challenge wording inside result snippets or scripts is ignored.
+- Sogou may redirect to an HTTP `/antispider/` URL. The browser loads its HTTPS equivalent and ignores only the cancelled navigation it replaced. Foundation normalizes the trailing slash, and WebKit can report the cancellation as its legacy policy-interruption error rather than `URLError.cancelled`. [Apple identifies that policy-interruption error](https://developer.apple.com/documentation/webkit/webkiterrorframeloadinterruptedbypolicychange?language=objc). Other navigation errors still fail the request. Main-frame navigation remains limited to `sogou.com` and `www.sogou.com`.
+
+### Measurements
+
+The study used the same ten built-in queries as the DuckDuckGo study, sequentially, with ten results and one page requested. Success requires parsed results or an explicit no-results message. Latencies below include successful queries only. No manual verification or result-page fetching was performed.
+
+| Final batch | Valid responses | Nonempty responses | Mean result count | Median latency | P95 latency | Expected-URL MRR |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| HTTP | 10/10 | 7/10 | 6.2 | 0.77 s | 1.54 s | 0 |
+| Browser | 10/10 | 7/10 | 6.2 | 1.65 s | 2.42 s | 0 |
+| Automatic 1 | 10/10 | 7/10 | 6.2 | 0.75 s | 1.41 s | 0 |
+| Automatic 2 | 10/10 | 7/10 | 6.2 | 0.82 s | 1.39 s | 0 |
+| Automatic 3 | 10/10 | 7/10 | 6.2 | 0.80 s | 1.40 s | 0 |
+
+The two `site:` queries and the `filetype:pdf` query produced explicit no-results messages. Each final batch returned 62 total results, with no empty titles and one empty snippet. None of the eight queries with an expected URL substring found that substring in its returned results. This uses the unchanged benchmark expectations as a relevance proxy, not a comprehensive relevance evaluation.
+
+Provider availability varied during development. The original implementation reported 10/10 successes with zero results for every query, but it did not validate empty pages; an inspected response was a verification page. An earlier corrected HTTP batch returned 3/10 nonempty searches and seven explicit challenges. By the final comparison, HTTP itself returned 10/10 valid responses. These were sequential observations with evolving provider/session state, not a randomized experiment. The final automatic batches therefore do **not** demonstrate an improvement over HTTP, and browser-only was slower. Automatic still preserves the working HTTP path and provides browser recovery when HTTP fails.
+
+Seven supplemental cases were run with each transport: Palace Museum official site, Swift Chinese tutorials, Sogou input method official site, a literal `C++` query, three-page pagination, a month filter, and a quoted unlikely query. All 21 calls returned results. Each pagination call returned 25 distinct URLs; literal-plus and month-filter requests returned ten results. Freshness of those results was not independently verified. No supplemental expected-URL check matched. The unlikely query returned eight unrelated results on all transports, so it must not be treated as a no-results control.
+
+Rendered-DOM inspection of the Palace Museum query found ten `vrwrap` title blocks matching the returned results; the official-site miss in that sample was not caused by omitting another result-container class. Together with the technical corpus and unrelated nonsense-query results, this supports caution about navigational relevance on this machine even when transport success is high.
+
+Raw metrics, supplemental result text and baseline observations are in [Validation/2026-09-08-sogou.json](Validation/2026-09-08-sogou.json). Challenge URL parameters are omitted. Earlier experimental browser runs with navigation-policy defects are excluded from the final measurements.
+
+### Verification and reproduction
+
+The deterministic suite covers option propagation, HTTP-only behavior, transient versus nonrecoverable failures, real challenge structure, explicit empty detection, separate-page deduplication, challenge restart, cancellation, timeout, cross-provider serialization, query identity, HTTPS upgrade, and unrelated policy failures. Live manual challenge completion and cookie reuse after solving one remain unverified; those lifecycle transitions are covered with WebKit test doubles.
+
+```sh
+bazel test //Libraries/WebSearch:WebSearchTests //Apps:WebSearchCLI
+python3 Libraries/WebSearch/Validation/sogou-study.py --output /tmp/sogou-study.json
+bazel build //Apps/LocalCode:LocalCodeLib --platforms=@build_bazel_apple_support//platforms:ios_arm64
+```
+
+The requesting Mac passed the WebSearch suite and built both WebSearchCLI and the Local Code iOS library. As with DuckDuckGo, a headless process needs the main run loop for WebKit; a CLI without a verification presenter reports `searchBlocked` when manual action is required.

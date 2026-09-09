@@ -5,14 +5,34 @@ import SwiftSoup
   import FoundationNetworking
 #endif
 
-/// Searches Sogou's web search endpoint.
+/// Browser fallback used when Sogou cannot return a search page.
+public protocol SogouBrowserSearch {
+  func search(
+    query: String, options: SogouSearchOptions,
+    completion: @escaping (Result<[SearchResult], Error>) -> Void)
+}
+
+/// Searches Sogou's web endpoint, falling back to a browser when available.
 public struct SogouSearch {
   private let httpTransport: HttpTransport
+  private let browserSearch: SogouBrowserSearch?
   private static let endpoint = URL(string: "https://www.sogou.com/web")!
 
-  /// Creates a Sogou search tool.
-  public init(httpTransport: HttpTransport = URLSessionHttpTransport()) {
+  public static var defaultBrowserSearch: SogouBrowserSearch? {
+    #if canImport(WebKit)
+      return WebKitSogouSearch()
+    #else
+      return nil
+    #endif
+  }
+
+  /// Pass nil for browserSearch to use only HTTP, including on headless servers.
+  public init(
+    httpTransport: HttpTransport = URLSessionHttpTransport(),
+    browserSearch: SogouBrowserSearch? = SogouSearch.defaultBrowserSearch
+  ) {
     self.httpTransport = httpTransport
+    self.browserSearch = browserSearch
   }
 
   /// Searches Sogou and calls `completion` with normalized, de-duplicated results.
@@ -28,8 +48,17 @@ public struct SogouSearch {
     }
 
     searchPage(
-      query: normalizedQuery, options: options, page: 1, results: [], seenURLs: [],
-      completion: completion)
+      query: normalizedQuery, options: options, page: 1, results: [], seenURLs: []
+    ) { result in
+      if case .failure(let error) = result,
+        WebSearchBrowserFallback.shouldUseBrowser(after: error),
+        let browserSearch = self.browserSearch
+      {
+        browserSearch.search(query: normalizedQuery, options: options, completion: completion)
+      } else {
+        completion(result)
+      }
+    }
   }
 
   /// Searches Sogou with async/await by wrapping the completion-handler API.
@@ -81,6 +110,9 @@ public struct SogouSearch {
         }
 
         let parsed = try SogouHTMLParser.parse(html: html, baseURL: Self.endpoint)
+        guard !parsed.results.isEmpty || parsed.isEmptyResult else {
+          throw WebSearchError.unexpectedSearchResponse(response.url)
+        }
         var updatedResults = results
         var updatedSeenURLs = seenURLs
         for result in parsed.results {
@@ -102,7 +134,9 @@ public struct SogouSearch {
           }
         }
 
-        guard page < options.pages, updatedResults.count < options.maxResults else {
+        guard page < options.pages, updatedResults.count < options.maxResults,
+          updatedResults.count > results.count
+        else {
           completion(.success(updatedResults))
           return
         }
@@ -130,6 +164,8 @@ public struct SogouSearch {
       queryItems.append(URLQueryItem(name: "tsn", value: timeFilter.sogouValue))
     }
     components.queryItems = queryItems
+    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
+      of: "+", with: "%2B")
     guard let url = components.url else {
       throw WebSearchError.invalidURL(endpoint.absoluteString)
     }
@@ -143,22 +179,27 @@ public struct SogouSearch {
   }
 
   static func isAccessChallenge(statusCode: Int, body: String?) -> Bool {
-    guard let body else {
+    if statusCode == 403 || statusCode == 429 { return true }
+    guard let body, let document = try? SwiftSoup.parse(body) else { return false }
+    // The live antispider page uses seccodeForm and does not contain "captcha".
+    if (try? document.select("form#seccodeForm, #seccodeInput, .verify-img-panel").isEmpty())
+      == false
+    {
+      return true
+    }
+    // Ignore challenge words quoted by search results and script string tables.
+    if (try? document.select("h3.vr-title a, a.vr-title").isEmpty()) == false {
       return false
     }
-    let lowercased = body.lowercased()
-    if lowercased.contains("captcha") && lowercased.contains("sogou") {
-      return true
-    }
-    if body.contains("请输入验证码") && body.contains("搜狗") {
-      return true
-    }
-    return statusCode == 403 || statusCode == 429
+    let text = ((try? document.body()?.text()) ?? "").lowercased()
+    return (text.contains("captcha") && text.contains("sogou"))
+      || text.contains("请输入验证码") || text.contains("此验证码用于确认")
   }
 }
 
 struct SogouParsedPage {
   var results: [SearchResult]
+  var isEmptyResult: Bool
 }
 
 enum SogouHTMLParser {
@@ -189,7 +230,15 @@ enum SogouHTMLParser {
           snippet: snippet,
           source: "sogou"))
     }
-    return SogouParsedPage(results: results)
+    // Only explicit no-results messages are empty; a loading or verification shell is not.
+    let isEmptyResult =
+      try !document.select(".vrTips .icon_noRes").isEmpty()
+      || document.select("p").contains { element in
+        let text = try element.text()
+        return text == "未找到相关结果" || text == "没有找到相关结果"
+          || text.hasPrefix("抱歉，没有找到与") && text.contains("相关的网页")
+      }
+    return SogouParsedPage(results: results, isEmptyResult: isEmptyResult)
   }
 
   private static func resultURL(from element: Element, titleElement: Element, baseURL: URL) throws
@@ -208,10 +257,13 @@ enum SogouHTMLParser {
     guard !trimmed.isEmpty else {
       return nil
     }
-    if trimmed.hasPrefix("//") {
-      return URL(string: "https:" + trimmed)
+    let candidate =
+      trimmed.hasPrefix("//")
+      ? URL(string: "https:" + trimmed) : URL(string: trimmed, relativeTo: baseURL)?.absoluteURL
+    guard let url = candidate, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+      return nil
     }
-    return URL(string: trimmed, relativeTo: baseURL)?.absoluteURL
+    return url
   }
 
   private static func displayURL(from element: Element) throws -> String {
