@@ -23,6 +23,9 @@ public struct LLMZoo: DownloadZoo {
 
   public static let builtinSpecifications: [Specification] = [
     Specification(
+      name: "Qwen 3.8 27B (2-bit S)", file: "qwen_3.8_27b_i2x.ckpt",
+      version: .qwen_3_5_27b, huggingFaceLink: "Qwen/Qwen3.8-27B"),
+    Specification(
       name: "Qwen 3.8 27B (4-bit S)", file: "qwen_3.8_27b_i4x.ckpt",
       version: .qwen_3_5_27b, huggingFaceLink: "Qwen/Qwen3.8-27B"),
     Specification(
@@ -46,6 +49,7 @@ public struct LLMZoo: DownloadZoo {
   ]
 
   private static let fileSHA256: [String: String] = [
+    "qwen_3.6_27b_i2x.ckpt": "898deb3fef5d77a34d609031899460aa79d4ba663c07f6760c5767385f6c91d3",
     "qwen_3.6_27b_i4x.ckpt": "20a28fb30af7d1d5228c314fa76080ec0dae7c9519fd69e5ad54c44462eb7dbc",
     "qwen_3.6_27b_i8x.ckpt": "1cd4b97a358a11dd795326e549e210d88f0aff6d91ebee8adc40eda6f36f7f4d",
     "qwen_3.5_9b_i5x.ckpt": "559d41f5e6721b4edb5a661c42b6f328a243876c2637cad36cf9937fb0d453c1",
