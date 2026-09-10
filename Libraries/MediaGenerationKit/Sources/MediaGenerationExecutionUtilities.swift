@@ -132,6 +132,22 @@ internal enum MediaGenerationExecutionUtilities {
         "<|bor_token|>": 151670, "<|eor_token|>": 151671, "<|bot_token|>": 151672,
         "<|tms_token|>": 151673,
       ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
+    let tokenizerQwen3MinimaxH3 = TiktokenTokenizer(
+      vocabulary: BinaryResources.vocab_qwen3_json, merges: BinaryResources.merges_qwen3_txt,
+      specialTokens: [
+        "<|endoftext|>": 151643, "<|im_start|>": 151644, "<|im_end|>": 151645,
+        "<|object_ref_start|>": 151646, "<|object_ref_end|>": 151647, "<|box_start|>": 151648,
+        "<|box_end|>": 151649, "<|quad_start|>": 151650, "<|quad_end|>": 151651,
+        "<|vision_start|>": 151652, "<|vision_end|>": 151653, "<|vision_pad|>": 151654,
+        "<|image_pad|>": 151655, "<|video_pad|>": 151656, "<tool_call>": 151657,
+        "</tool_call>": 151658, "<|fim_prefix|>": 151659, "<|fim_middle|>": 151660,
+        "<|fim_suffix|>": 151661, "<|fim_pad|>": 151662, "<|repo_name|>": 151663,
+        "<|file_sep|>": 151664, "<tool_response>": 151665, "</tool_response>": 151666,
+        "<think>": 151667, "</think>": 151668,
+        "<d>": 151669, "</d>": 151670, "<|cutoff|>": 151671,
+        "<|lyrics_start|>": 151672, "<|lyrics_end|>": 151673,
+        "<|caption_start|>": 151674, "<|caption_end|>": 151675,
+      ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
     let tokenizerMistral3 = TiktokenTokenizer(
       vocabulary: BinaryResources.vocab_mistral3_json, merges: BinaryResources.merges_mistral3_txt,
       specialTokens: [
@@ -150,7 +166,8 @@ internal enum MediaGenerationExecutionUtilities {
       tokenizerT5: tokenizerT5, tokenizerPileT5: tokenizerPileT5,
       tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
       tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25,
-      tokenizerQwen3: tokenizerQwen3, tokenizerMistral3: tokenizerMistral3,
+      tokenizerQwen3: tokenizerQwen3, tokenizerQwen3MinimaxH3: tokenizerQwen3MinimaxH3,
+      tokenizerMistral3: tokenizerMistral3,
       tokenizerGemma3: tokenizerGemma3
     )
 

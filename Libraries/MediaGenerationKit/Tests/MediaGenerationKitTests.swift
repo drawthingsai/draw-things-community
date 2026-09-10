@@ -11,6 +11,46 @@ import XCTest
 @testable import MediaGenerationKit
 
 final class MediaGenerationKitTests: XCTestCase {
+  func testMiniMaxH3TokenizerDoesNotChangeQwen3() {
+    let resources = MediaGenerationExecutionUtilities.createLocalResources()
+    defer { try? FileManager.default.removeItem(atPath: resources.tempDir) }
+    let qwen3 = resources.generator.tokenizerQwen3
+    let h3 = resources.generator.tokenizerQwen3MinimaxH3
+    let h3Tokens: [String: Int32] = [
+      "<d>": 151_669, "</d>": 151_670, "<|cutoff|>": 151_671,
+      "<|lyrics_start|>": 151_672, "<|lyrics_end|>": 151_673,
+      "<|caption_start|>": 151_674, "<|caption_end|>": 151_675,
+    ]
+    for (token, id) in h3Tokens {
+      XCTAssertEqual(h3.tokenize(text: token).0, [id], token)
+      XCTAssertEqual(h3.decode([id]), token)
+      XCTAssertGreaterThan(qwen3.tokenize(text: token).0.count, 1, token)
+    }
+    XCTAssertEqual(qwen3.tokenize(text: "<d>").0, [90_707, 29])
+    XCTAssertEqual(qwen3.tokenize(text: "</d>").0, [522, 67, 29])
+    let imageTokens: [String: Int32] = [
+      "<|boi_token|>": 151_669, "<|bor_token|>": 151_670,
+      "<|eor_token|>": 151_671, "<|bot_token|>": 151_672, "<|tms_token|>": 151_673,
+    ]
+    for (token, id) in imageTokens {
+      XCTAssertEqual(qwen3.tokenize(text: token).0, [id], token)
+      XCTAssertEqual(qwen3.decode([id]), token)
+      XCTAssertGreaterThan(h3.tokenize(text: token).0.count, 1, token)
+    }
+    let text = "[English] Hello there."
+    XCTAssertEqual(
+      h3.tokenize(text: "<d>\(text)</d>").0,
+      [151_669] + qwen3.tokenize(text: text).0 + [151_670])
+    XCTAssertEqual(
+      h3.tokenize(text: "<d></d><d></d>").0, [151_669, 151_670, 151_669, 151_670])
+    for prompt in [
+      "", " ", "A dog in a meadow.", "你好，世界！",
+      "<Picture 1>: <|vision_start|><|image_pad|><|vision_end|>Hello",
+    ] {
+      XCTAssertEqual(h3.tokenize(text: prompt).0, qwen3.tokenize(text: prompt).0)
+    }
+  }
+
   func testPipelineCopyDoesNotShareConfiguration() async throws {
     let modelsDirectory = try makeTemporaryDirectory()
     var pipeline = try await MediaGenerationPipeline.fromPretrained(

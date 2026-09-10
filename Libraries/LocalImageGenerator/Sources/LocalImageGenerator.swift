@@ -43,6 +43,7 @@ public struct LocalImageGenerator: ImageGenerator {
   private let tokenizerUMT5Factory: () -> SentencePieceTokenizer
   private let tokenizerQwen25Factory: () -> TiktokenTokenizer
   private let tokenizerQwen3Factory: () -> TiktokenTokenizer
+  private let tokenizerQwen3MinimaxH3Factory: () -> TiktokenTokenizer
   private let tokenizerMistral3Factory: () -> TiktokenTokenizer
   private let tokenizerGemma3Factory: () -> SentencePieceTokenizer
   public var tokenizerV1: TextualInversionAttentionCLIPTokenizer { tokenizerV1Factory() }
@@ -56,6 +57,7 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerUMT5: SentencePieceTokenizer { tokenizerUMT5Factory() }
   public var tokenizerQwen25: TiktokenTokenizer { tokenizerQwen25Factory() }
   public var tokenizerQwen3: TiktokenTokenizer { tokenizerQwen3Factory() }
+  public var tokenizerQwen3MinimaxH3: TiktokenTokenizer { tokenizerQwen3MinimaxH3Factory() }
   public var tokenizerMistral3: TiktokenTokenizer { tokenizerMistral3Factory() }
   public var tokenizerGemma3: SentencePieceTokenizer { tokenizerGemma3Factory() }
   private let queue: DispatchQueue
@@ -74,6 +76,7 @@ public struct LocalImageGenerator: ImageGenerator {
     tokenizerUMT5: @autoclosure @escaping () -> SentencePieceTokenizer,
     tokenizerQwen25: @autoclosure @escaping () -> TiktokenTokenizer,
     tokenizerQwen3: @autoclosure @escaping () -> TiktokenTokenizer,
+    tokenizerQwen3MinimaxH3: @autoclosure @escaping () -> TiktokenTokenizer,
     tokenizerMistral3: @autoclosure @escaping () -> TiktokenTokenizer,
     tokenizerGemma3: @autoclosure @escaping () -> SentencePieceTokenizer
   ) {
@@ -89,6 +92,7 @@ public struct LocalImageGenerator: ImageGenerator {
     tokenizerUMT5Factory = tokenizerUMT5
     tokenizerQwen25Factory = tokenizerQwen25
     tokenizerQwen3Factory = tokenizerQwen3
+    tokenizerQwen3MinimaxH3Factory = tokenizerQwen3MinimaxH3
     tokenizerMistral3Factory = tokenizerMistral3
     tokenizerGemma3Factory = tokenizerGemma3
     weightsCache = WeightsCache(
@@ -1650,7 +1654,8 @@ extension LocalImageGenerator {
         ? (1...images).map { "<Picture \($0)>: <|vision_start|><|image_pad|><|vision_end|>" }
           .joined() : ""
       return tokenize(
-        graph: graph, tokenizer: tokenizerQwen3, text: imagePrefix + (text.isEmpty ? " " : text),
+        graph: graph, tokenizer: tokenizerQwen3MinimaxH3,
+        text: imagePrefix + (text.isEmpty ? " " : text),
         negativeText: imagePrefix + (negativeText.isEmpty ? " " : negativeText),
         paddingToken: nil, addSpecialTokens: false, conditionalLength: 5120, modifier: .qwen3,
         potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
