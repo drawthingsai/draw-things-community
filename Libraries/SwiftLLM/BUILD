@@ -20,3 +20,16 @@ swift_test(
         "@s4nnc//nnc",
     ],
 )
+
+swift_test(
+    name = "Qwen3_5TextGenerationTests",
+    srcs = ["Tests/Qwen3_5TextGenerationTests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":SwiftLLM",
+        "@s4nnc//nnc",
+    ],
+)

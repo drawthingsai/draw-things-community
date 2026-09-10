@@ -214,6 +214,13 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             try store.read(
               "text_model", model: decoder, strict: true,
               codec: [.jit, .i8x, .ezm7, .externalData])
+            // Establish execution before prefill, after loading quantized weights.
+            // One-token prefill can reuse this graph during eager decode compilation.
+            decoder.compile(
+              (
+                cachedTokenLength: prefillTokenStart, tokenLength: firstChunkLength,
+                lastNumberOfTokens: 1
+              ), inputs: inputs, isEager: true)
           }
           loadAndCompileMilliseconds = (Date.timeIntervalSinceReferenceDate - loadStart) * 1_000
           let prefillStart = Date.timeIntervalSinceReferenceDate
@@ -494,6 +501,12 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           try store.read(
             "text_model", model: decoder, strict: true,
             codec: [.jit, .i8x, .ezm7, .externalData])
+          decoder.compile(
+            (
+              cachedTokenLength: 0, tokenLength: promptTokenIds.count,
+              lastNumberOfTokens: 1, linearStateCheckpointCount: 0, includeLogits: true
+            ),
+            inputs: [promptTokens] + prefillAttentionInputs + prefillCacheInputs, isEager: true)
         }
 
         let decodeTokenLength = 2
@@ -538,29 +551,30 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           Qwen3_5RotaryEmbedding(
             sequenceLength: promptTokenIds.count, configuration: configuration, of: FloatType.self
           ).toGPU(0))
+        let mtpPrefillInputs: [DynamicGraph.AnyTensor] = [
+          promptTokens, mtpPrefillCompileHidden, mtpPrefillRotary,
+          mtpK.reshaped(
+            .NHWC(
+              1, promptTokenIds.count, configuration.keyValueHeads,
+              configuration.attentionHeadDim),
+            offset: [0, 0, 0, 0],
+            strides: [
+              mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
+              configuration.attentionHeadDim, 1,
+            ]),
+          mtpV.reshaped(
+            .NHWC(
+              1, promptTokenIds.count, configuration.keyValueHeads,
+              configuration.attentionHeadDim),
+            offset: [0, 0, 0, 0],
+            strides: [
+              mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
+              configuration.attentionHeadDim, 1,
+            ]),
+        ]
         mtpStep.compile(
           (cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1),
-          inputs: [
-            promptTokens, mtpPrefillCompileHidden, mtpPrefillRotary,
-            mtpK.reshaped(
-              .NHWC(
-                1, promptTokenIds.count, configuration.keyValueHeads,
-                configuration.attentionHeadDim),
-              offset: [0, 0, 0, 0],
-              strides: [
-                mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
-                configuration.attentionHeadDim, 1,
-              ]),
-            mtpV.reshaped(
-              .NHWC(
-                1, promptTokenIds.count, configuration.keyValueHeads,
-                configuration.attentionHeadDim),
-              offset: [0, 0, 0, 0],
-              strides: [
-                mtpCacheCapacity * mtpCacheRowStride, mtpCacheRowStride,
-                configuration.attentionHeadDim, 1,
-              ]),
-          ])
+          inputs: mtpPrefillInputs)
         graph.openStore(
           filePath, flags: .readOnly,
           externalStore: TensorData.externalStore(filePath: filePath)
@@ -577,6 +591,9 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             .continue(name)
           }
         }
+        mtpStep.compile(
+          (cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1),
+          inputs: mtpPrefillInputs, isEager: true)
         let loadAndCompileMilliseconds =
           (Date.timeIntervalSinceReferenceDate - loadStart) * 1_000
 
@@ -1131,6 +1148,9 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             "text_model", model: decoder, strict: true,
             codec: [.jit, .i8x, .ezm7, .externalData])
         }
+        decoder.compile(
+          (cachedTokenLength: 0, tokenLength: max(promptPrefixCount, 1)),
+          inputs: prefillInputs, isEager: true)
         if promptPrefixCount > 0 {
           let promptPrefixTokens = graph.variable(
             Tensor<Int32>(
@@ -1234,7 +1254,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 strides: [
                   traceTokenCount * configuration.attentionHeadDim,
                   configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
-                ]))
+                ]
+              ).copied())
           }
           let targetCacheInputs = Self.cacheInputs(
             caches, currentTokenLength: currentCachedTokenLength + 1,
@@ -1349,7 +1370,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               strides: [
                 mtpRotaryLength * configuration.attentionHeadDim,
                 configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
-              ])
+              ]
+            ).copied()
             let mtpCachedTokenLength = windowIndex + depthIndex
             var mtpOutputs = mtpStep(
               (cachedTokenLength: mtpCachedTokenLength, tokenLength: 1),

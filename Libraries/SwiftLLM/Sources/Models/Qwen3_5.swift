@@ -149,18 +149,16 @@ private func Qwen3_5FullAttention(
   var queries = toqueries(queriesIn)
   var gate = toqueryGates(queriesIn)
   if queriesLength > 0 {
-    queries = queries.reshaped([batchSize, queriesLength, heads, headDim])
+    queries = queries.reshaped([batchSize, queriesLength, heads, headDim], format: .NHWC)
     gate = gate.reshaped([batchSize * queriesLength, queryDim])
   } else {
     queries = queries.reshaped([0])
     gate = gate.reshaped([0])
   }
-  var keys = tokeys(x).reshaped([
-    batchSize, tokenLength, keyValueHeads, headDim,
-  ])
-  let values = tovalues(x).reshaped([
-    batchSize, tokenLength, keyValueHeads, headDim,
-  ])
+  var keys = tokeys(x).reshaped(
+    [batchSize, tokenLength, keyValueHeads, headDim], format: .NHWC)
+  let values = tovalues(x).reshaped(
+    [batchSize, tokenLength, keyValueHeads, headDim], format: .NHWC)
   let qNorm = RMSNorm(epsilon: 1e-6, axis: [3], name: "\(prefix).self_attn.q_norm")
   queries = qNorm(queries)
   let kNorm = RMSNorm(epsilon: 1e-6, axis: [3], name: "\(prefix).self_attn.k_norm")
