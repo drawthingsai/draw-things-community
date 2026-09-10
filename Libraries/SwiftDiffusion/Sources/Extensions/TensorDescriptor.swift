@@ -67,6 +67,23 @@ extension ModelWeightElement {
       guard interleavedIndices.contains(index), numberOfHeads > 0, headDimension > 0 else {
         return output
       }
+      if let dimension = interleavedDimension, dimension != headDimension {
+        precondition(dimension > 0 && dimension <= headDimension && dimension % 2 == 0)
+        let rows = output.reshaped(
+          format: output.format, shape: [numberOfHeads, headDimension, -1])
+        let width = rows.shape[2]
+        var result = rows.copied()
+        result[0..<numberOfHeads, 0..<dimension, 0..<width] = graph.withNoGrad {
+          graph.variable(
+            rows[0..<numberOfHeads, 0..<dimension, 0..<width].copied().reshaped(
+              format: output.format, shape: [numberOfHeads, 2, dimension / 2, width]
+            ).toGPU()
+          ).transposed(1, 2).reshaped(
+            format: output.format, shape: [numberOfHeads, dimension, width]
+          ).toCPU().rawValue
+        }
+        return result.reshaped(format: output.format, shape: output.shape)
+      }
       return graph.withNoGrad {
         Tensor<FloatType>(
           from: graph.variable(

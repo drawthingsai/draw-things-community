@@ -710,7 +710,6 @@ extension UNetFromNNC {
     var unconditionalUNet: ModelBuilderOrModel? = nil
     switch version {
     case .minimaxH3:
-      precondition(lora.isEmpty, "MiniMax H3 LoRA loading is not supported yet.")
       precondition(!isTeaCacheEnabled, "MiniMax H3 does not support TeaCache.")
       let textLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
       let visionLength = c[0].shape[1] - textLength
@@ -725,21 +724,43 @@ extension UNetFromNNC {
       tiledAudioHeight = MiniMaxH3AudioHeight(
         videoLatentFrames: videoLatentFrames, latentWidth: tiledWidth)
       tileScaleFactor = 4
-      didRunLoRASeparately = false
-      unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
-          let videoShape = $0[0].shape
-          return MiniMaxH3(
-            hiddenSize: 5_376, layers: 50,
-            textLength: $0[2].shape[1],
-            audioLength: $0[1].shape[1],
-            videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
-            usesFlashAttention: valueOr(useFlashAttention, .scale1),
-            referenceImageSizes: $0[4..<(4 + referenceImageCount)].map {
-              (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
-            },
-            visionLength: visionLength)
-        })
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let videoShape = $0[0].shape
+            return LoRAMiniMaxH3(
+              hiddenSize: 5_376, layers: 50,
+              textLength: $0[2].shape[1],
+              audioLength: $0[1].shape[1],
+              videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              referenceImageSizes: $0[4..<(4 + referenceImageCount)].map {
+                (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
+              },
+              visionLength: visionLength, LoRAConfiguration: configuration
+            ).1
+          })
+      } else {
+        unet = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let videoShape = $0[0].shape
+            return MiniMaxH3(
+              hiddenSize: 5_376, layers: 50,
+              textLength: $0[2].shape[1],
+              audioLength: $0[1].shape[1],
+              videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              referenceImageSizes: $0[4..<(4 + referenceImageCount)].map {
+                (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
+              },
+              visionLength: visionLength
+            ).1
+          })
+      }
     case .ideogram4:
       precondition(c.count >= Ideogram4ConditionCount)
       tiledWidth =
@@ -2268,8 +2289,10 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<28).map {
                   return ($0, $0)
                 })
+            case .minimaxH3:
+              return [Int: Int](uniqueKeysWithValues: (0..<50).map { ($0, $0) })
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-              .seedvr2_7b, .minimaxH3:
+              .seedvr2_7b:
               fatalError()
             }
           }()

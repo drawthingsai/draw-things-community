@@ -6,6 +6,174 @@ import Tokenizer
 import XCTest
 
 final class MiniMaxH3Tests: XCTestCase {
+  func testLoRAMergedAndSeparateExecution() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let graph = DynamicGraph()
+    graph.withNoGrad {
+      for fixed in [false, true] {
+        func build(_ configuration: LoRANetworkConfiguration?) -> (ModelWeightMapper, Model) {
+          if fixed {
+            if let configuration {
+              return LoRAMiniMaxH3Fixed(
+                timesteps: 1, hiddenSize: 8, layers: 2, textLength: (3, 5),
+                usesFlashAttention: .scale1, referenceImageCount: 1,
+                LoRAConfiguration: configuration
+              )
+            }
+            return MiniMaxH3Fixed(
+              timesteps: 1, hiddenSize: 8, layers: 2, textLength: (3, 5),
+              usesFlashAttention: .scale1, referenceImageCount: 1
+            )
+          }
+          if let configuration {
+            return LoRAMiniMaxH3(
+              hiddenSize: 8, layers: 2, textLength: 3, audioLength: 4, videoFrames: 1,
+              videoHeight: 2, videoWidth: 2, usesFlashAttention: .scale1,
+              referenceImageSizes: [(2, 2)], LoRAConfiguration: configuration
+            )
+          }
+          return MiniMaxH3(
+            hiddenSize: 8, layers: 2, textLength: 3, audioLength: 4, videoFrames: 1,
+            videoHeight: 2, videoWidth: 2, usesFlashAttention: .scale1,
+            referenceImageSizes: [(2, 2)]
+          )
+        }
+        let inputs: [DynamicGraph.AnyTensor]
+        if fixed {
+          inputs = [
+            graph.variable(.GPU(0), .HWC(2, 5, 5_120), of: Float16.self),
+            graph.variable(.GPU(0), .HWC(1, 3, 256), of: Float16.self),
+            graph.variable(.GPU(0), .NHWC(1, 2, 2, 24), of: Float16.self),
+          ]
+        } else {
+          inputs =
+            [
+              graph.variable(.GPU(0), .NHWC(1, 2, 2, 24), of: Float16.self),
+              graph.variable(.GPU(0), .HWC(1, 4, 32), of: Float16.self),
+              graph.variable(.GPU(0), .HWC(1, 3, 8), of: Float.self),
+              graph.variable(.GPU(0), .NHWC(1, 9, 1, 128), of: Float16.self),
+              graph.variable(.GPU(0), .NHWC(1, 1, 1, 8), of: Float16.self),
+            ]
+            + (0..<52).map { _ in
+              graph.variable(.GPU(0), .HWC(1, 1, 8), of: Float16.self)
+            }
+        }
+        for (index, input) in inputs.enumerated() {
+          if !fixed && index == 2 {
+            input.as(of: Float.self).full(0.1)
+          } else {
+            input.as(of: Float16.self).full(0.1)
+          }
+        }
+        let (baseMapper, base) = build(nil)
+        let baseline = base(inputs: inputs[0], Array(inputs.dropFirst())).map {
+          DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+        }
+        // Compare base parameter names without active LoRA branches in the graph.
+        let (mapper, counterpart) = build(
+          LoRANetworkConfiguration(rank: 0, scale: 1, highPrecision: false))
+        counterpart.compile(inputs: inputs)
+        for format in [ModelWeightFormat.diffusers, .generativeModels] {
+          let expected = baseMapper(format)
+          let actual = mapper(format)
+          XCTAssertEqual(Set(actual.keys), Set(expected.keys))
+          for (key, expected) in expected {
+            guard let actual = actual[key] else {
+              XCTFail("Missing mapping: \(key)")
+              continue
+            }
+            XCTAssertEqual(Array(actual), Array(expected), key)
+            XCTAssertTrue(actual.format == expected.format, key)
+            XCTAssertEqual(actual.offsets, expected.offsets, key)
+            XCTAssertEqual(actual.scale, expected.scale, key)
+            XCTAssertEqual(actual.shift, expected.shift, key)
+            XCTAssertEqual(actual.index, expected.index, key)
+            XCTAssertEqual(actual.isBF16, expected.isBF16, key)
+            XCTAssertEqual(actual.interleavedIndices, expected.interleavedIndices, key)
+            XCTAssertEqual(actual.numberOfHeads, expected.numberOfHeads, key)
+            XCTAssertEqual(actual.headDimension, expected.headDimension, key)
+            XCTAssertEqual(actual.interleavedDimension, expected.interleavedDimension, key)
+          }
+        }
+        let basePath = directory.appendingPathComponent(fixed ? "fixed.ckpt" : "main.ckpt").path
+        let loraPath = directory.appendingPathComponent(
+          fixed ? "fixed-lora.ckpt" : "main-lora.ckpt"
+        ).path
+        graph.openStore(basePath) { $0.write("dit", model: base) }
+        graph.openStore(basePath, flags: .readOnly) { store in
+          graph.openStore(loraPath) { lora in
+            for key in store.keys where key.hasSuffix("-0]") {
+              guard let weight = store.read(like: key), weight.shape.count >= 2 else { continue }
+              let inputSize = weight.shape.dropFirst().reduce(1, *)
+              let outputSize = weight.shape[0]
+              let down = Tensor<Float16>(
+                [Float16](repeating: 0.01, count: 2 * inputSize), .CPU, .NC(2, inputSize))
+              let up = Tensor<Float16>(
+                [Float16](repeating: 0.01, count: outputSize * 2), .CPU, .NC(outputSize, 2))
+              lora.write(key + "__down__", tensor: down)
+              lora.write(key + "__up__", tensor: up)
+            }
+          }
+        }
+        let keys = LoRALoader.keys(graph, of: [loraPath], modelFile: basePath)
+        XCTAssertFalse(keys.isEmpty)
+        var results = [[Tensor<Float>]]()
+        for separate in [false, true] {
+          let (_, model) = build(
+            separate
+              ? LoRANetworkConfiguration(
+                rank: 2, scale: 1, highPrecision: false, keys: keys) : nil)
+          model.compile(inputs: inputs)
+          graph.openStore(basePath, flags: .readOnly) { store in
+            LoRALoader.openStore(
+              graph,
+              lora: [
+                LoRAConfiguration(
+                  file: loraPath, weight: 1, version: .minimaxH3, isLoHa: false, modifier: .none,
+                  mode: .all)
+              ]
+            ) { loader in
+              store.read("dit", model: model) { name, dataType, format, shape in
+                if separate {
+                  return loader.concatenateLoRA(
+                    graph, LoRAMapping: [0: 0, 1: 1], filesRequireMerge: [:],
+                    name: name, store: store, dataType: dataType, format: format, shape: shape,
+                    of: Float16.self)
+                }
+                return loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: Float16.self)
+              }
+            }
+          }
+          results.append(
+            model(inputs: inputs[0], Array(inputs.dropFirst())).map {
+              DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+            })
+        }
+        var error = 0.0
+        var magnitude = 0.0
+        var changed = 0.0
+        for index in results[0].indices {
+          let count = results[0][index].shape.reduce(1, *)
+          let merged = results[0][index].reshaped(.C(count))
+          let separate = results[1][index].reshaped(.C(count))
+          let original = baseline[index].reshaped(.C(count))
+          for i in 0..<count {
+            XCTAssertTrue(merged[i].isFinite && separate[i].isFinite)
+            error += pow(Double(merged[i] - separate[i]), 2)
+            magnitude += pow(Double(merged[i]), 2)
+            changed += pow(Double(merged[i] - original[i]), 2)
+          }
+        }
+        XCTAssertGreaterThan(changed, 1e-8)
+        XCTAssertLessThan(sqrt(error / max(magnitude, 1e-30)), 0.01)
+      }
+    }
+  }
+
   func testFirstPicturePrefixMatchesRotaryLayout() {
     let tokenizer = TiktokenTokenizer(
       vocabulary: BinaryResources.vocab_qwen3_json, merges: BinaryResources.merges_qwen3_txt,
@@ -295,7 +463,8 @@ final class MiniMaxH3Tests: XCTestCase {
       let conditioned = MiniMaxH3Fixed(
         timesteps: 2, hiddenSize: hiddenSize, layers: 2, textLength: (0, 4),
         usesFlashAttention: .scale1,
-        referenceImageCount: 2)
+        referenceImageCount: 2
+      ).1
       let outputs = conditioned(inputs: text, conditionedFrequencies, firstFrame, lastFrame)
       XCTAssertEqual(Array(outputs[1].shape), [1, 2, 3, hiddenSize])
       XCTAssertEqual(Array(outputs[2].shape), [1, 4, 2, hiddenSize])
@@ -303,7 +472,8 @@ final class MiniMaxH3Tests: XCTestCase {
       graph.openStore(path) { $0.write("dit", model: conditioned) }
       let plain = MiniMaxH3Fixed(
         timesteps: 2, hiddenSize: hiddenSize, layers: 2, textLength: (0, 4),
-        usesFlashAttention: .scale1)
+        usesFlashAttention: .scale1
+      ).1
       plain.compile(inputs: text, frequencies)
       try graph.openStore(path, flags: .readOnly) {
         try $0.read("dit", model: plain, strict: true)
@@ -402,7 +572,8 @@ final class MiniMaxH3Tests: XCTestCase {
           let fixed = MiniMaxH3Fixed(
             timesteps: 2, hiddenSize: hiddenSize, layers: 1,
             textLength: (lengths.0 + visionLength, lengths.1 + visionLength),
-            usesFlashAttention: .scale1, visionLength: visionLength)
+            usesFlashAttention: .scale1, visionLength: visionLength
+          ).1
           let outputs = fixed(inputs: text, frequencies)
           let batched = outputs[0].as(of: Float.self).toCPU().rawValue
           XCTAssertEqual(Array(batched.shape), [2, paddedLength + visionLength, hiddenSize])
@@ -420,7 +591,8 @@ final class MiniMaxH3Tests: XCTestCase {
             let single = MiniMaxH3Fixed(
               timesteps: 2, hiddenSize: hiddenSize, layers: 1,
               textLength: (0, length + visionLength),
-              usesFlashAttention: .scale1, visionLength: visionLength)
+              usesFlashAttention: .scale1, visionLength: visionLength
+            ).1
             single.compile(inputs: branch, frequencies)
             try graph.openStore(path, flags: .readOnly) {
               try $0.read("dit", model: single, strict: true)
@@ -510,7 +682,8 @@ final class MiniMaxH3Tests: XCTestCase {
       modulation.full(0.1)
       let model = MiniMaxH3(
         hiddenSize: 8, layers: 1, textLength: 8, audioLength: 4, videoFrames: 2,
-        videoHeight: 4, videoWidth: 6, usesFlashAttention: .scale1, referenceImageSizes: [(4, 6)])
+        videoHeight: 4, videoWidth: 6, usesFlashAttention: .scale1, referenceImageSizes: [(4, 6)]
+      ).1
       let inputs: [DynamicGraph.AnyTensor] =
         [audio, text, rotary, firstFrame] + Array(repeating: modulation, count: 28)
       let plainRotary = graph.variable(
@@ -520,7 +693,8 @@ final class MiniMaxH3Tests: XCTestCase {
         ).toGPU(0))
       let plain = MiniMaxH3(
         hiddenSize: 8, layers: 1, textLength: 8, audioLength: 4, videoFrames: 2,
-        videoHeight: 4, videoWidth: 6, usesFlashAttention: .scale1)
+        videoHeight: 4, videoWidth: 6, usesFlashAttention: .scale1
+      ).1
       _ = plain(
         inputs: video, [audio, text, plainRotary] + Array(repeating: modulation, count: 22))
       graph.openStore(path) { $0.write("dit", model: plain) }
@@ -532,7 +706,8 @@ final class MiniMaxH3Tests: XCTestCase {
       let withVision = MiniMaxH3(
         hiddenSize: 8, layers: 1, textLength: 8, audioLength: 4, videoFrames: 2,
         videoHeight: 4, videoWidth: 6, usesFlashAttention: .scale1, referenceImageSizes: [(4, 6)],
-        visionLength: 1)
+        visionLength: 1
+      ).1
       let groupedRotary = graph.variable(
         Tensor<Float16>(
           from: MiniMaxH3RotaryEmbedding(
@@ -586,7 +761,8 @@ final class MiniMaxH3Tests: XCTestCase {
       let multiple = MiniMaxH3(
         hiddenSize: 8, layers: 1, textLength: 8, audioLength: 4, videoFrames: 2,
         videoHeight: 4, videoWidth: 6, usesFlashAttention: .scale1,
-        referenceImageSizes: [(4, 6), (8, 4)])
+        referenceImageSizes: [(4, 6), (8, 4)]
+      ).1
       let multipleInputs: [DynamicGraph.AnyTensor] =
         [audio, text, multipleRotary, firstFrame, reference]
         + Array(repeating: modulation, count: 28)

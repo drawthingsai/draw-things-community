@@ -803,6 +803,23 @@ public enum LoRAExporter {
           let headDimension = names.headDimension
           if names.interleavedIndices.contains(index), numberOfHeads > 0, headDimension > 0 {
             // Inverse of TensorDescriptor's interleaved .O write transform.
+            if let dimension = names.interleavedDimension, dimension != headDimension {
+              precondition(dimension > 0 && dimension <= headDimension && dimension % 2 == 0)
+              let rows = tensor.reshaped(
+                format: tensor.format, shape: [numberOfHeads, headDimension, -1])
+              let width = rows.shape[2]
+              var result = rows.copied()
+              result[0..<numberOfHeads, 0..<dimension, 0..<width] = graph.withNoGrad {
+                graph.variable(
+                  rows[0..<numberOfHeads, 0..<dimension, 0..<width].copied().reshaped(
+                    format: tensor.format, shape: [numberOfHeads, dimension / 2, 2, width]
+                  ).toGPU()
+                ).transposed(1, 2).reshaped(
+                  format: tensor.format, shape: [numberOfHeads, dimension, width]
+                ).toCPU().rawValue
+              }
+              return result.reshaped(format: tensor.format, shape: tensor.shape)
+            }
             tensor = graph.withNoGrad {
               Tensor<T>(
                 from: graph.variable(

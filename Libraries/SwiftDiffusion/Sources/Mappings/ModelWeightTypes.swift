@@ -17,6 +17,8 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
   public let interleavedIndices: Set<Int>
   public let numberOfHeads: Int
   public let headDimension: Int
+  // A prefix of each head can be interleaved while its remaining channels stay unchanged.
+  public let interleavedDimension: Int?
   private let underlyingArray: [String]
 
   public typealias Element = String
@@ -35,7 +37,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
     _ array: [Element], format: Format = .O, offsets: [Int]? = nil, scale: Float = 1,
     shift: Float = 0,
     index: Int = 0, isBF16: Bool = false, interleavedIndices: Set<Int> = [],
-    numberOfHeads: Int = 0, headDimension: Int = 0
+    numberOfHeads: Int = 0, headDimension: Int = 0, interleavedDimension: Int? = nil
   ) {
     self.underlyingArray = array
     self.format = format
@@ -47,6 +49,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
     self.interleavedIndices = interleavedIndices
     self.numberOfHeads = numberOfHeads
     self.headDimension = headDimension
+    self.interleavedDimension = interleavedDimension
   }
 
   public init(arrayLiteral elements: Element...) {
@@ -60,6 +63,7 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
     self.interleavedIndices = []
     self.numberOfHeads = 0
     self.headDimension = 0
+    self.interleavedDimension = nil
   }
 }
 

@@ -50,8 +50,15 @@ public enum LoRAImporter {
     let unetMapper: ModelWeightMapper
     let unetFixedMapper: ModelWeightMapper
     switch version {
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .longcatVideoAvatar1_5:
       fatalError()
+    case .minimaxH3:
+      (unetMapper, unet) = MiniMaxH3(
+        hiddenSize: 5_376, layers: 50, textLength: 2, audioLength: 4, videoFrames: 1,
+        videoHeight: 64, videoWidth: 64, usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = MiniMaxH3Fixed(
+        timesteps: 1, hiddenSize: 5_376, layers: 50, textLength: (0, 2),
+        usesFlashAttention: .scale1)
     case .sdxlBase:
       UNetMapping = StableDiffusionMapping.UNetXLBase
       UNetMappingFixed = StableDiffusionMapping.UNetXLBaseFixed
@@ -269,8 +276,11 @@ public enum LoRAImporter {
       let inputDim: Int
       let conditionalLength: Int
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5:
         fatalError()
+      case .minimaxH3:
+        inputDim = 24
+        conditionalLength = 5_120
       case .v1:
         inputDim = 4
         conditionalLength = 768
@@ -347,8 +357,16 @@ public enum LoRAImporter {
       let isCfgEnabled: Bool
       let isGuidanceEmbedEnabled: Bool
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5:
         fatalError()
+      case .minimaxH3:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        tEmb = nil
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 2, 5_120), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 2, 256), of: FloatType.self),
+        ]
       case .sdxlBase, .ssd1b:
         isCfgEnabled = true
         isGuidanceEmbedEnabled = false
@@ -698,7 +716,7 @@ public enum LoRAImporter {
       // These values doesn't matter, it won't affect the model shape, just the input vector.
       let vectors: [DynamicGraph.Tensor<FloatType>]
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5:
         fatalError()
       case .sdxlBase, .ssd1b:
         vectors = [graph.variable(.CPU, .WC(2, 2816), of: FloatType.self)]
@@ -710,14 +728,24 @@ public enum LoRAImporter {
         .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
         .zImage,
         .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .cosmos2_5_2b, .ideogram4,
-        .krea2:
+        .krea2, .minimaxH3:
         vectors = []
       case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5:
         fatalError()
+      case .minimaxH3:
+        cArr =
+          [
+            graph.variable(.CPU, .HWC(1, 4, 32), of: FloatType.self),
+            graph.variable(.CPU, .HWC(1, 2, 5_376), of: FloatType.self),
+            graph.variable(.CPU, .NHWC(1, 1_030, 1, 128), of: FloatType.self),
+          ]
+          + (0..<(50 * 18 + 4)).map { _ in
+            graph.variable(.CPU, .HWC(1, 1, 5_376), of: FloatType.self)
+          }
       case .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .wurstchenStageC, .wurstchenStageB, .pixart,
         .sd3, .sd3Large, .auraflow:
         // These values doesn't matter, it won't affect the model shape, just the input vector.
@@ -1381,6 +1409,16 @@ public enum LoRAImporter {
         }
         return version
       }
+      let isMiniMaxH3 = stateDict.contains { key, descriptor in
+        descriptor.shape.last == 5_376 && key.hasSuffix(".lora_down.weight")
+          && (key.contains("token_refiner_refiner_blocks_")
+            || key.contains("token_refiner_blocks_")
+            || key.contains("transformer_blocks_49_attn_")
+            || key.contains("blocks_49_attn_qkv_proj"))
+      }
+      if isMiniMaxH3 {
+        return forceVersionOr(.minimaxH3)
+      }
       if isErnieImage {
         return forceVersionOr(.ernieImage)
       }
@@ -1503,7 +1541,7 @@ public enum LoRAImporter {
     var textModelMapping1: ModelWeightMapping
     var textModelMapping2: ModelWeightMapping
     switch modelVersion {
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .longcatVideoAvatar1_5:
       fatalError()
     case .v1:
       textModelMapping1 = StableDiffusionMapping.CLIPTextModel
@@ -1559,7 +1597,7 @@ public enum LoRAImporter {
     case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .auraflow:
@@ -1782,8 +1820,10 @@ public enum LoRAImporter {
     try graph.openStore(LoRAZoo.filePathForModelDownloaded(filename)) { store in
       store.removeAll()
       switch modelVersion {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5:
         fatalError()
+      case .minimaxH3:
+        break
       case .v1, .v2, .kandinsky21, .svdI2v:
         if let tensorDesc = stateDict["emb_params"] {
           try archive.with(tensorDesc) {
@@ -1984,7 +2024,7 @@ public enum LoRAImporter {
       let modelPrefix: String
       let modelPrefixFixed: String
       switch modelVersion {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5:
         fatalError()
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v:
         modelPrefix = "unet"
@@ -1994,7 +2034,8 @@ public enum LoRAImporter {
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+        .minimaxH3:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

@@ -352,41 +352,88 @@ extension UNetFixedEncoder {
         noise.randn()
         return 0.999 * image + 0.001 * noise
       }
-      let unetFixed = MiniMaxH3Fixed(
-        timesteps: timesteps.count, hiddenSize: 5_376, layers: 50,
-        textLength: (
-          isCfgEnabled ? tokenLengthUncond + visionLength : 0, tokenLengthCond + visionLength
-        ),
-        usesFlashAttention: valueOr(usesFlashAttention, .scale1),
-        referenceImageCount: referenceImageCount,
-        visionLength: visionLength)
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      let unetFixed: Model
+      if shouldRunLoRASeparately {
+        configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        unetFixed =
+          LoRAMiniMaxH3Fixed(
+            timesteps: timesteps.count, hiddenSize: 5_376, layers: 50,
+            textLength: (
+              isCfgEnabled ? tokenLengthUncond + visionLength : 0, tokenLengthCond + visionLength
+            ),
+            usesFlashAttention: valueOr(usesFlashAttention, .scale1),
+            referenceImageCount: referenceImageCount,
+            visionLength: visionLength, LoRAConfiguration: configuration
+          ).1
+      } else {
+        unetFixed =
+          MiniMaxH3Fixed(
+            timesteps: timesteps.count, hiddenSize: 5_376, layers: 50,
+            textLength: (
+              isCfgEnabled ? tokenLengthUncond + visionLength : 0, tokenLengthCond + visionLength
+            ),
+            usesFlashAttention: valueOr(usesFlashAttention, .scale1),
+            referenceImageCount: referenceImageCount,
+            visionLength: visionLength
+          ).1
+      }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [text, timestepFrequencies] + references)
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]", to: unetFixed.parameters)
-      if !loadedFromWeightsCache {
+      if !loadedFromWeightsCache || !lora.isEmpty {
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) { store in
-          try! store.read(
-            "dit", model: unetFixed, strict: true,
-            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
-          ) { name, _, _, _ in
-            // Match the text bias to the 1/4 pre-scaling of the context embedder input.
-            if name.hasSuffix("[t-context_embedder-0-1]"),
-              let tensor = store.read(
-                name,
-                codec: [
-                  .ezm7, .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap), .q6p,
-                  .q8p, .i8x,
-                ])
-            {
+          LoRALoader.openStore(graph, lora: lora) { loader in
+            let mapping = Dictionary(uniqueKeysWithValues: (0..<50).map { ($0, $0) })
+            try! store.read(
+              "dit", model: unetFixed, strict: lora.isEmpty,
+              codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+            ) { name, dataType, format, shape in
+              let result: DynamicGraph.Store.ModelReaderResult
+              if shouldRunLoRASeparately {
+                result = loader.concatenateLoRA(
+                  graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge,
+                  name: name, store: store, dataType: dataType, format: format, shape: shape,
+                  of: FloatType.self)
+                if case .continue(let updatedName, _, _) = result {
+                  guard updatedName == name else { return result }
+                  if loadedFromWeightsCache { return .fail }
+                }
+              } else if !lora.isEmpty {
+                result = loader.mergeLoRA(
+                  graph, name: name, store: store, dataType: dataType, shape: shape,
+                  of: FloatType.self)
+              } else {
+                result = .continue(name)
+              }
+              // Match the text bias to the 1/4 pre-scaling of the context embedder input.
+              guard name.hasSuffix("[t-context_embedder-0-1]") else { return result }
+              let tensor: AnyTensor?
+              switch result {
+              case .final(let value):
+                tensor = value
+              case .continue:
+                tensor = store.read(
+                  name, codec: [.ezm7, externalData, .q6p, .q8p, .i8x])
+              case .fail:
+                return result
+              }
+              guard let tensor else { return result }
               return .final(
                 graph.withNoGrad {
                   (0.25 * graph.variable(Tensor<FloatType>(from: tensor)).toGPU(0)).rawValue.toCPU()
                 })
             }
-            return .continue(name)
           }
         }
       }
