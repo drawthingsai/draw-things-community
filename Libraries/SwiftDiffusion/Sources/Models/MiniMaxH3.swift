@@ -153,7 +153,8 @@ public func MiniMaxH3RotaryEmbedding(
 private func H3Attention(
   prefix: (String, String), hiddenSize: Int, sequenceLength: Int, isRoPEEnabled: Bool,
   scaleFactor: Int,
-  usesFlashAttention: FlashAttentionLevel, segments: [Int] = [], name: String = ""
+  usesFlashAttention: FlashAttentionLevel, segments: [Int] = [], startIndex: Int = 0,
+  name: String = ""
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = isRoPEEnabled ? Input() : nil
@@ -167,6 +168,11 @@ private func H3Attention(
     epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
   let normK = RMSNorm(
     epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_k" : "\(name)_norm_k")
+  toQ.startIndex = startIndex
+  toK.startIndex = startIndex
+  toV.startIndex = startIndex
+  normQ.startIndex = startIndex
+  normK.startIndex = startIndex
   let qProjected = toQ(x)
   let kProjected = toK(x)
   let vProjected = scaleFactor > 1 ? toV((1 / Float(scaleFactor)) * x) : toV(x)
@@ -204,6 +210,7 @@ private func H3Attention(
   let attended = attentionOutput.reshaped([1, sequenceLength, 7_168])
   let out = Dense(
     count: hiddenSize, noBias: true, name: name.isEmpty ? "o" : "\(name)_o")
+  out.startIndex = startIndex
   let projected: Model.IO
   if scaleFactor > 1 {
     projected = Float(scaleFactor) * out(attended).to(.Float32)
@@ -250,7 +257,8 @@ private func H3Attention(
 }
 
 private func H3SwiGLU(
-  prefix: (String, String), hiddenSize: Int, scaleFactor: Int? = nil, name: String = ""
+  prefix: (String, String), hiddenSize: Int, scaleFactor: Int? = nil, startIndex: Int = 0,
+  name: String = ""
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let up = Dense(
@@ -259,6 +267,9 @@ private func H3SwiGLU(
     count: 14_336, noBias: true, name: name.isEmpty ? "gate" : "\(name)_gate")
   let down = Dense(
     count: hiddenSize, noBias: true, name: name.isEmpty ? "down" : "\(name)_down")
+  up.startIndex = startIndex
+  gate.startIndex = startIndex
+  down.startIndex = startIndex
   let upOutput = scaleFactor.map { up((1 / Float($0)) * x) } ?? up(x)
   let out = down(Functional.swishMul(value: upOutput, gate: gate(x))).to(.Float32)
   let mapper: ModelWeightMapper = { format in
@@ -281,7 +292,7 @@ private func H3SwiGLU(
 private func H3TransformerBlock(
   prefix: (String, String), hiddenSize: Int, textLength: Int, audioLength: Int, videoLength: Int,
   conditionLength: Int,
-  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?
+  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int
 ) -> (ModelWeightMapper, Model) {
   let sequenceLength = textLength + conditionLength + audioLength + videoLength
   let x = Input()
@@ -299,10 +310,11 @@ private func H3TransformerBlock(
   ]
   spans.removeAll { $0.range.isEmpty }
   let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm1")
+  norm1.startIndex = startIndex
   let (attentionMapper, attention) = H3Attention(
     prefix: ("\(prefix.0).attn", "\(prefix.1).attn"), hiddenSize: hiddenSize,
     sequenceLength: sequenceLength, isRoPEEnabled: true, scaleFactor: 8,
-    usesFlashAttention: usesFlashAttention)
+    usesFlashAttention: usesFlashAttention, startIndex: startIndex)
   let normed1 = norm1(x).to(.Float16)
   let attentionInputs = spans.map { span in
     let modality = span.modality
@@ -328,8 +340,10 @@ private func H3TransformerBlock(
     x
     + Concat(axis: 1)(gatedAttention)
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm2")
+  norm2.startIndex = startIndex
   let (feedForwardMapper, feedForward) = H3SwiGLU(
-    prefix: ("\(prefix.0).mlp", "\(prefix.1).ff"), hiddenSize: hiddenSize, scaleFactor: scaleFactor)
+    prefix: ("\(prefix.0).mlp", "\(prefix.1).ff"), hiddenSize: hiddenSize, scaleFactor: scaleFactor,
+    startIndex: startIndex)
   let normed2 = norm2(out).to(.Float16)
   let feedForwardInputs = spans.map { span in
     let modality = span.modality
@@ -639,11 +653,15 @@ public func MiniMaxH3Fixed(
 }
 
 public func MiniMaxH3(
-  hiddenSize: Int, layers: Int, textLength: Int, audioLength: Int, videoFrames: Int,
+  hiddenSize: Int, layers: Int, startLayer: Int = 0, textLength: Int, audioLength: Int,
+  videoFrames: Int,
   videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel,
-  referenceImageSizes: [(height: Int, width: Int)] = [], visionLength: Int = 0
+  referenceImageSizes: [(height: Int, width: Int)] = [], visionLength: Int = 0,
+  outputResidual: Bool = false, inputResidual: Bool = false
 ) -> (ModelWeightMapper, Model) {
-  precondition(hiddenSize > 0 && layers > 0)
+  precondition(hiddenSize > 0 && layers >= 0 && startLayer >= 0)
+  precondition(startLayer > 0 || layers > 0)
+  precondition(!inputResidual || (startLayer > 0 && layers == 0))
   precondition(videoHeight % 2 == 0 && videoWidth % 2 == 0)
   let video = Input()
   let audio = Input()
@@ -651,44 +669,75 @@ public func MiniMaxH3(
   let rot = Input()
   let referenceImages = referenceImageSizes.map { _ in Input() }
   let perLayerConditions = referenceImages.isEmpty ? 18 : 24
-  let fixedConditions = (0..<(layers * perLayerConditions + 4)).map { _ in Input() }
+  let fixedConditions = (0..<(layers * perLayerConditions)).map { _ in Input() }
   let videoLength = videoFrames * videoHeight / 2 * videoWidth / 2
   let conditionLength = referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
   let sequenceLength = textLength + conditionLength + audioLength + videoLength
 
-  let xEmbedder = Convolution(
-    groups: 1, filters: hiddenSize, filterSize: [2, 2],
-    hint: Hint(stride: [2, 2]), format: .OIHW, name: "proj_in")
-  let audioInput = Dense(count: hiddenSize, name: "audio_proj_in")
-  let audioRows = audioInput(audio).to(.Float32)
-  let videoRows = xEmbedder(video).reshaped(.HWC(1, videoLength, hiddenSize)).to(.Float32)
-  let textRows: Model.IO
-  if visionLength > 0 {
-    textRows = contextRows.reshaped(
-      [1, textLength - visionLength, hiddenSize],
-      strides: [textLength * hiddenSize, hiddenSize, 1]
-    ).contiguous()
-  } else {
-    textRows = contextRows
-  }
-  // Each modulation group stays contiguous throughout all transformer blocks.
-  var rows = [textRows]
-  for (image, size) in zip(referenceImages, referenceImageSizes) {
-    rows.append(
-      image.reshaped(.HWC(1, size.height / 2 * (size.width / 2), hiddenSize)).to(.Float32))
-  }
-  rows.append(audioRows)
-  if visionLength > 0 {
-    rows.append(
-      contextRows.reshaped(
-        [1, visionLength, hiddenSize], offset: [0, textLength - visionLength, 0],
-        strides: [textLength * hiddenSize, hiddenSize, 1]
-      ).contiguous())
-  }
-  rows.append(videoRows)
-  var out = Concat(axis: 1)(rows)
+  var out: Model.IO
+  var inputs: [Model.IO]
+  let outputType: Model.IO
   var mappers = [ModelWeightMapper]()
-  for layer in 0..<layers {
+  if startLayer == 0 {
+    let xEmbedder = Convolution(
+      groups: 1, filters: hiddenSize, filterSize: [2, 2],
+      hint: Hint(stride: [2, 2]), format: .OIHW, name: "proj_in")
+    let audioInput = Dense(count: hiddenSize, name: "audio_proj_in")
+    let audioRows = audioInput(audio).to(.Float32)
+    let videoRows = xEmbedder(video).reshaped(.HWC(1, videoLength, hiddenSize)).to(.Float32)
+    let textRows: Model.IO
+    if visionLength > 0 {
+      textRows = contextRows.reshaped(
+        [1, textLength - visionLength, hiddenSize],
+        strides: [textLength * hiddenSize, hiddenSize, 1]
+      ).contiguous()
+    } else {
+      textRows = contextRows
+    }
+    // Each modulation group stays contiguous throughout all transformer blocks.
+    var rows = [textRows]
+    for (image, size) in zip(referenceImages, referenceImageSizes) {
+      rows.append(
+        image.reshaped(.HWC(1, size.height / 2 * (size.width / 2), hiddenSize)).to(.Float32))
+    }
+    rows.append(audioRows)
+    if visionLength > 0 {
+      rows.append(
+        contextRows.reshaped(
+          [1, visionLength, hiddenSize], offset: [0, textLength - visionLength, 0],
+          strides: [textLength * hiddenSize, hiddenSize, 1]
+        ).contiguous())
+    }
+    rows.append(videoRows)
+    out = Concat(axis: 1)(rows)
+    inputs = [video, audio, contextRows, rot] + referenceImages
+    outputType = video
+    mappers.append { format in
+      switch format {
+      case .diffusers:
+        return [
+          "proj_in.weight": [xEmbedder.weight.name],
+          "proj_in.bias": [xEmbedder.bias.name],
+          "audio_proj_in.weight": [audioInput.weight.name],
+          "audio_proj_in.bias": [audioInput.bias.name],
+        ]
+      case .generativeModels:
+        return [
+          "video_patch_proj.weight": [xEmbedder.weight.name],
+          "video_patch_proj.bias": [xEmbedder.bias.name],
+          "audio_patch_proj.weight": [audioInput.weight.name],
+          "audio_patch_proj.bias": [audioInput.bias.name],
+        ]
+      }
+    }
+  } else {
+    let hiddenState = Input()
+    out = hiddenState
+    inputs = [hiddenState, rot]
+    outputType = rot
+  }
+  let embedded = out
+  for layer in startLayer..<(startLayer + layers) {
     // Keep FFN outliers in FP16 range; the residual branch restores the factor in FP32.
     let scaleFactor: Int
     switch layer {
@@ -714,9 +763,9 @@ public func MiniMaxH3(
       textLength: textLength - visionLength, audioLength: audioLength,
       videoLength: visionLength + videoLength, conditionLength: conditionLength,
       usesFlashAttention: usesFlashAttention,
-      scaleFactor: scaleFactor)
+      scaleFactor: scaleFactor, startIndex: startLayer)
     mappers.append(mapper)
-    let conditionOffset = layer * perLayerConditions
+    let conditionOffset = (layer - startLayer) * perLayerConditions
     out =
       block(
         [out, rot]
@@ -726,13 +775,35 @@ public func MiniMaxH3(
             ]))[0]
   }
 
+  inputs += fixedConditions
+  if startLayer == 0 && outputResidual {
+    precondition(layers == 1)
+    let mapper: ModelWeightMapper = { format in
+      var mapping = ModelWeightMapping()
+      for mapper in mappers {
+        mapping.merge(mapper(format)) { v, _ in v }
+      }
+      return mapping
+    }
+    // Run the input projections and block 0 once; the tail consumes this exact hidden state.
+    return (mapper, Model(inputs, [out, out - embedded]))
+  }
+  let videoShift = Input()
+  let videoScale = Input()
+  let audioShift = Input()
+  let audioScale = Input()
+  inputs += [videoShift, videoScale, audioShift, audioScale]
+  var residualOutputs = [Model.IO]()
+  if inputResidual {
+    let residual = Input()
+    inputs.append(residual)
+    out = out + residual
+  }
+  if outputResidual {
+    residualOutputs = [out - embedded]
+  }
   let outputNorm = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm_out")
   let normalized = outputNorm(out)
-  let finalConditionOffset = layers * perLayerConditions
-  let videoShift = fixedConditions[finalConditionOffset]
-  let videoScale = fixedConditions[finalConditionOffset + 1]
-  let audioShift = fixedConditions[finalConditionOffset + 2]
-  let audioScale = fixedConditions[finalConditionOffset + 3]
   let audioOutRows =
     normalized.reshaped(
       [1, audioLength, hiddenSize], offset: [0, textLength - visionLength + conditionLength, 0],
@@ -758,20 +829,12 @@ public func MiniMaxH3(
     }
     switch format {
     case .diffusers:
-      mapping["proj_in.weight"] = [xEmbedder.weight.name]
-      mapping["proj_in.bias"] = [xEmbedder.bias.name]
-      mapping["audio_proj_in.weight"] = [audioInput.weight.name]
-      mapping["audio_proj_in.bias"] = [audioInput.bias.name]
       mapping["proj_out.weight"] = [videoOutput.weight.name]
       mapping["proj_out.bias"] = [videoOutput.bias.name]
       mapping["audio_proj_out.weight"] = [audioOutput.weight.name]
       mapping["audio_proj_out.bias"] = [audioOutput.bias.name]
       mapping["norm_out.norm.weight"] = [outputNorm.weight.name]
     case .generativeModels:
-      mapping["video_patch_proj.weight"] = [xEmbedder.weight.name]
-      mapping["video_patch_proj.bias"] = [xEmbedder.bias.name]
-      mapping["audio_patch_proj.weight"] = [audioInput.weight.name]
-      mapping["audio_patch_proj.bias"] = [audioInput.bias.name]
       mapping["final_layer.video_out.weight"] = [videoOutput.weight.name]
       mapping["final_layer.video_out.bias"] = [videoOutput.bias.name]
       mapping["final_layer.audio_out.weight"] = [audioOutput.weight.name]
@@ -783,9 +846,9 @@ public func MiniMaxH3(
   return (
     mapper,
     Model(
-      [video, audio, contextRows, rot] + referenceImages
-        + fixedConditions,
-      [projectedVideo.to(of: video), projectedAudio.to(of: audio)])
+      inputs,
+      [projectedVideo.to(of: outputType), projectedAudio.to(of: startLayer == 0 ? audio : rot)]
+        + residualOutputs)
   )
 }
 
@@ -793,23 +856,26 @@ private func LoRAH3Attention(
   prefix: (String, String), hiddenSize: Int, layerIndex: Int,
   configuration: LoRANetworkConfiguration, sequenceLength: Int,
   isRoPEEnabled: Bool, scaleFactor: Int,
-  usesFlashAttention: FlashAttentionLevel, segments: [Int] = [], name: String = ""
+  usesFlashAttention: FlashAttentionLevel, segments: [Int] = [], startIndex: Int = 0,
+  name: String = ""
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let rot = isRoPEEnabled ? Input() : nil
   let toQ = LoRADense(
     count: 7_168, configuration: configuration, noBias: true, index: layerIndex,
-    name: name.isEmpty ? "q" : "\(name)_q")
+    startIndex: startIndex, name: name.isEmpty ? "q" : "\(name)_q")
   let toK = LoRADense(
     count: 7_168, configuration: configuration, noBias: true, index: layerIndex,
-    name: name.isEmpty ? "k" : "\(name)_k")
+    startIndex: startIndex, name: name.isEmpty ? "k" : "\(name)_k")
   let toV = LoRADense(
     count: 7_168, configuration: configuration, noBias: true, index: layerIndex,
-    name: name.isEmpty ? "v" : "\(name)_v")
+    startIndex: startIndex, name: name.isEmpty ? "v" : "\(name)_v")
   let normQ = RMSNorm(
     epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_q" : "\(name)_norm_q")
   let normK = RMSNorm(
     epsilon: 1e-5, axis: [3], name: name.isEmpty ? "norm_k" : "\(name)_norm_k")
+  normQ.startIndex = startIndex
+  normK.startIndex = startIndex
   let qProjected = toQ(x)
   let kProjected = toK(x)
   let vProjected = scaleFactor > 1 ? toV((1 / Float(scaleFactor)) * x) : toV(x)
@@ -847,7 +913,7 @@ private func LoRAH3Attention(
   let attended = attentionOutput.reshaped([1, sequenceLength, 7_168])
   let out = LoRADense(
     count: hiddenSize, configuration: configuration, noBias: true, index: layerIndex,
-    name: name.isEmpty ? "o" : "\(name)_o")
+    startIndex: startIndex, name: name.isEmpty ? "o" : "\(name)_o")
   let projected: Model.IO
   if scaleFactor > 1 {
     projected = Float(scaleFactor) * out(attended).to(.Float32)
@@ -896,18 +962,18 @@ private func LoRAH3Attention(
 private func LoRAH3SwiGLU(
   prefix: (String, String), hiddenSize: Int, layerIndex: Int,
   configuration: LoRANetworkConfiguration,
-  scaleFactor: Int? = nil, name: String = ""
+  scaleFactor: Int? = nil, startIndex: Int = 0, name: String = ""
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
   let up = LoRADense(
     count: 14_336, configuration: configuration, noBias: true, index: layerIndex,
-    name: name.isEmpty ? "up" : "\(name)_up")
+    startIndex: startIndex, name: name.isEmpty ? "up" : "\(name)_up")
   let gate = LoRADense(
     count: 14_336, configuration: configuration, noBias: true, index: layerIndex,
-    name: name.isEmpty ? "gate" : "\(name)_gate")
+    startIndex: startIndex, name: name.isEmpty ? "gate" : "\(name)_gate")
   let down = LoRADense(
     count: hiddenSize, configuration: configuration, noBias: true, index: layerIndex,
-    name: name.isEmpty ? "down" : "\(name)_down")
+    startIndex: startIndex, name: name.isEmpty ? "down" : "\(name)_down")
   let upOutput = scaleFactor.map { up((1 / Float($0)) * x) } ?? up(x)
   let out = down(Functional.swishMul(value: upOutput, gate: gate(x))).to(.Float32)
   let mapper: ModelWeightMapper = { format in
@@ -932,7 +998,7 @@ private func LoRAH3TransformerBlock(
   configuration: LoRANetworkConfiguration, textLength: Int,
   audioLength: Int, videoLength: Int,
   conditionLength: Int,
-  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?
+  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int
 ) -> (ModelWeightMapper, Model) {
   let sequenceLength = textLength + conditionLength + audioLength + videoLength
   let x = Input()
@@ -950,11 +1016,12 @@ private func LoRAH3TransformerBlock(
   ]
   spans.removeAll { $0.range.isEmpty }
   let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm1")
+  norm1.startIndex = startIndex
   let (attentionMapper, attention) = LoRAH3Attention(
     prefix: ("\(prefix.0).attn", "\(prefix.1).attn"), hiddenSize: hiddenSize,
     layerIndex: layerIndex, configuration: configuration,
     sequenceLength: sequenceLength, isRoPEEnabled: true, scaleFactor: 8,
-    usesFlashAttention: usesFlashAttention)
+    usesFlashAttention: usesFlashAttention, startIndex: startIndex)
   let normed1 = norm1(x).to(.Float16)
   let attentionInputs = spans.map { span in
     let modality = span.modality
@@ -980,10 +1047,11 @@ private func LoRAH3TransformerBlock(
     x
     + Concat(axis: 1)(gatedAttention)
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm2")
+  norm2.startIndex = startIndex
   let (feedForwardMapper, feedForward) = LoRAH3SwiGLU(
     prefix: ("\(prefix.0).mlp", "\(prefix.1).ff"), hiddenSize: hiddenSize, layerIndex: layerIndex,
     configuration: configuration,
-    scaleFactor: scaleFactor)
+    scaleFactor: scaleFactor, startIndex: startIndex)
   let normed2 = norm2(out).to(.Float16)
   let feedForwardInputs = spans.map { span in
     let modality = span.modality
@@ -1314,14 +1382,18 @@ public func LoRAMiniMaxH3Fixed(
 }
 
 public func LoRAMiniMaxH3(
-  hiddenSize: Int, layers: Int, textLength: Int, audioLength: Int, videoFrames: Int,
+  hiddenSize: Int, layers: Int, startLayer: Int = 0, textLength: Int, audioLength: Int,
+  videoFrames: Int,
   videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel,
   referenceImageSizes: [(height: Int, width: Int)] = [], visionLength: Int = 0,
+  outputResidual: Bool = false, inputResidual: Bool = false,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let configuration = LoRAConfiguration
   let layerIndex = 0
-  precondition(hiddenSize > 0 && layers > 0)
+  precondition(hiddenSize > 0 && layers >= 0 && startLayer >= 0)
+  precondition(startLayer > 0 || layers > 0)
+  precondition(!inputResidual || (startLayer > 0 && layers == 0))
   precondition(videoHeight % 2 == 0 && videoWidth % 2 == 0)
   let video = Input()
   let audio = Input()
@@ -1329,45 +1401,76 @@ public func LoRAMiniMaxH3(
   let rot = Input()
   let referenceImages = referenceImageSizes.map { _ in Input() }
   let perLayerConditions = referenceImages.isEmpty ? 18 : 24
-  let fixedConditions = (0..<(layers * perLayerConditions + 4)).map { _ in Input() }
+  let fixedConditions = (0..<(layers * perLayerConditions)).map { _ in Input() }
   let videoLength = videoFrames * videoHeight / 2 * videoWidth / 2
   let conditionLength = referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
   let sequenceLength = textLength + conditionLength + audioLength + videoLength
 
-  let xEmbedder = LoRAConvolution(
-    groups: 1, filters: hiddenSize, filterSize: [2, 2], configuration: configuration,
-    hint: Hint(stride: [2, 2]), format: .OIHW, index: layerIndex, name: "proj_in")
-  let audioInput = LoRADense(
-    count: hiddenSize, configuration: configuration, index: layerIndex, name: "audio_proj_in")
-  let audioRows = audioInput(audio).to(.Float32)
-  let videoRows = xEmbedder(video).reshaped(.HWC(1, videoLength, hiddenSize)).to(.Float32)
-  let textRows: Model.IO
-  if visionLength > 0 {
-    textRows = contextRows.reshaped(
-      [1, textLength - visionLength, hiddenSize],
-      strides: [textLength * hiddenSize, hiddenSize, 1]
-    ).contiguous()
-  } else {
-    textRows = contextRows
-  }
-  // Each modulation group stays contiguous throughout all transformer blocks.
-  var rows = [textRows]
-  for (image, size) in zip(referenceImages, referenceImageSizes) {
-    rows.append(
-      image.reshaped(.HWC(1, size.height / 2 * (size.width / 2), hiddenSize)).to(.Float32))
-  }
-  rows.append(audioRows)
-  if visionLength > 0 {
-    rows.append(
-      contextRows.reshaped(
-        [1, visionLength, hiddenSize], offset: [0, textLength - visionLength, 0],
-        strides: [textLength * hiddenSize, hiddenSize, 1]
-      ).contiguous())
-  }
-  rows.append(videoRows)
-  var out = Concat(axis: 1)(rows)
+  var out: Model.IO
+  var inputs: [Model.IO]
+  let outputType: Model.IO
   var mappers = [ModelWeightMapper]()
-  for layerIndex in 0..<layers {
+  if startLayer == 0 {
+    let xEmbedder = LoRAConvolution(
+      groups: 1, filters: hiddenSize, filterSize: [2, 2], configuration: configuration,
+      hint: Hint(stride: [2, 2]), format: .OIHW, index: layerIndex, name: "proj_in")
+    let audioInput = LoRADense(
+      count: hiddenSize, configuration: configuration, index: layerIndex, name: "audio_proj_in")
+    let audioRows = audioInput(audio).to(.Float32)
+    let videoRows = xEmbedder(video).reshaped(.HWC(1, videoLength, hiddenSize)).to(.Float32)
+    let textRows: Model.IO
+    if visionLength > 0 {
+      textRows = contextRows.reshaped(
+        [1, textLength - visionLength, hiddenSize],
+        strides: [textLength * hiddenSize, hiddenSize, 1]
+      ).contiguous()
+    } else {
+      textRows = contextRows
+    }
+    // Each modulation group stays contiguous throughout all transformer blocks.
+    var rows = [textRows]
+    for (image, size) in zip(referenceImages, referenceImageSizes) {
+      rows.append(
+        image.reshaped(.HWC(1, size.height / 2 * (size.width / 2), hiddenSize)).to(.Float32))
+    }
+    rows.append(audioRows)
+    if visionLength > 0 {
+      rows.append(
+        contextRows.reshaped(
+          [1, visionLength, hiddenSize], offset: [0, textLength - visionLength, 0],
+          strides: [textLength * hiddenSize, hiddenSize, 1]
+        ).contiguous())
+    }
+    rows.append(videoRows)
+    out = Concat(axis: 1)(rows)
+    inputs = [video, audio, contextRows, rot] + referenceImages
+    outputType = video
+    mappers.append { format in
+      switch format {
+      case .diffusers:
+        return [
+          "proj_in.weight": [xEmbedder.weight.name],
+          "proj_in.bias": [xEmbedder.bias.name],
+          "audio_proj_in.weight": [audioInput.weight.name],
+          "audio_proj_in.bias": [audioInput.bias.name],
+        ]
+      case .generativeModels:
+        return [
+          "video_patch_proj.weight": [xEmbedder.weight.name],
+          "video_patch_proj.bias": [xEmbedder.bias.name],
+          "audio_patch_proj.weight": [audioInput.weight.name],
+          "audio_patch_proj.bias": [audioInput.bias.name],
+        ]
+      }
+    }
+  } else {
+    let hiddenState = Input()
+    out = hiddenState
+    inputs = [hiddenState, rot]
+    outputType = rot
+  }
+  let embedded = out
+  for layerIndex in startLayer..<(startLayer + layers) {
     // Keep FFN outliers in FP16 range; the residual branch restores the factor in FP32.
     let scaleFactor: Int
     switch layerIndex {
@@ -1394,9 +1497,9 @@ public func LoRAMiniMaxH3(
       textLength: textLength - visionLength, audioLength: audioLength,
       videoLength: visionLength + videoLength, conditionLength: conditionLength,
       usesFlashAttention: usesFlashAttention,
-      scaleFactor: scaleFactor)
+      scaleFactor: scaleFactor, startIndex: startLayer)
     mappers.append(mapper)
-    let conditionOffset = layerIndex * perLayerConditions
+    let conditionOffset = (layerIndex - startLayer) * perLayerConditions
     out =
       block(
         [out, rot]
@@ -1406,13 +1509,35 @@ public func LoRAMiniMaxH3(
             ]))[0]
   }
 
+  inputs += fixedConditions
+  if startLayer == 0 && outputResidual {
+    precondition(layers == 1)
+    let mapper: ModelWeightMapper = { format in
+      var mapping = ModelWeightMapping()
+      for mapper in mappers {
+        mapping.merge(mapper(format)) { v, _ in v }
+      }
+      return mapping
+    }
+    // Run the input projections and block 0 once; the tail consumes this exact hidden state.
+    return (mapper, Model(inputs, [out, out - embedded]))
+  }
+  let videoShift = Input()
+  let videoScale = Input()
+  let audioShift = Input()
+  let audioScale = Input()
+  inputs += [videoShift, videoScale, audioShift, audioScale]
+  var residualOutputs = [Model.IO]()
+  if inputResidual {
+    let residual = Input()
+    inputs.append(residual)
+    out = out + residual
+  }
+  if outputResidual {
+    residualOutputs = [out - embedded]
+  }
   let outputNorm = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm_out")
   let normalized = outputNorm(out)
-  let finalConditionOffset = layers * perLayerConditions
-  let videoShift = fixedConditions[finalConditionOffset]
-  let videoScale = fixedConditions[finalConditionOffset + 1]
-  let audioShift = fixedConditions[finalConditionOffset + 2]
-  let audioScale = fixedConditions[finalConditionOffset + 3]
   let audioOutRows =
     normalized.reshaped(
       [1, audioLength, hiddenSize], offset: [0, textLength - visionLength + conditionLength, 0],
@@ -1440,20 +1565,12 @@ public func LoRAMiniMaxH3(
     }
     switch format {
     case .diffusers:
-      mapping["proj_in.weight"] = [xEmbedder.weight.name]
-      mapping["proj_in.bias"] = [xEmbedder.bias.name]
-      mapping["audio_proj_in.weight"] = [audioInput.weight.name]
-      mapping["audio_proj_in.bias"] = [audioInput.bias.name]
       mapping["proj_out.weight"] = [videoOutput.weight.name]
       mapping["proj_out.bias"] = [videoOutput.bias.name]
       mapping["audio_proj_out.weight"] = [audioOutput.weight.name]
       mapping["audio_proj_out.bias"] = [audioOutput.bias.name]
       mapping["norm_out.norm.weight"] = [outputNorm.weight.name]
     case .generativeModels:
-      mapping["video_patch_proj.weight"] = [xEmbedder.weight.name]
-      mapping["video_patch_proj.bias"] = [xEmbedder.bias.name]
-      mapping["audio_patch_proj.weight"] = [audioInput.weight.name]
-      mapping["audio_patch_proj.bias"] = [audioInput.bias.name]
       mapping["final_layer.video_out.weight"] = [videoOutput.weight.name]
       mapping["final_layer.video_out.bias"] = [videoOutput.bias.name]
       mapping["final_layer.audio_out.weight"] = [audioOutput.weight.name]
@@ -1465,8 +1582,8 @@ public func LoRAMiniMaxH3(
   return (
     mapper,
     Model(
-      [video, audio, contextRows, rot] + referenceImages
-        + fixedConditions,
-      [projectedVideo.to(of: video), projectedAudio.to(of: audio)])
+      inputs,
+      [projectedVideo.to(of: outputType), projectedAudio.to(of: startLayer == 0 ? audio : rot)]
+        + residualOutputs)
   )
 }

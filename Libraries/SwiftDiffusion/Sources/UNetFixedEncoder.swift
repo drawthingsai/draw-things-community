@@ -387,8 +387,9 @@ extension UNetFixedEncoder {
       }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: [text, timestepFrequencies] + references)
+      let suffix = referenceImageCount > 0 ? ":ref" : ""
       let loadedFromWeightsCache = weightsCache.detach(
-        "\(filePath):[fixed]", to: unetFixed.parameters)
+        "\(filePath):[fixed]\(suffix)", to: unetFixed.parameters)
       if !loadedFromWeightsCache || !lora.isEmpty {
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
@@ -441,7 +442,7 @@ extension UNetFixedEncoder {
       let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
       precondition(fixedConditions.count == fixedConditionCount + 1 + referenceImageCount)
       let context = fixedConditions[0]
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       return ([context, rotary] + fixedConditions.dropFirst(), nil)
     case .ideogram4:
       let c0 = textEncoding[0]

@@ -638,6 +638,7 @@ extension UNetFromNNC {
   public mutating func unloadModel() {
     unet = nil
     unconditionalUNet = nil
+    teaCache = nil
   }
 
   public mutating func compileModel(
@@ -710,7 +711,6 @@ extension UNetFromNNC {
     var unconditionalUNet: ModelBuilderOrModel? = nil
     switch version {
     case .minimaxH3:
-      precondition(!isTeaCacheEnabled, "MiniMax H3 does not support TeaCache.")
       let textLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
       let visionLength = c[0].shape[1] - textLength
       let videoLatentFrames = batchSize / (isCfgEnabled ? 2 : 1)
@@ -729,37 +729,98 @@ extension UNetFromNNC {
         && canRunLoRASeparately
       if didRunLoRASeparately {
         configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
-        unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let videoShape = $0[0].shape
+      }
+      let usesLoRA = didRunLoRASeparately
+      let frames = videoLatentFrames == 1 ? 1 : (videoLatentFrames - 2) / 5 * 17 + 5
+      let audioLength = 2 * Int((Double(frames) / 24 * 40).rounded())
+      let referenceImageSizes = c[2..<(2 + referenceImageCount)].map {
+        (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
+      }
+      unet = .modelBuilder(
+        ModelBuilder {
+          let videoFrames = isTeaCacheEnabled ? videoLatentFrames : $0[0].shape[0]
+          let videoHeight = isTeaCacheEnabled ? tiledHeight : $0[0].shape[1]
+          let videoWidth = isTeaCacheEnabled ? tiledWidth : $0[0].shape[2]
+          let textLength =
+            isTeaCacheEnabled
+            ? $0[0].shape[1] - audioLength - videoFrames * videoHeight / 2 * (videoWidth / 2)
+              - referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
+            : $0[2].shape[1]
+          if usesLoRA {
             return LoRAMiniMaxH3(
-              hiddenSize: 5_376, layers: 50,
-              textLength: $0[2].shape[1],
-              audioLength: $0[1].shape[1],
-              videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
+              hiddenSize: 5_376, layers: isTeaCacheEnabled ? 49 : 50,
+              startLayer: isTeaCacheEnabled ? 1 : 0,
+              textLength: textLength, audioLength: audioLength,
+              videoFrames: videoFrames, videoHeight: videoHeight, videoWidth: videoWidth,
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              referenceImageSizes: $0[4..<(4 + referenceImageCount)].map {
-                (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
-              },
-              visionLength: visionLength, LoRAConfiguration: configuration
+              referenceImageSizes: referenceImageSizes,
+              visionLength: visionLength, outputResidual: isTeaCacheEnabled,
+              LoRAConfiguration: configuration
+            ).1
+          }
+          return MiniMaxH3(
+            hiddenSize: 5_376, layers: isTeaCacheEnabled ? 49 : 50,
+            startLayer: isTeaCacheEnabled ? 1 : 0,
+            textLength: textLength, audioLength: audioLength,
+            videoFrames: videoFrames, videoHeight: videoHeight, videoWidth: videoWidth,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            referenceImageSizes: referenceImageSizes,
+            visionLength: visionLength, outputResidual: isTeaCacheEnabled
+          ).1
+        })
+      if isTeaCacheEnabled {
+        let reducedModel = ModelBuilderOrModel.modelBuilder(
+          ModelBuilder {
+            let textLength =
+              $0[0].shape[1] - audioLength - videoLatentFrames * tiledHeight / 2 * (tiledWidth / 2)
+              - referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
+            if usesLoRA {
+              return LoRAMiniMaxH3(
+                hiddenSize: 5_376, layers: 0, startLayer: 1,
+                textLength: textLength, audioLength: audioLength,
+                videoFrames: videoLatentFrames, videoHeight: tiledHeight, videoWidth: tiledWidth,
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                referenceImageSizes: referenceImageSizes,
+                visionLength: visionLength, inputResidual: true, LoRAConfiguration: configuration
+              ).1
+            }
+            return MiniMaxH3(
+              hiddenSize: 5_376, layers: 0, startLayer: 1,
+              textLength: textLength, audioLength: audioLength,
+              videoFrames: videoLatentFrames, videoHeight: tiledHeight, videoWidth: tiledWidth,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              referenceImageSizes: referenceImageSizes,
+              visionLength: visionLength, inputResidual: true
             ).1
           })
-      } else {
-        unet = ModelBuilderOrModel.modelBuilder(
+        let inferModel = ModelBuilderOrModel.modelBuilder(
           ModelBuilder {
             let videoShape = $0[0].shape
+            if usesLoRA {
+              return LoRAMiniMaxH3(
+                hiddenSize: 5_376, layers: 1,
+                textLength: $0[2].shape[1], audioLength: audioLength,
+                videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                referenceImageSizes: referenceImageSizes,
+                visionLength: visionLength, outputResidual: true, LoRAConfiguration: configuration
+              ).1
+            }
             return MiniMaxH3(
-              hiddenSize: 5_376, layers: 50,
-              textLength: $0[2].shape[1],
-              audioLength: $0[1].shape[1],
+              hiddenSize: 5_376, layers: 1,
+              textLength: $0[2].shape[1], audioLength: audioLength,
               videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              referenceImageSizes: $0[4..<(4 + referenceImageCount)].map {
-                (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
-              },
-              visionLength: visionLength
+              referenceImageSizes: referenceImageSizes,
+              visionLength: visionLength, outputResidual: true
             ).1
           })
+        teaCache = TeaCache(
+          modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
+          threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
+          maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
+          reducedModel: reducedModel, inferModel: inferModel,
+          referenceImageCount: referenceImageCount)
       }
     case .ideogram4:
       precondition(c.count >= Ideogram4ConditionCount)
@@ -1225,19 +1286,21 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: LoRAFlux1(
-              batchSize: 1, tokenLength: tokenLength,
-              referenceSequenceLength: referenceSequenceLength,
-              height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
-              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
-              contextPreloaded: true,
-              injectControls: injectControlsAndAdapters.injectControls,
-              injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
-              inputResidual: true, LoRAConfiguration: configuration
-            ).1,
-            inferModel: LoRAFlux1Norm1(
-              batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072,
-              LoRAConfiguration: configuration), referenceImageCount: referenceImageCount)
+            reducedModel: .model(
+              LoRAFlux1(
+                batchSize: 1, tokenLength: tokenLength,
+                referenceSequenceLength: referenceSequenceLength,
+                height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
+                usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+                contextPreloaded: true,
+                injectControls: injectControlsAndAdapters.injectControls,
+                injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
+                inputResidual: true, LoRAConfiguration: configuration
+              ).1),
+            inferModel: .model(
+              LoRAFlux1Norm1(
+                batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072,
+                LoRAConfiguration: configuration)), referenceImageCount: referenceImageCount)
         }
       } else {
         unet = ModelBuilderOrModel.model(
@@ -1256,19 +1319,21 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: Flux1(
-              batchSize: 1, tokenLength: tokenLength,
-              referenceSequenceLength: referenceSequenceLength,
-              height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
-              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
-              contextPreloaded: true,
-              injectControls: injectControlsAndAdapters.injectControls,
-              injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
-              inputResidual: true
-            ).1,
-            inferModel: Flux1Norm1(
-              batchSize: 1, height: tiledHeight,
-              width: tiledWidth, channels: 3072), referenceImageCount: referenceImageCount)
+            reducedModel: .model(
+              Flux1(
+                batchSize: 1, tokenLength: tokenLength,
+                referenceSequenceLength: referenceSequenceLength,
+                height: tiledHeight, width: tiledWidth, channels: 3072, layers: (0, 0),
+                usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+                contextPreloaded: true,
+                injectControls: injectControlsAndAdapters.injectControls,
+                injectIPAdapterLengths: injectIPAdapterLengths, outputResidual: false,
+                inputResidual: true
+              ).1),
+            inferModel: .model(
+              Flux1Norm1(
+                batchSize: 1, height: tiledHeight,
+                width: tiledWidth, channels: 3072)), referenceImageCount: referenceImageCount)
         }
       }
     case .hunyuanVideo:
@@ -1301,17 +1366,19 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: LoRAHunyuan(
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth,
-              textLength: 0,
-              channels: 3072, layers: (0, 0),
-              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
-              outputResidual: false, inputResidual: true, LoRAConfiguration: configuration
-            ).1,
-            inferModel: HunyuanNorm1(
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, channels: 3072))
+            reducedModel: .model(
+              LoRAHunyuan(
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth,
+                textLength: 0,
+                channels: 3072, layers: (0, 0),
+                usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+                outputResidual: false, inputResidual: true, LoRAConfiguration: configuration
+              ).1),
+            inferModel: .model(
+              HunyuanNorm1(
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth, channels: 3072)))
         }
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
@@ -1329,17 +1396,19 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: Hunyuan(
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth,
-              textLength: 0,
-              channels: 3072, layers: (0, 0),
-              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
-              outputResidual: false, inputResidual: true
-            ).1,
-            inferModel: HunyuanNorm1(
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, channels: 3072))
+            reducedModel: .model(
+              Hunyuan(
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth,
+                textLength: 0,
+                channels: 3072, layers: (0, 0),
+                usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+                outputResidual: false, inputResidual: true
+              ).1),
+            inferModel: .model(
+              HunyuanNorm1(
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth, channels: 3072)))
         }
       }
     case .longcatVideoAvatar1_5:
@@ -1400,15 +1469,16 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: LoRAWan(
-              channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage,
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              outputResidual: false, inputResidual: true,
-              outputChannels: 16, LoRAConfiguration: configuration
-            ).1)
+            reducedModel: .model(
+              LoRAWan(
+                channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth, textLength: textLength, causalInference: causalInference,
+                injectImage: injectImage,
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                outputResidual: false, inputResidual: true,
+                outputChannels: 16, LoRAConfiguration: configuration
+              ).1))
         }
       } else {
         unet = ModelBuilderOrModel.model(
@@ -1425,14 +1495,15 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: Wan(
-              channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage,
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              outputResidual: false, inputResidual: true, outputChannels: 16
-            ).1)
+            reducedModel: .model(
+              Wan(
+                channels: 1_536, layers: 0, vaceLayers: [], intermediateSize: 8_960,
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth, textLength: textLength, causalInference: causalInference,
+                injectImage: injectImage,
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                outputResidual: false, inputResidual: true, outputChannels: 16
+              ).1))
         }
       }
     case .wan22_5b:
@@ -1502,15 +1573,16 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: LoRAWan(
-              channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage,
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              outputResidual: false, inputResidual: true,
-              outputChannels: 16, LoRAConfiguration: configuration
-            ).1)
+            reducedModel: .model(
+              LoRAWan(
+                channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth, textLength: textLength, causalInference: causalInference,
+                injectImage: injectImage,
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                outputResidual: false, inputResidual: true,
+                outputChannels: 16, LoRAConfiguration: configuration
+              ).1))
         }
       } else {
         unet = ModelBuilderOrModel.model(
@@ -1527,14 +1599,15 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: Wan(
-              channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
-              time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
-              width: tiledWidth, textLength: textLength, causalInference: causalInference,
-              injectImage: injectImage,
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              outputResidual: false, inputResidual: true, outputChannels: 16
-            ).1)
+            reducedModel: .model(
+              Wan(
+                channels: 5_120, layers: 0, vaceLayers: [], intermediateSize: 13_824,
+                time: isCfgEnabled ? batchSize / 2 : batchSize, height: tiledHeight,
+                width: tiledWidth, textLength: textLength, causalInference: causalInference,
+                injectImage: injectImage,
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                outputResidual: false, inputResidual: true, outputChannels: 16
+              ).1))
         }
       }
     case .qwenImage:
@@ -1865,14 +1938,15 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: LoRAHiDream(
-              batchSize: 1, height: tiledHeight,
-              width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
-              textLength: (t5Length, llama3Length), layers: (0, 0),
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              outputResidual: false, inputResidual: true,
-              LoRAConfiguration: configuration
-            ).0)
+            reducedModel: .model(
+              LoRAHiDream(
+                batchSize: 1, height: tiledHeight,
+                width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
+                textLength: (t5Length, llama3Length), layers: (0, 0),
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                outputResidual: false, inputResidual: true,
+                LoRAConfiguration: configuration
+              ).0))
         }
       } else {
         unet = ModelBuilderOrModel.model(
@@ -1889,13 +1963,14 @@ extension UNetFromNNC {
             modelVersion: version, coefficients: teaCacheConfiguration.coefficients,
             threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
             maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
-            reducedModel: HiDream(
-              batchSize: 1, height: tiledHeight,
-              width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
-              textLength: (t5Length, llama3Length), layers: (0, 0),
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              outputResidual: false, inputResidual: true
-            ).0)
+            reducedModel: .model(
+              HiDream(
+                batchSize: 1, height: tiledHeight,
+                width: modifier == .editing ? tiledWidth * 2 : tiledWidth,
+                textLength: (t5Length, llama3Length), layers: (0, 0),
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                outputResidual: false, inputResidual: true
+              ).0))
         }
       }
     case .ltx2:
@@ -2130,7 +2205,8 @@ extension UNetFromNNC {
     let externalData: DynamicGraph.Store.Codec =
       externalOnDemand
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
-    let loadedFromWeightsCache = weightsCache.detach(filePath, to: unet.unwrapped.parameters)
+    let loadedFromWeightsCache = weightsCache.detach(
+      filePath + teaCacheConfiguration.suffix(for: version), to: unet.unwrapped.parameters)
 
     func shouldOffload(name: String) -> Bool {
       guard externalOnDemandPartially else {
@@ -2184,9 +2260,9 @@ extension UNetFromNNC {
       }
       return false
     }
-    graph.openStore(
-      filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-    ) { store in
+    func loadWeights(
+      _ unet: ModelBuilderOrModel, from store: DynamicGraph.Store, loadedFromWeightsCache: Bool
+    ) {
       if !lora.isEmpty && version != .kandinsky21 {
         if didRunLoRASeparately {
           let mapping: [Int: Int] = {
@@ -2481,6 +2557,14 @@ extension UNetFromNNC {
             return .continue(name)
           }
         }
+      }
+    }
+    graph.openStore(
+      filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+    ) { store in
+      loadWeights(unet, from: store, loadedFromWeightsCache: loadedFromWeightsCache)
+      teaCache?.loadModels(from: store) { model, store in
+        loadWeights(model, from: store, loadedFromWeightsCache: false)
       }
       if let unconditionalUNet = unconditionalUNet {
         store.read(
@@ -3019,13 +3103,18 @@ extension UNetFromNNC {
       ].copied().reshaped(.HWC(1, audioRows, MiniMaxH3Configuration.audioChannels))
       let text = DynamicGraph.Tensor<Float>(inputs[1])
       let rotary = DynamicGraph.Tensor<FloatType>(inputs[2])
-      unet.compile(
-        inputs: [
+      let modelInputs: [DynamicGraph.AnyTensor] =
+        [
           video, audio,
           text[0..<1, 0..<text.shape[1], 0..<text.shape[2]].copied(),
           rotary[0..<1, 0..<rotary.shape[1], 0..<1, 0..<128].copied(),
         ]
-          + inputs[3...])
+        + inputs[3...]
+      if let teaCache {
+        teaCache.compile(model: unet, inputs: modelInputs)
+      } else {
+        unet.compile(inputs: modelInputs)
+      }
       return
     case .hunyuanVideo:
       guard isCfgEnabled else {
@@ -3522,9 +3611,39 @@ extension UNetFromNNC {
           rotary[
             branch..<(branch + 1), textLength..<rotary.shape[1], 0..<1, 0..<128
           ].copied())
-        let result = unet(
-          inputs: video,
-          [audio, branchText, branchRotary] + restInputs[2...])
+        let modelInputs: [DynamicGraph.AnyTensor] =
+          [video, audio, branchText, branchRotary] + restInputs[2...]
+        let result: [DynamicGraph.AnyTensor]
+        if let teaCache {
+          let firstInputs = Array(
+            modelInputs.prefix(4 + referenceImageCount + (referenceImageCount > 0 ? 24 : 18)))
+          let firstOutput = teaCache.infer(inputs: firstInputs)
+          let hiddenState = firstOutput[0]
+          let firstBlock = firstOutput[1].as(of: Float.self)
+          let channels = firstBlock.shape[2]
+          let videoLength = videoLatentFrames * videoHeight / 2 * (shape[2] / 2)
+          let videoStart = branchRotary.shape[1] - videoLength
+          let visionLength = text.shape[1] - textLength
+          let audioStart = videoStart - visionLength - audioRows
+          let signals: [DynamicGraph.AnyTensor] = [
+            firstBlock[0..<1, audioStart..<(audioStart + audioRows), 0..<channels].copied(),
+            firstBlock[0..<1, videoStart..<(videoStart + videoLength), 0..<channels].copied(),
+          ]
+          let marker = index * (isCfgEnabled ? 2 : 1) + branch
+          let tailInputs = [modelInputs[3]] + modelInputs.dropFirst(firstInputs.count)
+          let shouldUseCache = teaCache.shouldUseCacheForTimeEmbedding(
+            signals, model: unet, step: step, marker: marker, of: Float.self)
+          if shouldUseCache,
+            let cached = teaCache(model: unet, inputs: hiddenState, tailInputs, marker: marker)
+          {
+            result = cached
+          } else {
+            result = unet(inputs: hiddenState, tailInputs)
+            teaCache.cache(outputs: result, marker: marker)
+          }
+        } else {
+          result = unet(inputs: video, Array(modelInputs.dropFirst()))
+        }
         let videoVelocity = DynamicGraph.Tensor<FloatType>(from: result[0])
         let audioVelocity = DynamicGraph.Tensor<FloatType>(from: result[1]) * audioScale
         var packedAudio = graph.variable(
@@ -3552,7 +3671,7 @@ extension UNetFromNNC {
         if shouldUseCache,
           let result = teaCache!(model: unet, inputs: firstInput, restInputs, marker: index)
         {
-          et = result
+          et = result[0].as(of: FloatType.self)
         } else {
           let result = unet(
             inputs: firstInput, restInputs
@@ -3600,7 +3719,7 @@ extension UNetFromNNC {
         if shouldUseCacheCond,
           let result = teaCache!(model: unet, inputs: xCond, otherConds, marker: index * 2)
         {
-          etCond = result
+          etCond = result[0].as(of: FloatType.self)
         } else {
           let result = unet(inputs: xCond, otherConds)
           etCond = result[0].as(of: FloatType.self)
@@ -3639,7 +3758,7 @@ extension UNetFromNNC {
         if shouldUseCacheUncond,
           let result = teaCache!(model: unet, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
         {
-          etUncond = result
+          etUncond = result[0].as(of: FloatType.self)
         } else {
           let result = unet(inputs: xUncond, otherUnconds)
           etUncond = result[0].as(of: FloatType.self)
@@ -3675,7 +3794,7 @@ extension UNetFromNNC {
         if shouldUseCacheUncond,
           let result = teaCache!(model: unet, inputs: xUncond, otherUnconds, marker: index * 2 + 1)
         {
-          etUncond = result
+          etUncond = result[0].as(of: FloatType.self)
         } else {
           let result = unet(inputs: xUncond, otherUnconds)
           etUncond = result[0].as(of: FloatType.self)
@@ -3716,7 +3835,7 @@ extension UNetFromNNC {
         if shouldUseCacheCond,
           let result = teaCache!(model: unet, inputs: xCond, otherConds, marker: index * 2)
         {
-          etCond = result
+          etCond = result[0].as(of: FloatType.self)
         } else {
           let result = unet(inputs: xCond, otherConds)
           etCond = result[0].as(of: FloatType.self)
@@ -3788,7 +3907,7 @@ extension UNetFromNNC {
         if shouldUseCache,
           let result = teaCache!(model: unet, inputs: firstInput, restInputs, marker: index * 2)
         {
-          et = result
+          et = result[0].as(of: FloatType.self)
         } else {
           let result = unet(
             inputs: firstInput, restInputs
@@ -3846,7 +3965,7 @@ extension UNetFromNNC {
       if shouldUseCache,
         let uncond = teaCache!(model: unet, inputs: xUncond, restInputsUncond, marker: index * 2)
       {
-        etUncond = uncond
+        etUncond = uncond[0].as(of: FloatType.self)
       } else {
         let result = unet(
           inputs: xUncond, restInputsUncond
@@ -3889,7 +4008,7 @@ extension UNetFromNNC {
       if shouldUseCache,
         let cond = teaCache!(model: unet, inputs: xCond, restInputsCond, marker: index * 2 + 1)
       {
-        etCond = cond
+        etCond = cond[0].as(of: FloatType.self)
       } else {
         let result = unet(
           inputs: xCond, restInputsCond
@@ -4157,7 +4276,7 @@ extension UNetFromNNC {
           if shouldUseCache,
             let result = teaCache(model: unet, inputs: firstInput, restInputs, marker: index)
           {
-            et = result
+            et = result[0].as(of: FloatType.self)
           } else {
             let result = unet(
               inputs: firstInput, restInputs
@@ -4187,7 +4306,7 @@ extension UNetFromNNC {
           if shouldUseCache,
             let result = teaCache(model: unet, inputs: x0, others, marker: index * batchSize + i)
           {
-            et0 = result
+            et0 = result[0].as(of: FloatType.self)
           } else {
             let result = unet(
               inputs: x0, others
@@ -4321,7 +4440,7 @@ extension UNetFromNNC {
           if shouldUseCache,
             let result = teaCache(model: unet, inputs: firstInput, restInputs, marker: index)
           {
-            et = result
+            et = result[0].as(of: FloatType.self)
           } else {
             let result = unet(
               inputs: firstInput, Array(restInputs[0..<50]) + Array(restInputs[51...]))
@@ -4352,7 +4471,7 @@ extension UNetFromNNC {
             let result = teaCache(
               model: unet, inputs: firstInput, restInputs, marker: index * batchSize + i)
           {
-            et0 = result
+            et0 = result[0].as(of: FloatType.self)
           } else {
             let result = unet(inputs: x0, Array(others[0..<50]) + Array(others[51...]))
             et0 = result[0].as(of: FloatType.self)
@@ -5410,7 +5529,9 @@ extension UNetFromNNC {
     isCancelled.store(true, ordering: .releasing)
     unet?.cancel()
     unconditionalUNet?.cancel()
+    teaCache?.cancel()
     unet = nil
     unconditionalUNet = nil
+    teaCache = nil
   }
 }

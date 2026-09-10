@@ -3423,8 +3423,11 @@ public struct ModelZoo: DownloadZoo {
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
         .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
         .ltx2_3, .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2,
-        .longcatVideoAvatar1_5, .minimaxH3:
+        .longcatVideoAvatar1_5:
         return nil
+      case .minimaxH3:
+        // FirstBlockCache uses per-modality relative L1 directly, without a fitted polynomial.
+        return (0, 0, 0, 1, 0)
       case .flux1:
         return (4.98651651e+02, -2.83781631e+02, 5.58554382e+01, -3.82021401e+00, 2.64230861e-01)
       case .hunyuanVideo:

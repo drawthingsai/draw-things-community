@@ -1418,7 +1418,7 @@ extension ModelPreloader {
       }()
       if let unet = unet, sampler.lora.isEmpty || unet.didRunLoRASeparately, let model = unet.model
       {
-        weightsCache.attach(sampler.filePath, from: model.parameters)
+        weightsCache.attach(sampler.filePath + sampler.suffix, from: model.parameters)
       }
       return try x.get().x
     case .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,

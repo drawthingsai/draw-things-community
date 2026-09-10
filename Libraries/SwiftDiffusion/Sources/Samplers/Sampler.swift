@@ -257,6 +257,7 @@ public protocol Sampler<FloatType, UNet> {
   var injectAttentionKV: Bool { get }
   var lora: [LoRAConfiguration] { get }
   var tiledDiffusion: TiledConfiguration { get }
+  var teaCache: TeaCacheConfiguration { get }
   var isGuidanceEmbedEnabled: Bool { get }
 
   func sample(
@@ -294,6 +295,8 @@ public protocol Sampler<FloatType, UNet> {
 }
 
 extension Sampler {
+  public var suffix: String { teaCache.suffix(for: version) }
+
   public func sampleAdd<T: TensorNumeric & BinaryFloatingPoint>(
     _ sample: DynamicGraph.Tensor<T>, noise: DynamicGraph.Tensor<T>,
     scale: (sample: Float, noise: Float), version: ModelVersion

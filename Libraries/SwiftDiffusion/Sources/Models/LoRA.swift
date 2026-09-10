@@ -84,9 +84,11 @@ public func LoRAConvolution(
 
 public func LoRADense(
   count: Int, configuration: LoRANetworkConfiguration, noBias: Bool = false,
-  flags: Functional.GEMMFlag = [], prefix: String? = nil, index: Int? = nil, name: String = ""
+  flags: Functional.GEMMFlag = [], prefix: String? = nil, index: Int? = nil,
+  startIndex: Int = 0, name: String = ""
 ) -> Model {
   let dense = Dense(count: count, noBias: noBias, flags: flags, name: name)
+  dense.startIndex = startIndex
   guard configuration.rank > 0 else {
     return dense
   }
@@ -597,7 +599,9 @@ func LoRACrossAttention(
         return Model([x, c] + ipKVs, [out])
       } else {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
+          scale: 1.0 / Float(k).squareRoot(),
+          flags: upcastAttention
+            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
         var out = scaledDotProductAttention(queries, keys, values)
         let unifyheads = LoRADense(count: k * h, configuration: LoRAConfiguration)
         out = unifyheads(out.reshaped([b, hw, h * k]))
@@ -624,7 +628,9 @@ func LoRACrossAttention(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
         out0 = ScaledDotProductAttention(
-          scale: 1.0 / Float(k).squareRoot(), flags: upcastAttention ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))(
+          scale: 1.0 / Float(k).squareRoot(),
+          flags: upcastAttention
+            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))(
             queries0, keys0, values0
           ).reshaped([b0, hw, h * k])
       } else {

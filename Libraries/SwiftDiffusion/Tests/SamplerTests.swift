@@ -3,6 +3,41 @@ import NNC
 import XCTest
 
 final class SamplerTests: XCTestCase {
+  func testWeightsCacheSuffix() {
+    for version: ModelVersion in [
+      .minimaxH3, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .flux2,
+      .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .v1,
+    ] {
+      for threshold: Float in [0, 0.04, .nan] {
+        let teaCache = TeaCacheConfiguration(
+          coefficients: (0, 0, 0, 1, 0), steps: 5...20, threshold: threshold, maxSkipSteps: 3)
+        let sampler: any Sampler<Float, UNetFromNNC<Float>> =
+          EulerASampler<Float, UNetFromNNC<Float>, Denoiser.LinearDiscretization>(
+            filePath: "model.ckpt", modifier: .none, version: version, audioShiftRatio: 1,
+            qkNorm: false, dualAttentionLayers: [], distilledGuidanceLayers: 0,
+            activationQkScaling: [:], activationProjScaling: [:], activationFfnProjUpScaling: [:],
+            activationFfnScaling: [:], usesFlashAttention: .none, upcastAttention: false,
+            externalOnDemand: false, injectControls: false, injectT2IAdapters: false,
+            injectAttentionKV: false, injectIPAdapterLengths: [], lora: [],
+            classifierFreeGuidance: false, isGuidanceEmbedEnabled: false, isQuantizedModel: false,
+            canRunLoRASeparately: false,
+            deviceProperties: .init(
+              isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
+              cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()),
+              isPartialOffloadPreferred: false),
+            conditioning: .timestep,
+            tiledDiffusion: .init(
+              isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
+            teaCache: teaCache, causalInference: (0, 0),
+            cfgZeroStar: .init(isEnabled: false, zeroInitSteps: 0), isBF16: false,
+            discretization: .init(.rf(.init()), objective: .u(conditionScale: 1_000)),
+            weightsCache: .init(maxTotalCacheSize: 0, memorySubsystem: .UMA))
+        let expected = version == .minimaxH3 && threshold > 0 ? ":[teacache]" : ""
+        XCTAssertEqual(sampler.suffix, expected)
+      }
+    }
+  }
+
   func testH3IndependentAudioShift() {
     let graph = DynamicGraph()
     graph.withNoGrad {

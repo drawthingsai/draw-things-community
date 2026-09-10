@@ -87,6 +87,20 @@ swift_test(
 )
 
 swift_test(
+    name = "TeaCacheTests",
+    srcs = ["Tests/TeaCacheTests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":SwiftDiffusion",
+        "//Libraries/WeightsCache",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
     name = "SamplerTests",
     srcs = ["Tests/SamplerTests.swift"],
     tags = [

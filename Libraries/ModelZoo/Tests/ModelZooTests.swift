@@ -2,6 +2,21 @@ import ModelZoo
 import XCTest
 
 final class ModelZooTests: XCTestCase {
+  func testMiniMaxH3FirstBlockCacheUsesIdentityCoefficients() {
+    let name = "test-minimax-h3-community-cache.ckpt"
+    let previous = ModelZoo.overrideMapping[name]
+    defer { ModelZoo.overrideMapping[name] = previous }
+    ModelZoo.overrideMapping[name] = ModelZoo.Specification(
+      name: name, file: name, prefix: "", version: .minimaxH3)
+    let coefficients = ModelZoo.teaCacheCoefficientsForModel(name)
+    XCTAssertNotNil(coefficients)
+    XCTAssertEqual(coefficients?.0, 0)
+    XCTAssertEqual(coefficients?.1, 0)
+    XCTAssertEqual(coefficients?.2, 0)
+    XCTAssertEqual(coefficients?.3, 1)
+    XCTAssertEqual(coefficients?.4, 0)
+  }
+
   func testMiniMaxH3CheckpointSupportsFirstFrameConditioning() {
     XCTAssertEqual(ModelZoo.modifierForModel("minimax_h3_i8x.ckpt"), .fl2va)
   }
