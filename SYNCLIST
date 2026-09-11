@@ -52,6 +52,7 @@ Tools/
 Vendors/ZIPFoundation
 Vendors/SwiftSoup
 Vendors/Z3
+Vendors/Lean
 Vendors/Ripgrep
 Vendors/OpenSSH
 Vendors/OSH
