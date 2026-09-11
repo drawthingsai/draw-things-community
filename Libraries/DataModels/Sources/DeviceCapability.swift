@@ -320,6 +320,10 @@ public struct DeviceCapability {
       return true
     #endif
   }()
+  public static let isPrefillWarmupPreferred: Bool = {
+    let physicalMemory = ProcessInfo.processInfo.physicalMemory
+    return physicalMemory >= 128 * 1_024 * 1_024 * 1_024
+  }()
   public static var memoryCapacity: MemoryCapacity = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
     if physicalMemory >= 24_696_061_952 {  // This is 23 * 1024 * 1024 * 1024.
