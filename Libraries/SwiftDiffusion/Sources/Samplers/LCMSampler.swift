@@ -131,8 +131,6 @@ extension LCMSampler: Sampler {
       inChannels = channels * 2
     } else {
       switch modifier {
-      case .fl2va, .ref2va:
-        fatalError()
       case .inpainting, .depth, .canny:
         inChannels = channels + (conditionImage?.shape[3] ?? 0)
       case .editing:
@@ -140,7 +138,7 @@ extension LCMSampler: Sampler {
       case .double:
         inChannels = channels * 2
       case .none, .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageLayered,
-        .qwenimageEdit2511:
+        .qwenimageEdit2511, .fl2va, .ref2va:
         inChannels = channels
       }
     }
@@ -150,8 +148,6 @@ extension LCMSampler: Sampler {
       of: FloatType.self
     )
     switch modifier {
-    case .fl2va, .ref2va:
-      fatalError()
     case .inpainting, .depth, .canny:
       if let conditionImage = conditionImage {
         let shape = conditionImage.shape
@@ -175,7 +171,7 @@ extension LCMSampler: Sampler {
           maskedImage
       }
     case .none, .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageLayered,
-      .qwenimageEdit2511:
+      .qwenimageEdit2511, .fl2va, .ref2va:
       break
     }
     var c = c

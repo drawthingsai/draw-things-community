@@ -126,8 +126,6 @@ extension TCDSampler: Sampler {
       inChannels = channels * 2
     } else {
       switch modifier {
-      case .fl2va, .ref2va:
-        fatalError()
       case .inpainting, .depth, .canny:
         inChannels = channels + (conditionImage?.shape[3] ?? 0)
       case .editing:
@@ -135,7 +133,7 @@ extension TCDSampler: Sampler {
       case .double:
         inChannels = channels * 2
       case .none, .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageLayered,
-        .qwenimageEdit2511:
+        .qwenimageEdit2511, .fl2va, .ref2va:
         inChannels = channels
       }
     }
@@ -145,8 +143,6 @@ extension TCDSampler: Sampler {
       of: FloatType.self
     )
     switch modifier {
-    case .fl2va, .ref2va:
-      fatalError()
     case .inpainting, .depth, .canny:
       let maskedImage = conditionImage!
       let shape = maskedImage.shape
@@ -168,7 +164,7 @@ extension TCDSampler: Sampler {
           maskedImage
       }
     case .none, .kontext, .kontextKv, .qwenimageEditPlus, .qwenimageLayered,
-      .qwenimageEdit2511:
+      .qwenimageEdit2511, .fl2va, .ref2va:
       break
     }
     var c = c
