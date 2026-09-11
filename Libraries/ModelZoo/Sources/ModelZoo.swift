@@ -871,17 +871,6 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Lightricks", huggingFaceLink: "Lightricks/LTX-2.3"
     ),
     Specification(
-      name: "MiniMax H3 (8-bit S)", file: "minimax_h3_i8x.ckpt", prefix: "",
-      version: .minimaxH3, defaultScale: 12,
-      textEncoder: "qwen_3_vl_32b_50_i8x.ckpt",
-      autoencoder: "minimax_h3_vae_f16.ckpt", modifier: .fl2va,
-      objective: .u(conditionScale: 1_000),
-      framesPerSecond: 24,
-      note:
-        "MiniMax H3 jointly generates video and synchronized stereo audio. Suggested starting settings: 50 DDIM Trailing steps, shift 12, Text Guidance 1, and 1 or 17n+5 frames (124 by default).",
-      copyright: "© MiniMax"
-    ),
-    Specification(
       name: "LTX-2.3 22B [distilled] 1.1 (8-bit S)", file: "ltx_2.3_22b_distilled_1.1_i8x.ckpt",
       prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
