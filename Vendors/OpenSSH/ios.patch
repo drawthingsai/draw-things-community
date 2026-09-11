@@ -511,3 +511,170 @@ index 91e69b7..17aeff1 100644
  	if (options.proxy_command == NULL) {
  		return ssh_connect_direct(ssh, host, addrs, hostaddr, port,
  		    connection_attempts, timeout_ms, want_keepalive);
+diff --git a/ssh-keygen.c b/ssh-keygen.c
+--- a/ssh-keygen.c
++++ b/ssh-keygen.c
+@@ -136,7 +136,7 @@
+ static size_t ncert_ext;
+ 
+ /* Conversion to/from various formats */
+-enum {
++static enum {
+ 	FMT_RFC4716,
+ 	FMT_PKCS8,
+ 	FMT_PEM
+@@ -1296,7 +1296,7 @@
+ 		    strlcpy(old, identity_file, sizeof(old)) >= sizeof(old) ||
+ 		    strlcat(old, ".old", sizeof(old)) >= sizeof(old))
+ 			fatal("known_hosts path too long");
+-		umask(077);
++		/* mkstemp creates mode 0600 without changing the app umask. */
+ 		if ((fd = mkstemp(tmp)) == -1)
+ 			fatal("mkstemp: %s", strerror(errno));
+ 		if ((ctx.out = fdopen(fd, "w")) == NULL) {
+@@ -3290,6 +3290,48 @@
+ 	exit(1);
+ }
+ 
++#if IOS_SYSTEM_OPENSSH
++struct ssh_keygen_cleanup_context {
++	struct passwd *pw;
++	struct sshkey **private_key, **public_key;
++	char **passphrase;
++	char ***opts;
++	size_t *nopts;
++};
++
++/* Also runs on ios_exit()/fatal(), which terminate the command pthread. */
++static void
++ssh_keygen_cleanup(void *arg)
++{
++	struct ssh_keygen_cleanup_context *context = arg;
++	size_t i;
++
++	pwfree(context->pw);
++	sshkey_free(*context->private_key);
++	sshkey_free(*context->public_key);
++	if (*context->passphrase != NULL)
++		freezero(*context->passphrase, strlen(*context->passphrase));
++	for (i = 0; i < *context->nopts; i++)
++		free((*context->opts)[i]);
++	free(*context->opts);
++	free(certflags_command);
++	certflags_command = NULL;
++	free(certflags_src_addr);
++	certflags_src_addr = NULL;
++	for (i = 0; i < ncert_ext; i++) {
++		free(cert_ext[i].key);
++		free(cert_ext[i].val);
++	}
++	free(cert_ext);
++	cert_ext = NULL;
++	ncert_ext = 0;
++	/* These point into the command argv, owned by ios_system. */
++	identity_passphrase = identity_new_passphrase = NULL;
++	cert_key_id = cert_principals = key_type_name = NULL;
++	pkcs11provider = sk_provider = openssh_format_cipher = NULL;
++}
++#endif
++
+ /*
+  * Main program for key management.
+  */
+@@ -3322,6 +3364,28 @@
+ 	extern int optind;
+ 	extern char *optarg;
+ 
++#if IOS_SYSTEM_OPENSSH
++	/* OpenSSH commands share one static image and run serially. */
++	extern int optreset;
++	optind = 1;
++	optreset = 1;
++	quiet = print_fingerprint = print_bubblebabble = 0;
++	fingerprint_hash = SSH_FP_HASH_DEFAULT;
++	identity_file[0] = '\0';
++	have_identity = 0;
++	identity_passphrase = identity_new_passphrase = NULL;
++	cert_key_type = SSH2_CERT_TYPE_USER;
++	cert_key_id = cert_principals = NULL;
++	cert_valid_from = 0;
++	cert_valid_to = ~0ULL;
++	certflags_flags = CERTOPT_DEFAULT;
++	convert_format = FMT_RFC4716;
++	key_type_name = pkcs11provider = sk_provider = NULL;
++	private_key_format = SSHKEY_PRIVATE_OPENSSH;
++	openssh_format_cipher = NULL;
++	rounds = 0;
++#endif
++
+ 	/* Ensure that fds 0, 1 and 2 are open or directed to /dev/null */
+ 	sanitise_stdfd();
+ 
+@@ -3337,7 +3401,19 @@
+ 	pw = getpwuid(getuid());
+ 	if (!pw)
+ 		fatal("No user exists for uid %lu", (u_long)getuid());
++#if IOS_SYSTEM_OPENSSH
++	/* Match ssh_main: HOME is the workspace, SSH_HOME is project/.localc. */
++	if ((p = getenv("SSH_HOME")) != NULL && *p != '\0')
++		pw->pw_dir = (char *)p;
++#endif
+ 	pw = pwcopy(pw);
++#if IOS_SYSTEM_OPENSSH
++	struct ssh_keygen_cleanup_context context = {
++		.pw = pw, .private_key = &private, .public_key = &public,
++		.passphrase = &passphrase, .opts = &opts, .nopts = &nopts,
++	};
++	pthread_cleanup_push(ssh_keygen_cleanup, &context);
++#endif
+ 	if (gethostname(hostname, sizeof(hostname)) == -1)
+ 		fatal("gethostname: %s", strerror(errno));
+ 
+@@ -3697,6 +3773,9 @@
+ 	if (pkcs11provider != NULL)
+ 		do_download(pw);
+ 	if (download_sk) {
++#if IOS_SYSTEM_OPENSSH
++		fatal("FIDO key enrollment is not supported in ios_system");
++#endif
+ 		for (i = 0; i < nopts; i++) {
+ 			if ((p = strprefix(opts[i], "device=", 1)) != NULL) {
+ 				sk_device = xstrdup(p);
+@@ -3780,6 +3859,11 @@
+ 
+ 	type = sshkey_type_from_shortname(key_type_name);
+ 	type_bits_valid(type, key_type_name, &bits);
++#if IOS_SYSTEM_OPENSSH
++	if (sshkey_type_plain(type) == KEY_ED25519_SK ||
++	    sshkey_type_plain(type) == KEY_ECDSA_SK)
++		fatal("FIDO key enrollment is not supported in ios_system");
++#endif
+ 
+ 	if (!quiet)
+ 		printf("Generating public/private %s key pair.\n",
+@@ -3895,10 +3979,13 @@
+ 	    comment, private_key_format, openssh_format_cipher, rounds)) != 0) {
+ 		error_r(r, "Saving key \"%s\" failed", identity_file);
+ 		freezero(passphrase, strlen(passphrase));
++		passphrase = NULL;
+ 		exit(1);
+ 	}
+ 	freezero(passphrase, strlen(passphrase));
++	passphrase = NULL;
+ 	sshkey_free(private);
++	private = NULL;
+ 
+ 	if (!quiet) {
+ 		printf("Your identification has been saved in %s\n",
+@@ -3932,6 +4019,11 @@
+  done:
+ 	sshbuf_free(attest);
+ 	sshkey_free(public);
++	public = NULL;
++#if IOS_SYSTEM_OPENSSH
++	pthread_cleanup_pop(1);
++#else
+ 	pwfree(pw);
++#endif
+ 	exit(ret);
+ }

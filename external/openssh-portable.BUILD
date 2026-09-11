@@ -177,7 +177,9 @@ LIBSSH_SRCS = [
     "ssh-ed25519-sk.c",
     "ssh-ed25519.c",
     "ssh-mldsa-eddsa.c",
+    "ssh-pkcs11.c",
     "ssh-rsa.c",
+    "ssh-sk-client.c",
     "ssh_api.c",
     "sshbuf-getput-basic.c",
     "sshbuf-getput-crypto.c",
@@ -206,12 +208,12 @@ objc_library(
 objc_library(
     name = "openbsd_compat",
     srcs = OPENBSD_COMPAT_SRCS,
+    copts = COMMON_COPTS,
+    includes = ["."],
     textual_hdrs = glob([
         "*.h",
         "openbsd-compat/*.h",
     ]),
-    copts = COMMON_COPTS,
-    includes = ["."],
     deps = [
         "@//Vendors/OpenSSH:boringssl_headers",
         "@//Vendors/OpenSSH:compat_headers",
@@ -247,13 +249,25 @@ objc_library(
         "mux.c",
         "readconf.c",
         "ssh.c",
-        "ssh-pkcs11.c",
-        "ssh-sk-client.c",
         "sshconnect.c",
         "sshconnect2.c",
         "sshtty.c",
     ],
     copts = COMMON_COPTS + ["-Dmain=ssh_main"],
+    deps = [
+        ":libssh",
+        "@//Vendors/OpenSSH:config",
+        "@//Vendors/ios_system:api",
+    ],
+)
+
+objc_library(
+    name = "ssh-keygen",
+    srcs = [
+        "ssh-keygen.c",
+        "sshsig.c",
+    ],
+    copts = COMMON_COPTS + ["-Dmain=ssh_keygen_main"],
     deps = [
         ":libssh",
         "@//Vendors/OpenSSH:config",
@@ -311,5 +325,6 @@ objc_library(
         ":scp",
         ":sftp",
         ":ssh",
+        ":ssh-keygen",
     ],
 )
