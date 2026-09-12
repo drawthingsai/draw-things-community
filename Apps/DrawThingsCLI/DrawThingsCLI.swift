@@ -3637,6 +3637,7 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
   }
 
   let output = options.output.output ?? config.name ?? "lora_output"
+  let resolvedOutputPrefix = URL(fileURLWithPath: output).lastPathComponent
   let name = options.output.name ?? config.name ?? output
   let trainingSteps = options.training.steps ?? Int(config.trainingSteps)
   guard trainingSteps > 0 else { throw ValidationError("--steps must be > 0") }
@@ -3889,7 +3890,7 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
       let shouldSave =
         step == trainingSteps || (saveEvery > 0 && step > 0 && step % saveEvery == 0)
       if shouldSave {
-        let filename = "\(output)_\(step)_lora_f32.ckpt"
+        let filename = "\(resolvedOutputPrefix)_\(step)_lora_f32.ckpt"
         let outputPath = LoRAZoo.filePathForModelDownloaded(filename)
         checkpoint.makeLoRA(to: outputPath, scale: loraScale)
         let specification = LoRAZoo.Specification(
@@ -3901,7 +3902,7 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
             LoRAZoo.appendCustomSpecification(specification)
           }
         }
-        print("[LoRA] Saved checkpoint: \(filename)")
+        print("[LoRA] Saved checkpoint: \(outputPath)")
       }
     }
     fflush(stdout)
@@ -3910,7 +3911,8 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
 
   let totalTime = Date().timeIntervalSince(startTime)
   print("Training complete in \(String(format: "%.1f", totalTime))s.")
-  print("Final checkpoint: \(output)_\(lastStep)_lora_f32.ckpt")
+  let finalFilename = "\(resolvedOutputPrefix)_\(lastStep)_lora_f32.ckpt"
+  print("Final checkpoint: \(LoRAZoo.filePathForModelDownloaded(finalFilename))")
 }
 
 @main
