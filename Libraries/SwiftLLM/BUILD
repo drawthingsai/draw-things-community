@@ -1,5 +1,8 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_test")
 
+# Shared model metadata is also compiled into the standalone weight converter.
+exports_files(["Sources/Models/DeepSeek4_1Configuration.swift"])
+
 swift_library(
     name = "SwiftLLM",
     srcs = glob(["Sources/**/*.swift"]),
