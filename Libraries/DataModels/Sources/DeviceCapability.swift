@@ -326,7 +326,9 @@ public struct DeviceCapability {
   }()
   public static var memoryCapacity: MemoryCapacity = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
-    if physicalMemory >= 24_696_061_952 {  // This is 23 * 1024 * 1024 * 1024.
+    if physicalMemory >= 33_285_996_544 {  // This is 31 * 1024 * 1024 * 1024.
+      return .veryHigh
+    } else if physicalMemory >= 24_696_061_952 {  // This is 23 * 1024 * 1024 * 1024.
       return .high
     } else if physicalMemory >= 16_106_127_360 {  // This is 15 * 1024 * 1024 * 1024.
       return .medium

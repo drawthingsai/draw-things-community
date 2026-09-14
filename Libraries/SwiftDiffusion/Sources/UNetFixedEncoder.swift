@@ -251,6 +251,15 @@ extension UNetFixedEncoder {
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     switch version {
     case .minimaxH3:
+      let externalOnDemand =
+        self.externalOnDemand
+        || externalOnDemandPartially(
+          version: version, memoryCapacity: deviceProperties.memoryCapacity,
+          externalOnDemand: self.externalOnDemand,
+          isPartialOffloadPreferred: deviceProperties.isPartialOffloadPreferred)
+      let externalData: DynamicGraph.Store.Codec =
+        externalOnDemand
+        ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       let referenceImageCount = referenceImages.count
       let videoLatentFrames = batchSize
       let audioHeight = MiniMaxH3AudioHeight(

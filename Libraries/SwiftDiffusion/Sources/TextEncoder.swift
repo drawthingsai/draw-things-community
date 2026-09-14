@@ -55,7 +55,7 @@ extension TextEncoder {
     var tokenLength = originalTokenLength
     let batchSize = isCfgEnabled ? 2 : 1
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     var imageStarts = [Int]()
     var imageGrids = [(t: Int, h: Int, w: Int)]()
@@ -1301,7 +1301,7 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[2], to: t5.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || deviceProperties.memoryCapacity != .high
+        externalOnDemand || deviceProperties.memoryCapacity < .high
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[2], graph: graph)
@@ -1358,7 +1358,7 @@ extension TextEncoder {
     textModel.compile(inputs: tokensTensorGPU, relativePositionBucketsGPU)
     // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     // Move T5 to on-demand.
     TensorData.makeExternalData(for: filePaths[0], graph: graph)
@@ -1420,7 +1420,7 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || deviceProperties.memoryCapacity != .high
+        externalOnDemand || deviceProperties.memoryCapacity < .high
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       // Move Pile T5 XL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
@@ -1532,7 +1532,7 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || deviceProperties.memoryCapacity != .high
+        externalOnDemand || deviceProperties.memoryCapacity < .high
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       // Move ChatGLM3 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
@@ -1753,7 +1753,7 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: t5.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || deviceProperties.memoryCapacity != .high
+        externalOnDemand || deviceProperties.memoryCapacity < .high
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       // Move T5 to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
@@ -2001,7 +2001,7 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || deviceProperties.memoryCapacity != .high
+        externalOnDemand || deviceProperties.memoryCapacity < .high
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
@@ -2051,7 +2051,7 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || deviceProperties.memoryCapacity != .high
+        externalOnDemand || deviceProperties.memoryCapacity < .high
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       // Move UMT5 XXL to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
@@ -2133,7 +2133,7 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     var tokenLength = tokens[0].shape[0] / 2
     var tokens = tokens
@@ -2530,7 +2530,7 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let textModel = Qwen3(
@@ -2866,7 +2866,7 @@ extension TextEncoder {
       if !weightsCache.detach(filePaths[3], to: t5.parameters) {
         // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
         let externalData: DynamicGraph.Store.Codec =
-          externalOnDemand || deviceProperties.memoryCapacity != .high
+          externalOnDemand || deviceProperties.memoryCapacity < .high
           ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
         // Move T5 to on-demand.
         TensorData.makeExternalData(for: filePaths[3], graph: graph)
@@ -2938,7 +2938,7 @@ extension TextEncoder {
     if !weightsCache.detach(filePaths[0], to: llama3.parameters) {
       // If we have more than 24GiB RAM, and not forced to be on demand. We load the whole thing (better for weights cache).
       let externalData: DynamicGraph.Store.Codec =
-        externalOnDemand || deviceProperties.memoryCapacity != .high
+        externalOnDemand || deviceProperties.memoryCapacity < .high
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       // Move Llama3 8B to on-demand.
       TensorData.makeExternalData(for: filePaths[0], graph: graph)
@@ -2973,7 +2973,7 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let textModel = Mistral3(
@@ -3088,7 +3088,7 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let textModel = Mistral3(
@@ -3144,7 +3144,7 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let channels: Int
@@ -3240,7 +3240,7 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let batchSize = isCfgEnabled ? 2 : 1
@@ -3309,7 +3309,7 @@ extension TextEncoder {
     precondition(filePaths.count >= 2)
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let batchSize = isCfgEnabled ? 2 : 1
@@ -3482,7 +3482,7 @@ extension TextEncoder {
     precondition(filePaths.count >= 2)
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let paddedSourceTokenLength = tokens[0].shape[0] / 2
     var sourceTokenLengthUncond: Int? = nil
@@ -3711,7 +3711,7 @@ extension TextEncoder {
   {
     let graph = tokens[0].graph
     let externalData: DynamicGraph.Store.Codec =
-      externalOnDemand || deviceProperties.memoryCapacity != .high
+      externalOnDemand || deviceProperties.memoryCapacity < .high
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let tokenLength = tokens[0].shape[0] / 2
     let textModel = Gemma3(

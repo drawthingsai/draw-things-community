@@ -613,8 +613,19 @@ public func externalOnDemandPartially(
   guard !externalOnDemand else { return false }
   let memoryCapacity = isPartialOffloadPreferred ? MemoryCapacity.medium : memoryCapacity
   switch memoryCapacity {
-  case .high:
+  case .veryHigh:
     return false
+  case .high:
+    switch version {
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b, .flux1, .sd3Large,
+      .hunyuanVideo, .hiDreamI1, .hiDreamO1, .wan21_14b, .qwenImage, .zImage, .ernieImage, .flux2,
+      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .krea2, .longcatVideoAvatar1_5:
+      return false
+    case .minimaxH3:
+      return true
+    }
   case .medium, .low:
     switch version {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
@@ -2238,6 +2249,10 @@ extension UNetFromNNC {
         }
       } else if version == .wan21_14b {  // For 14B Wan 2.1, we will be more aggressive and also offload out projection.
         if name.contains("c_o-") || name.contains("x_o-") {
+          return true
+        }
+      } else if version == .minimaxH3 {  // Keep attention output and FFN down projections resident (~5.4 GiB at 8-bit).
+        if name.contains("-up-") || name.contains("-gate-") {
           return true
         }
       } else if version == .flux2 || version == .flux2_4b || version == .flux2_9b {  // FLUX.2 is a 32B-parameter model, offload all MLP layers.

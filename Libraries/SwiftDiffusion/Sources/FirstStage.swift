@@ -2,10 +2,11 @@ import Atomics
 import Dispatch
 import NNC
 
-public enum MemoryCapacity {
-  case high
-  case medium
+public enum MemoryCapacity: Comparable {
   case low
+  case medium
+  case high
+  case veryHigh
 }
 
 public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
@@ -24,7 +25,7 @@ public struct FirstStage<FloatType: TensorNumeric & BinaryFloatingPoint> {
       audioStd: [Float]?
     )
   private let highPrecisionFallback: Bool
-  private let deviceProperties: DeviceProperties  // If this device has more than 24GiB RAM, 8GiB - 24GiB, less than 8GiB
+  private let deviceProperties: DeviceProperties
   private let isCancelled = ManagedAtomic<Bool>(false)
   public init(
     filePath: String, version: ModelVersion,
@@ -554,7 +555,7 @@ extension FirstStage {
       var startDepth = shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
-      let sizeLimit = deviceProperties.memoryCapacity == .high ? 32 : 20
+      let sizeLimit = deviceProperties.memoryCapacity >= .high ? 32 : 20
       decodingTileSize.depth = 15
       if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > decodingTileSize.depth {
         // We turn on tiled decoding forcefully.
@@ -614,7 +615,7 @@ extension FirstStage {
       let sizeLimit: Int
       if startDepth > 1 {
         switch deviceProperties.memoryCapacity {
-        case .high:
+        case .high, .veryHigh:
           sizeLimit = 1024  // Practically unlimited.
         case .medium:
           sizeLimit = 104
@@ -717,7 +718,7 @@ extension FirstStage {
       let sizeLimit: Int
       if startDepth > 1 {
         switch deviceProperties.memoryCapacity {
-        case .high:
+        case .high, .veryHigh:
           sizeLimit = 1024  // Practically unlimited.
         case .medium:
           sizeLimit = 104
@@ -860,7 +861,7 @@ extension FirstStage {
       }
       let sizeLimit: Int
       switch deviceProperties.memoryCapacity {
-      case .high:
+      case .high, .veryHigh:
         sizeLimit = 24
         decodingTileSize.depth = 11
       case .medium:
@@ -1627,7 +1628,7 @@ extension FirstStage {
       var startDepth = (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
-      let sizeLimit = deviceProperties.memoryCapacity == .high ? 32 : 20
+      let sizeLimit = deviceProperties.memoryCapacity >= .high ? 32 : 20
       if startWidth > sizeLimit || startHeight > sizeLimit || startDepth > 15 {
         // We turn on tiled decoding forcefully.
         if !tiledEncoding {
@@ -1688,7 +1689,7 @@ extension FirstStage {
       let sizeLimit: Int
       if startDepth > 1 {
         switch deviceProperties.memoryCapacity {
-        case .high:
+        case .high, .veryHigh:
           sizeLimit = 1024  // Practically unlimited.
         case .medium:
           sizeLimit = 104
@@ -1790,7 +1791,7 @@ extension FirstStage {
       let sizeLimit: Int
       if startDepth > 1 {
         switch deviceProperties.memoryCapacity {
-        case .high:
+        case .high, .veryHigh:
           sizeLimit = 1024  // Practically unlimited.
         case .medium:
           sizeLimit = 104
@@ -1878,7 +1879,7 @@ extension FirstStage {
       let startDepth = (shape[0] - 1) / 8 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
-      let sizeLimit = deviceProperties.memoryCapacity == .high ? 16 : 10
+      let sizeLimit = deviceProperties.memoryCapacity >= .high ? 16 : 10
       if startWidth > sizeLimit || startHeight > sizeLimit {
         // We turn on tiled decoding forcefully.
         if !tiledEncoding {
