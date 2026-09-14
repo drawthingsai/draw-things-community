@@ -4683,6 +4683,7 @@ extension LocalImageGenerator {
 
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
+        DynamicGraph.vacuum()
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b || modelVersion == .wurstchenStageC
@@ -6121,6 +6122,7 @@ extension LocalImageGenerator {
         x, modifier: modifier, version: modelVersion, imageCond: imageCond)
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
+        DynamicGraph.vacuum()
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b
@@ -7580,6 +7582,7 @@ extension LocalImageGenerator {
         x, modifier: modifier, version: modelVersion, imageCond: imageCond)
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
+        DynamicGraph.vacuum()
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b
@@ -8707,6 +8710,7 @@ extension LocalImageGenerator {
         x, modifier: modifier, version: modelVersion, imageCond: imageCond)
       if DeviceCapability.isLowPerformance {
         graph.garbageCollect()
+        DynamicGraph.vacuum()
       }
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b

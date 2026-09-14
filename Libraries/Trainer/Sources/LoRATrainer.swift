@@ -5918,7 +5918,7 @@ public struct LoRATrainer {
     let graph = DynamicGraph()
     // To make sure we triggered a clean-up so there are just a little bit more RAM available.
     if !DeviceCapability.isMaxPerformance {
-      graph.garbageCollect()
+      DynamicGraph.vacuum()
     }
     let latentsScaling = ModelZoo.latentsScalingForModel(model)
     let firstStage = FirstStage<FloatType>(
