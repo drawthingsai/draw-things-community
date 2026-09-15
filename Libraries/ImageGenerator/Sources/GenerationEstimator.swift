@@ -307,19 +307,21 @@ public enum GenerationEstimator {
 
 public final class ProgressBarPrinter {
   private var hasPrintedBefore = false
+  private let output: UnsafeMutablePointer<FILE>
 
-  public init() {
+  public init(output: UnsafeMutablePointer<FILE> = stdout) {
+    self.output = output
   }
 
   private func terminalWidth() -> Int? {
     var winsize: winsize = winsize()
-    let result = ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &winsize)
+    let result = ioctl(fileno(output), UInt(TIOCGWINSZ), &winsize)
     return result == 0 ? Int(winsize.ws_col) : nil
   }
 
   public func update(progress: Float, label: String, detail: String?) {
     if !hasPrintedBefore {
-      print("")
+      fputs("\n", output)
       hasPrintedBefore = true
     }
     let percent = Int(round(progress * 100))
@@ -343,6 +345,7 @@ public final class ProgressBarPrinter {
     let numberString = String(percent).padding(toLength: 3, withPad: " ", startingAt: 0)
     string = string.replacingOccurrences(of: "XXX", with: numberString)
     let lineClearString = "\u{1B}[1A\u{1B}[K"
-    print("\(lineClearString)\(string)")
+    fputs("\(lineClearString)\(string)\n", output)
+    fflush(output)
   }
 }

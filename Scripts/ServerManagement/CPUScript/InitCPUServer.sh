@@ -73,7 +73,7 @@ echo "➡️ Step 5: Pulling images and starting services..."
 
 # Pull the required Docker images
 docker pull drawthingsai/draw-things-proxy-server-cli:latest
-docker pull envoyproxy/envoy:v1.28-latest
+docker pull envoyproxy/envoy:v1.39.1@sha256:be87c8b52663c1164a5bdf3c5419017a269cb3d8c74be1ec93638a71f1ffbd4b
 
 echo "✅ Docker images pulled."
 

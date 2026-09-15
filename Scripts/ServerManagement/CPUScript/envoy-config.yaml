@@ -40,15 +40,17 @@ static_resources:
                   status: 404
                   body:
                     inline_string: "Not found"
-              cors:
-                allow_origin_string_match:
-                - safe_regex:
-                    regex: ".*"
-                allow_methods: GET, PUT, DELETE, POST, OPTIONS
-                allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout,authorization,x-grpc-web
-                allow_credentials: true
-                max_age: "1728000"
-                expose_headers: custom-header-1,grpc-status,grpc-message,grpc-status-details-bin
+              typed_per_filter_config:
+                envoy.filters.http.cors:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.CorsPolicy
+                  allow_origin_string_match:
+                  - safe_regex:
+                      regex: ".*"
+                  allow_methods: GET, PUT, DELETE, POST, OPTIONS
+                  allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout,authorization,x-grpc-web
+                  allow_credentials: true
+                  max_age: "1728000"
+                  expose_headers: custom-header-1,grpc-status,grpc-message,grpc-status-details-bin
           http_filters:
           - name: envoy.filters.http.grpc_web
             typed_config:
@@ -74,7 +76,11 @@ static_resources:
   - name: image_generation_grpc_service
     connect_timeout: 30s
     type: logical_dns
-    http2_protocol_options: {}
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
     lb_policy: round_robin
     transport_socket:
       name: envoy.transport_sockets.tls

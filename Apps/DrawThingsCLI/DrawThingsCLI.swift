@@ -105,10 +105,6 @@ private struct ResolvedGenerationConfiguration {
   let loraOverrideMapping: [String: LoRAZoo.Specification]
 }
 
-private enum NetworkAccessPolicy {
-  static var offline = false
-}
-
 enum VideoExportFormat: String, ExpressibleByArgument {
   case prores4444
   case prores422hq
@@ -472,17 +468,17 @@ private func resolvedCloudAPIBaseURL(
 }
 
 private func effectiveCloudAPIKey(
-  explicit: String?,
+  context: DrawThingsCLIContext, explicit: String?,
   storedCredentials: CLICloudCredentials?
 ) -> String? {
   CLICloudAuthClient.effectiveAPIKey(
     explicit: explicit,
-    storedCredentials: storedCredentials
+    storedCredentials: storedCredentials, environment: context.environment
   )
 }
 
 private func fetchShortTermToken(
-  apiKey: String,
+  context: DrawThingsCLIContext, apiKey: String,
   baseURL: URL,
   emitStates: Bool
 ) throws -> String {
@@ -491,7 +487,7 @@ private func fetchShortTermToken(
     apiKey: apiKey,
     emitStates: emitStates,
     stateHandler: { state in
-      print("  [AuthState] \(describeCLICloudAuthState(state))")
+      context.print("  [AuthState] \(describeCLICloudAuthState(state))")
     }
   ).value
 }
@@ -841,13 +837,14 @@ private enum ModelsDirectoryResolver {
   private static let appContainerModelsDirectoryPath =
     "~/Library/Containers/com.liuliu.draw-things/Data/Documents/Models"
 
-  static func resolve(path: String?) throws -> URL {
+  static func resolve(context: DrawThingsCLIContext, path: String?) throws -> URL {
     if let path, !path.isEmpty {
-      return try normalizeAndEnsureDirectory(URL(fileURLWithPath: path, isDirectory: true))
+      return try normalizeAndEnsureDirectory(
+        URL(fileURLWithPath: context.path(path), isDirectory: true))
     }
-    if let envPath = ProcessInfo.processInfo.environment["DRAWTHINGS_MODELS_DIR"], !envPath.isEmpty
-    {
-      return try normalizeAndEnsureDirectory(URL(fileURLWithPath: envPath, isDirectory: true))
+    if let envPath = context.environment["DRAWTHINGS_MODELS_DIR"], !envPath.isEmpty {
+      return try normalizeAndEnsureDirectory(
+        URL(fileURLWithPath: context.path(envPath), isDirectory: true))
     }
     #if os(macOS)
       let appContainerModelsDirectory = URL(
@@ -855,7 +852,7 @@ private enum ModelsDirectoryResolver {
         isDirectory: true)
       return try normalizeAndEnsureDirectory(appContainerModelsDirectory)
     #else
-      if let adjacent = executableAdjacentModelsDirectoryIfExists() {
+      if let adjacent = executableAdjacentModelsDirectoryIfExists(context: context) {
         return adjacent
       }
       let fallback = try documentsModelsDirectory()
@@ -863,8 +860,11 @@ private enum ModelsDirectoryResolver {
     #endif
   }
 
-  private static func executableAdjacentModelsDirectoryIfExists() -> URL? {
-    let executablePath = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+  private static func executableAdjacentModelsDirectoryIfExists(context: DrawThingsCLIContext)
+    -> URL?
+  {
+    guard let executable = context.executablePath else { return nil }
+    let executablePath = URL(fileURLWithPath: executable).resolvingSymlinksInPath()
     let modelsPath = executablePath.deletingLastPathComponent().appendingPathComponent(
       "Models", isDirectory: true)
     var isDirectory: ObjCBool = false
@@ -900,13 +900,15 @@ private enum ModelsDirectoryResolver {
 }
 
 private enum ModelResolver {
-  static func resolve(_ input: String, modelsDirectory: URL? = nil) -> ModelZoo.Specification? {
+  static func resolve(context: DrawThingsCLIContext, _ input: String, modelsDirectory: URL? = nil)
+    -> ModelZoo.Specification?
+  {
     if let specification = ModelZoo.resolveModelReference(input)?.specification {
       return specification
     }
     guard let modelsDirectory else { return nil }
     return CommunityModelResolver.resolve(
-      input, modelsDirectory: modelsDirectory, allowNetwork: !NetworkAccessPolicy.offline)
+      input, modelsDirectory: modelsDirectory, allowNetwork: !context.offline)
   }
 
   static func suggestions(_ input: String, limit: Int = 5) -> [ModelZoo.Specification] {
@@ -916,19 +918,20 @@ private enum ModelResolver {
 
 private enum ConfigurationLoader {
   static func load(
-    modelSpecification: ModelZoo.Specification, configJSON: String?, configFile: String?,
+    context: DrawThingsCLIContext, modelSpecification: ModelZoo.Specification, configJSON: String?,
+    configFile: String?,
     modelsDirectory: URL
   ) throws -> ResolvedGenerationConfiguration {
     if configJSON != nil && configFile != nil {
       throw ValidationError("Use only one of --config-json or --config-file")
     }
     let overrideDictionary = try loadOverrideDictionary(
-      configJSON: configJSON, configFile: configFile)
+      context: context, configJSON: configJSON, configFile: configFile)
     let loraOverrideMapping = loraOverrideMapping(from: overrideDictionary)
     let (recommendedConfiguration, recommendedNegativePrompt) =
       RecommendedSettingsResolver.resolve(
         modelSpecification: modelSpecification, overrideDictionary: overrideDictionary,
-        modelsDirectory: modelsDirectory, allowNetwork: !NetworkAccessPolicy.offline)
+        modelsDirectory: modelsDirectory, allowNetwork: !context.offline)
     let configuration = try mergeOverrides(
       overrideDictionary, onto: recommendedConfiguration, forcingModel: modelSpecification.file)
     return ResolvedGenerationConfiguration(
@@ -937,9 +940,12 @@ private enum ConfigurationLoader {
   }
 
   private static func loadOverrideDictionary(
-    configJSON: String?, configFile: String?
+    context: DrawThingsCLIContext, configJSON: String?, configFile: String?
   ) throws -> [String: Any]? {
-    guard let rawString = try loadRawJSON(configJSON: configJSON, configFile: configFile) else {
+    guard
+      let rawString = try loadRawJSON(
+        context: context, configJSON: configJSON, configFile: configFile)
+    else {
       return nil
     }
     guard let data = rawString.data(using: .utf8),
@@ -979,12 +985,14 @@ private enum ConfigurationLoader {
     return configuration
   }
 
-  private static func loadRawJSON(configJSON: String?, configFile: String?) throws -> String? {
+  private static func loadRawJSON(
+    context: DrawThingsCLIContext, configJSON: String?, configFile: String?
+  ) throws -> String? {
     if let configJSON {
       return configJSON
     }
     if let configFile {
-      return try String(contentsOfFile: configFile, encoding: .utf8)
+      return try String(contentsOfFile: context.path(configFile), encoding: .utf8)
     }
     return nil
   }
@@ -1441,8 +1449,8 @@ private enum CommunityModelResolver {
 }
 
 private enum SHARefresh {
-  static func refresh(timeout: TimeInterval = 15) {
-    guard !NetworkAccessPolicy.offline else { return }
+  static func refresh(context: DrawThingsCLIContext, timeout: TimeInterval = 15) {
+    guard !context.offline else { return }
     let endpoints = [
       "https://models.drawthings.ai/models_sha256.json",
       "https://models.drawthings.ai/uncurated_models_sha256.json",
@@ -1486,6 +1494,7 @@ private enum SHARefresh {
 
 private enum ModelDownloader {
   private final class DownloadProgressPrinter {
+    private let context: DrawThingsCLIContext
     private let file: String
     private let index: Int
     private let total: Int
@@ -1493,7 +1502,8 @@ private enum ModelDownloader {
     private var lastLineLength: Int = 0
     private var hasRendered = false
 
-    init(file: String, index: Int, total: Int) {
+    init(context: DrawThingsCLIContext, file: String, index: Int, total: Int) {
+      self.context = context
       self.file = file
       self.index = index
       self.total = total
@@ -1511,14 +1521,14 @@ private enum ModelDownloader {
       let padding = String(
         repeating: " ", count: max(0, lastLineLength - line.count))
       let output = "\r\(line)\(padding)\(isComplete ? "\n" : "")"
-      FileHandle.standardOutput.write(Data(output.utf8))
+      context.write(output)
       hasRendered = true
       lastLineLength = isComplete ? 0 : line.count
     }
 
     func finishLineIfNeeded() {
       guard hasRendered, lastLineLength > 0 else { return }
-      FileHandle.standardOutput.write(Data("\n".utf8))
+      context.write("\n")
       lastLineLength = 0
     }
 
@@ -1552,7 +1562,7 @@ private enum ModelDownloader {
   }
 
   static func ensureFiles(
-    _ files: [String], modelsDirectory: URL, downloadMissing: Bool
+    context: DrawThingsCLIContext, _ files: [String], modelsDirectory: URL, downloadMissing: Bool
   ) throws {
     let orderedUniqueFiles = orderedSet(files)
     let missing = orderedUniqueFiles.filter { !ModelZoo.isModelDownloaded($0) }
@@ -1561,21 +1571,22 @@ private enum ModelDownloader {
     if !downloadMissing {
       throw DrawThingsCLIError.missingModelFiles(missing)
     }
-    if NetworkAccessPolicy.offline {
+    if context.offline {
       throw ValidationError(
         "Offline mode is enabled and model files are missing:\n\(missing.map { "  - \($0)" }.joined(separator: "\n"))"
       )
     }
 
-    SHARefresh.refresh()
+    SHARefresh.refresh(context: context)
     for (index, file) in missing.enumerated() {
       try downloadFile(
-        file, index: index + 1, total: missing.count, modelsDirectory: modelsDirectory)
+        context: context, file, index: index + 1, total: missing.count,
+        modelsDirectory: modelsDirectory)
     }
   }
 
   private static func downloadFile(
-    _ file: String, index: Int, total: Int, modelsDirectory _: URL
+    context: DrawThingsCLIContext, _ file: String, index: Int, total: Int, modelsDirectory _: URL
   ) throws {
     let encodedName = file.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? file
     guard let remoteURL = URL(string: "https://static.libnnc.org/\(encodedName)") else {
@@ -1587,10 +1598,23 @@ private enum ModelDownloader {
     let expectedSHA = ModelZoo.fileSHA256ForModelDownloaded(file)
     let semaphore = DispatchSemaphore(value: 0)
     var outputError: Error?
-    let progressPrinter = DownloadProgressPrinter(file: file, index: index, total: total)
+    let progressPrinter = DownloadProgressPrinter(
+      context: context, file: file, index: index, total: total)
     let downloader = ResumableDownloader(
       remoteUrl: remoteURL, localUrl: localURL, sha256: expectedSHA)
+    // Cancellation suppresses future downloader events but may race an event
+    // already being delivered. Drain it before the host closes these streams.
+    let callbackLock = NSLock()
+    var acceptingCallbacks = true
+    defer {
+      callbackLock.lock()
+      acceptingCallbacks = false
+      callbackLock.unlock()
+    }
     downloader.resume { totalBytesWritten, totalBytesExpectedToWrite, isComplete, error in
+      callbackLock.lock()
+      defer { callbackLock.unlock() }
+      guard acceptingCallbacks else { return }
       if let error {
         progressPrinter.finishLineIfNeeded()
         outputError = error
@@ -1605,7 +1629,13 @@ private enum ModelDownloader {
         semaphore.signal()
       }
     }
-    semaphore.wait()
+    while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+      if context.isCancelled {
+        downloader.cancel()
+        throw DrawThingsCLIInvocationError.cancelled
+      }
+    }
+    try context.checkCancellation()
     if let outputError {
       throw outputError
     }
@@ -1739,7 +1769,8 @@ private func importedDependencyFiles(
 }
 
 private func printImportedModelSummary(
-  specification: ModelZoo.Specification, version: ModelVersion, modifier: SamplerModifier,
+  context: DrawThingsCLIContext, specification: ModelZoo.Specification, version: ModelVersion,
+  modifier: SamplerModifier,
   importedFiles: [String], dependencyFiles: [String]
 ) {
   let rows = [
@@ -1758,18 +1789,18 @@ private func printImportedModelSummary(
     ],
     ["PREFIX", specification.prefix.isEmpty ? "-" : specification.prefix],
   ]
-  printTable(headers: ["FIELD", "VALUE"], rows: rows, maxWidths: [18, 88])
+  printTable(context: context, headers: ["FIELD", "VALUE"], rows: rows, maxWidths: [18, 88])
   if !importedFiles.isEmpty {
-    print("")
+    context.print("")
     printTable(
-      headers: ["IMPORTED_FILE"],
+      context: context, headers: ["IMPORTED_FILE"],
       rows: importedFiles.map { [$0] },
       maxWidths: [88])
   }
   if !dependencyFiles.isEmpty {
-    print("")
+    context.print("")
     printTable(
-      headers: ["COMPANION_FILE"],
+      context: context, headers: ["COMPANION_FILE"],
       rows: dependencyFiles.map { [$0] },
       maxWidths: [88])
   }
@@ -1951,13 +1982,50 @@ private func writePNG(tensor: Tensor<FloatType>, to outputPath: String) throws {
     size: (x: shape.width, y: shape.height),
     layout: PNG.Layout(format: .rgb8(palette: [], fill: nil, key: nil)))
   do {
-    try image.compress(path: outputPath, level: 4)
+    try PNGFile.write(image, path: outputPath)
   } catch {
     throw DrawThingsCLIError.pngEncodeFailed(outputPath)
   }
 }
 
+// SwiftPNG's path convenience API is not available on iOS. Keep the same
+// codec on every platform by providing its small synchronous stream interface.
+private struct PNGFile: PNG.Bytestream.Source, PNG.Bytestream.Destination {
+  let file: UnsafeMutablePointer<FILE>
+
+  func read(count: Int) -> [UInt8]? {
+    var bytes = [UInt8](repeating: 0, count: count)
+    guard fread(&bytes, 1, count, file) == count else { return nil }
+    return bytes
+  }
+
+  func write(_ bytes: [UInt8]) -> Void? {
+    guard fwrite(bytes, 1, bytes.count, file) == bytes.count else { return nil }
+    return ()
+  }
+
+  static func read(path: String) throws -> PNG.Data.Rectangular {
+    guard let file = fopen(path, "rb") else {
+      throw DrawThingsCLIError.invalidInputImagePath(path)
+    }
+    defer { fclose(file) }
+    var stream = PNGFile(file: file)
+    return try PNG.Data.Rectangular.decompress(stream: &stream)
+  }
+
+  static func write(_ image: PNG.Data.Rectangular, path: String) throws {
+    guard let file = fopen(path, "wb") else {
+      throw DrawThingsCLIError.pngEncodeFailed(path)
+    }
+    defer { fclose(file) }
+    var stream = PNGFile(file: file)
+    try image.compress(stream: &stream, level: 4)
+    guard fflush(file) == 0 else { throw DrawThingsCLIError.pngEncodeFailed(path) }
+  }
+}
+
 private final class LocalGenerationRunner {
+  private let context: DrawThingsCLIContext
   struct GenerationTimingSummary {
     let totalGenerationDuration: TimeInterval
     let samplingStepDurations: [TimeInterval]
@@ -2060,7 +2128,8 @@ private final class LocalGenerationRunner {
   private let temporaryDirectory: String
   private let imageGenerator: LocalImageGenerator
 
-  init() throws {
+  init(context: DrawThingsCLIContext) throws {
+    self.context = context
     let (temporaryDirectory, imageGenerator) = try createLocalImageGenerator(queue: queue)
     self.temporaryDirectory = temporaryDirectory
     self.imageGenerator = imageGenerator
@@ -2094,8 +2163,11 @@ private final class LocalGenerationRunner {
     inputImage: Tensor<FloatType>?, hints: [(ControlHintType, [(AnyTensor, Float)])] = [],
     livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil
   ) throws -> GenerationTensorResult {
+    let context = self.context
+    try context.checkCancellation()
+    defer { context.setCancellation(nil) }
     let trace = ImageGeneratorTrace(fromBridge: true)
-    let progressPrinter = ProgressBarPrinter()
+    let progressPrinter = ProgressBarPrinter(output: context.output)
     let estimation = GenerationEstimation.default
     let timingTracker = GenerationTimingTracker()
     progressPrinter.update(progress: 0, label: "Starting...", detail: nil)
@@ -2117,15 +2189,16 @@ private final class LocalGenerationRunner {
             if let previewTensor {
               livePreviewSession?.update(tensor: previewTensor)
             }
-            return true
+            return !context.isCancelled
           }
       let result = imageGenerator.generate(
         trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints,
         text: prompt, negativeText: negativePrompt, configuration: configuration, fileMapping: [:],
-        keywords: [], cancellation: { _ in },
+        keywords: [], cancellation: { context.setCancellation($0) },
         feedback: feedback)
       return result
     }
+    try context.checkCancellation()
     let (images, audio, _) = generationResult
     guard let images, !images.isEmpty else {
       throw DrawThingsCLIError.generationFailed
@@ -2559,6 +2632,7 @@ private final class LocalGenerationRunner {
 }
 
 private final class RemoteGenerationRunner {
+  private let context: DrawThingsCLIContext
   private struct RemoteTimingTracker {
     private let startTime = Date()
     private var lastSamplingStepTime: Date?
@@ -2583,7 +2657,8 @@ private final class RemoteGenerationRunner {
 
   private let backendOptions: GenerateBackendOptions
 
-  init(backendOptions: GenerateBackendOptions) {
+  init(context: DrawThingsCLIContext, backendOptions: GenerateBackendOptions) {
+    self.context = context
     self.backendOptions = backendOptions
   }
 
@@ -2598,11 +2673,14 @@ private final class RemoteGenerationRunner {
     if videoFormat != nil || isVideoOutputPath(outputPath) {
       throw ValidationError("Remote and cloud generation currently support .png output only.")
     }
+    let context = self.context
+    try context.checkCancellation()
+    defer { context.setCancellation(nil) }
     let remote = try configuredRemoteGenerator()
     defer {
       try? remote.client.disconnect()
     }
-    let progressPrinter = ProgressBarPrinter()
+    let progressPrinter = ProgressBarPrinter(output: context.output)
     var timingTracker = RemoteTimingTracker()
     progressPrinter.update(progress: 0, label: "Connecting...", detail: nil)
 
@@ -2617,13 +2695,14 @@ private final class RemoteGenerationRunner {
       configuration: configuration,
       fileMapping: [:],
       keywords: [],
-      cancellation: { _ in },
+      cancellation: { context.setCancellation($0) },
       feedback: { signpost, signposts, _ in
         timingTracker.record(signpost: signpost)
         self.updateProgress(progressPrinter, signpost: signpost, signposts: signposts)
-        return true
+        return !context.isCancelled
       })
 
+    try context.checkCancellation()
     guard let tensors = result.0, !tensors.isEmpty else {
       throw DrawThingsCLIError.generationFailed
     }
@@ -2740,11 +2819,12 @@ private final class RemoteGenerationRunner {
       (Bool, Data, GenerationConfiguration, Bool, Int, (@escaping () -> Void) -> Void) -> String?
     )?
   {
+    let context = self.context
     guard backendOptions.cloudCompute else { return nil }
     let storedCredentials = DrawThingsCLICredentialsStore.load()
     guard
       let apiKey = effectiveCloudAPIKey(
-        explicit: backendOptions.apiKey,
+        context: context, explicit: backendOptions.apiKey,
         storedCredentials: storedCredentials
       )
     else {
@@ -2759,7 +2839,7 @@ private final class RemoteGenerationRunner {
     return { fromBridge, encodedBlob, configuration, hasImage, shuffleCount, cancellation in
       do {
         let shortTermToken = try fetchShortTermToken(
-          apiKey: apiKey,
+          context: context, apiKey: apiKey,
           baseURL: baseURL,
           emitStates: false
         )
@@ -2777,7 +2857,7 @@ private final class RemoteGenerationRunner {
           cancellation: cancellation
         )
       } catch {
-        print("[CloudAuth] \(error.localizedDescription)")
+        context.print("[CloudAuth] \(error.localizedDescription)")
         return nil
       }
     }
@@ -2851,10 +2931,10 @@ private func medianDuration(_ durations: [TimeInterval]) -> TimeInterval {
 }
 
 private func printGenerationTimingSummary(
-  _ summary: LocalGenerationRunner.GenerationTimingSummary
+  context: DrawThingsCLIContext, _ summary: LocalGenerationRunner.GenerationTimingSummary
 ) {
-  print("Generation timing:")
-  print(
+  context.print("Generation timing:")
+  context.print(
     "  Total generation time (including model loading): \(formatDurationForCLI(summary.totalGenerationDuration))"
   )
   guard !summary.samplingStepDurations.isEmpty else {
@@ -2863,7 +2943,7 @@ private func printGenerationTimingSummary(
   let averageStepDuration =
     summary.samplingStepDurations.reduce(0, +) / Double(summary.samplingStepDurations.count)
   let medianStepDuration = medianDuration(summary.samplingStepDurations)
-  print(
+  context.print(
     "  Sampling step time (\(summary.samplingStepDurations.count) step(s)): avg \(formatDurationForCLI(averageStepDuration)), median \(formatDurationForCLI(medianStepDuration))"
   )
 }
@@ -2936,6 +3016,7 @@ private enum TerminalImageRenderer {
   private static var kittyLivePreviewImageID: Int { max(1, Int(getpid())) }
   private static let kittyLivePreviewPlacementID = 1
   final class LivePreviewSession {
+    private let context: DrawThingsCLIContext
     private let resolvedProtocol: ResolvedProtocol
     private let modelVersion: ModelVersion
     private let previewColumns: Int
@@ -2944,17 +3025,19 @@ private enum TerminalImageRenderer {
     private var didRenderFinalImage = false
 
     private init?(
-      mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol,
+      context: DrawThingsCLIContext, mode: TerminalImageRenderMode,
+      protocolChoice: TerminalImageProtocol,
       outputPixelSize: PixelSize, modelVersion: ModelVersion
     ) {
-      guard mode != .disabled, isStandardOutputTTY else { return nil }
-      let environment = ProcessInfo.processInfo.environment
+      guard mode != .disabled, context.isStandardOutputTTY else { return nil }
+      let environment = context.environment
       guard
         let resolvedProtocol = TerminalImageRenderer.resolvedProtocol(
           for: protocolChoice, environment: environment)
       else {
         return nil
       }
+      self.context = context
       self.resolvedProtocol = resolvedProtocol
       self.modelVersion = modelVersion
       let previewSize = TerminalImageRenderer.fittedPreviewSize(
@@ -2979,17 +3062,19 @@ private enum TerminalImageRenderer {
         guard previewRows > 0 else { return }
         ensureReservedRegion()
         guard let data = pngData(from: previewImage) else { return }
-        clearPreviewRegion(rows: previewRows)
+        clearPreviewRegion(context: context, rows: previewRows)
         renderITerm2(
-          data: data, fileName: "preview.png", columns: previewColumns, rows: previewRows)
-        moveCursor(up: previewRows)
-        write("\r", to: .standardOutput)
+          context: context, data: data, fileName: "preview.png", columns: previewColumns,
+          rows: previewRows)
+        moveCursor(context: context, up: previewRows)
+        write(context: context, "\r", to: .standardOutput)
       case .kitty:
         guard previewRows > 0 else { return }
         ensureReservedRegion()
         guard let image = rgbaData(from: previewImage) else { return }
         renderKittyLivePreview(
-          data: image.data, size: image.size, columns: previewColumns, rows: previewRows)
+          context: context, data: image.data, size: image.size, columns: previewColumns,
+          rows: previewRows)
       }
     }
 
@@ -3000,17 +3085,18 @@ private enum TerminalImageRenderer {
         guard previewRows > 0 else { return false }
         ensureReservedRegion()
         let data = try Data(contentsOf: fileURL)
-        clearPreviewRegion(rows: previewRows)
+        clearPreviewRegion(context: context, rows: previewRows)
         let finalColumns = TerminalImageRenderer.previewColumns(
-          environment: ProcessInfo.processInfo.environment)
-        renderITerm2(data: data, fileName: fileURL.lastPathComponent, columns: finalColumns)
+          environment: context.environment)
+        renderITerm2(
+          context: context, data: data, fileName: fileURL.lastPathComponent, columns: finalColumns)
         didRenderFinalImage = true
       case .kitty:
         guard previewRows > 0 else { return false }
         ensureReservedRegion()
         let image = try loadKittyImage(path: fileURL)
-        deleteKittyImage(imageID: kittyLivePreviewImageID)
-        renderKittyInline(data: image.data, size: image.size)
+        deleteKittyImage(context: context, imageID: kittyLivePreviewImageID)
+        renderKittyInline(context: context, data: image.data, size: image.size)
         didRenderFinalImage = true
       }
       return true
@@ -3021,15 +3107,15 @@ private enum TerminalImageRenderer {
       case .iterm2:
         guard didReserveRegion else { return }
         if !didRenderFinalImage {
-          moveCursor(down: previewRows)
-          write("\r", to: .standardOutput)
+          moveCursor(context: context, down: previewRows)
+          write(context: context, "\r", to: .standardOutput)
         }
         didReserveRegion = false
         didRenderFinalImage = false
       case .kitty:
         if didReserveRegion && !didRenderFinalImage {
-          moveCursor(down: previewRows)
-          write("\r", to: .standardOutput)
+          moveCursor(context: context, down: previewRows)
+          write(context: context, "\r", to: .standardOutput)
         }
         didReserveRegion = false
         didRenderFinalImage = false
@@ -3038,14 +3124,15 @@ private enum TerminalImageRenderer {
 
     private func ensureReservedRegion() {
       if !didReserveRegion {
-        reservePreviewRegion(rows: previewRows)
-        moveCursor(up: previewRows)
+        reservePreviewRegion(context: context, rows: previewRows)
+        moveCursor(context: context, up: previewRows)
         didReserveRegion = true
       }
     }
 
     fileprivate static func make(
-      mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol,
+      context: DrawThingsCLIContext, mode: TerminalImageRenderMode,
+      protocolChoice: TerminalImageProtocol,
       configuration: GenerationConfiguration
     ) -> LivePreviewSession? {
       let outputPixelSize = PixelSize(
@@ -3053,13 +3140,15 @@ private enum TerminalImageRenderer {
         height: Int(configuration.startHeight) * 64)
       let modelVersion = ModelZoo.versionForModel(configuration.model ?? "")
       return LivePreviewSession(
-        mode: mode, protocolChoice: protocolChoice, outputPixelSize: outputPixelSize,
+        context: context, mode: mode, protocolChoice: protocolChoice,
+        outputPixelSize: outputPixelSize,
         modelVersion: modelVersion)
     }
   }
 
   static func validateRequestedOutput(
-    outputPath: String, mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol,
+    context: DrawThingsCLIContext, outputPath: String, mode: TerminalImageRenderMode,
+    protocolChoice: TerminalImageProtocol,
     requiresRenderableOutput: Bool
   ) throws {
     guard mode != .disabled else {
@@ -3075,17 +3164,17 @@ private enum TerminalImageRenderer {
     guard outputURL.pathExtension.lowercased() == "png" else {
       throw ValidationError("--terminal-image requires .png output")
     }
-    if mode == .explicit && !isStandardOutputTTY {
+    if mode == .explicit && !context.isStandardOutputTTY {
       throw ValidationError("--terminal-image requires stdout to be a TTY")
     }
     if requiresRenderableOutput {
-      guard isStandardOutputTTY else {
+      guard context.isStandardOutputTTY else {
         throw ValidationError(
           "No --output provided and stdout is not a TTY. Pass --output to save a file."
         )
       }
       guard
-        resolvedProtocol(for: protocolChoice, environment: ProcessInfo.processInfo.environment)
+        resolvedProtocol(for: protocolChoice, environment: context.environment)
           != nil
       else {
         throw ValidationError(
@@ -3096,25 +3185,29 @@ private enum TerminalImageRenderer {
   }
 
   static func renderGeneratedOutputsIfRequested(
-    _ outputPaths: [String], mode: TerminalImageRenderMode, protocolChoice: TerminalImageProtocol
+    context: DrawThingsCLIContext, _ outputPaths: [String], mode: TerminalImageRenderMode,
+    protocolChoice: TerminalImageProtocol
   ) {
     guard mode != .disabled, let firstPath = outputPaths.first else { return }
-    guard mode != .automatic || isStandardOutputTTY else { return }
+    guard mode != .automatic || context.isStandardOutputTTY else { return }
     if outputPaths.count > 1 {
       write(
+        context: context,
         "Terminal preview: rendering the first PNG only (\(outputPaths.count) files written).\n",
         to: .standardError)
     }
     do {
-      try render(path: firstPath, protocolChoice: protocolChoice)
+      try render(context: context, path: firstPath, protocolChoice: protocolChoice)
     } catch {
       let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-      write("Terminal preview skipped: \(message)\n", to: .standardError)
+      write(context: context, "Terminal preview skipped: \(message)\n", to: .standardError)
     }
   }
 
-  private static func render(path: String, protocolChoice: TerminalImageProtocol) throws {
-    let environment = ProcessInfo.processInfo.environment
+  private static func render(
+    context: DrawThingsCLIContext, path: String, protocolChoice: TerminalImageProtocol
+  ) throws {
+    let environment = context.environment
     guard
       let resolvedProtocol = resolvedProtocol(
         for: protocolChoice, environment: environment)
@@ -3129,9 +3222,10 @@ private enum TerminalImageRenderer {
     case .iterm2:
       let data = try Data(contentsOf: fileURL)
       renderITerm2(
-        data: data, fileName: fileName, columns: previewColumns(environment: environment))
+        context: context, data: data, fileName: fileName,
+        columns: previewColumns(environment: environment))
     case .kitty:
-      try renderKitty(path: fileURL)
+      try renderKitty(context: context, path: fileURL)
     }
   }
 
@@ -3206,15 +3300,9 @@ private enum TerminalImageRenderer {
     return (max(1, min(maxColumns, Int(floor(columnsAtMaxRows)))), max(1, maxRows))
   }
 
-  private static var isStandardOutputTTY: Bool {
-    #if canImport(Darwin) || canImport(Glibc)
-      return isatty(STDOUT_FILENO) != 0
-    #else
-      return false
-    #endif
-  }
-
-  private static func renderITerm2(data: Data, fileName: String, columns: Int, rows: Int? = nil) {
+  private static func renderITerm2(
+    context: DrawThingsCLIContext, data: Data, fileName: String, columns: Int, rows: Int? = nil
+  ) {
     let encodedName = Data(fileName.utf8).base64EncodedString()
     var arguments =
       "name=\(encodedName);size=\(data.count);width=\(columns);preserveAspectRatio=1;inline=1"
@@ -3222,61 +3310,69 @@ private enum TerminalImageRenderer {
       arguments += ";height=\(rows)"
     }
     let encoded = data.base64EncodedString()
-    if ProcessInfo.processInfo.environment["TMUX"] == nil,
+    if context.environment["TMUX"] == nil,
       encoded.count + arguments.count < iTerm2PayloadLimit
     {
-      write("\u{1B}]1337;File=\(arguments):\(encoded)\u{07}\n", to: .standardOutput)
+      write(
+        context: context, "\u{1B}]1337;File=\(arguments):\(encoded)\u{07}\n", to: .standardOutput)
       return
     }
-    write("\u{1B}]1337;MultipartFile=\(arguments)\u{07}", to: .standardOutput)
+    write(context: context, "\u{1B}]1337;MultipartFile=\(arguments)\u{07}", to: .standardOutput)
     for chunk in base64Chunks(encoded, chunkSize: iTerm2MultipartChunkSize) {
-      write("\u{1B}]1337;FilePart=\(chunk)\u{07}", to: .standardOutput)
+      write(context: context, "\u{1B}]1337;FilePart=\(chunk)\u{07}", to: .standardOutput)
     }
-    write("\u{1B}]1337;FileEnd\u{07}\n", to: .standardOutput)
+    write(context: context, "\u{1B}]1337;FileEnd\u{07}\n", to: .standardOutput)
   }
 
-  private static func renderKittyInline(data: Data, size: PixelSize) {
+  private static func renderKittyInline(context: DrawThingsCLIContext, data: Data, size: PixelSize)
+  {
     let encoded = data.base64EncodedString()
     let chunks = base64Chunks(encoded, chunkSize: kittyChunkSize)
     for (index, chunk) in chunks.enumerated() {
       let isLast = index == chunks.count - 1
       if index == 0 {
         write(
+          context: context,
           "\u{1B}_Ga=T,f=32,s=\(size.width),v=\(size.height),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
           to: .standardOutput)
       } else {
-        write("\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
+        write(context: context, "\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
       }
     }
-    write("\r", to: .standardOutput)
+    write(context: context, "\r", to: .standardOutput)
   }
 
   private static func renderKittyLivePreview(
-    data: Data, size: PixelSize, columns: Int? = nil, rows: Int? = nil, moveCursor: Bool = false
+    context: DrawThingsCLIContext, data: Data, size: PixelSize, columns: Int? = nil,
+    rows: Int? = nil, moveCursor: Bool = false
   ) {
-    transmitKittyImage(data: data, size: size, imageID: kittyLivePreviewImageID)
+    transmitKittyImage(context: context, data: data, size: size, imageID: kittyLivePreviewImageID)
     placeKittyImage(
-      imageID: kittyLivePreviewImageID, placementID: kittyLivePreviewPlacementID,
+      context: context, imageID: kittyLivePreviewImageID, placementID: kittyLivePreviewPlacementID,
       columns: columns, rows: rows, moveCursor: moveCursor)
   }
 
-  private static func transmitKittyImage(data: Data, size: PixelSize, imageID: Int) {
+  private static func transmitKittyImage(
+    context: DrawThingsCLIContext, data: Data, size: PixelSize, imageID: Int
+  ) {
     let encoded = data.base64EncodedString()
     let chunks = base64Chunks(encoded, chunkSize: kittyChunkSize)
     for (index, chunk) in chunks.enumerated() {
       let isLast = index == chunks.count - 1
       if index == 0 {
         write(
+          context: context,
           "\u{1B}_Ga=t,f=32,s=\(size.width),v=\(size.height),i=\(imageID),q=2,m=\(isLast ? 0 : 1);\(chunk)\u{1B}\\",
           to: .standardOutput)
       } else {
-        write("\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
+        write(context: context, "\u{1B}_Gm=\(isLast ? 0 : 1);\(chunk)\u{1B}\\", to: .standardOutput)
       }
     }
   }
 
   private static func placeKittyImage(
-    imageID: Int, placementID: Int, columns: Int? = nil, rows: Int? = nil, moveCursor: Bool
+    context: DrawThingsCLIContext, imageID: Int, placementID: Int, columns: Int? = nil,
+    rows: Int? = nil, moveCursor: Bool
   ) {
     var arguments = "a=p,i=\(imageID),p=\(placementID),C=\(moveCursor ? 0 : 1),q=2"
     if let columns, columns > 0 {
@@ -3286,53 +3382,53 @@ private enum TerminalImageRenderer {
       arguments += ",r=\(rows)"
     }
     write(
-      "\u{1B}_G\(arguments)\u{1B}\\",
+      context: context, "\u{1B}_G\(arguments)\u{1B}\\",
       to: .standardOutput)
     if !moveCursor {
-      write("\r", to: .standardOutput)
+      write(context: context, "\r", to: .standardOutput)
     }
   }
 
-  private static func deleteKittyImage(imageID: Int) {
-    write("\u{1B}_Ga=d,i=\(imageID),q=2\u{1B}\\", to: .standardOutput)
+  private static func deleteKittyImage(context: DrawThingsCLIContext, imageID: Int) {
+    write(context: context, "\u{1B}_Ga=d,i=\(imageID),q=2\u{1B}\\", to: .standardOutput)
   }
 
-  private static func renderKitty(path: URL) throws {
+  private static func renderKitty(context: DrawThingsCLIContext, path: URL) throws {
     let image = try loadKittyImage(path: path)
-    renderKittyInline(data: image.data, size: image.size)
+    renderKittyInline(context: context, data: image.data, size: image.size)
   }
 
-  private static func reservePreviewRegion(rows: Int) {
+  private static func reservePreviewRegion(context: DrawThingsCLIContext, rows: Int) {
     guard rows > 0 else { return }
-    write(String(repeating: "\n", count: rows), to: .standardOutput)
+    write(context: context, String(repeating: "\n", count: rows), to: .standardOutput)
   }
 
-  private static func clearPreviewRegion(rows: Int) {
+  private static func clearPreviewRegion(context: DrawThingsCLIContext, rows: Int) {
     guard rows > 0 else { return }
     for row in 0..<rows {
-      write("\r\u{1B}[2K", to: .standardOutput)
+      write(context: context, "\r\u{1B}[2K", to: .standardOutput)
       if row < rows - 1 {
-        write("\u{1B}[1B", to: .standardOutput)
+        write(context: context, "\u{1B}[1B", to: .standardOutput)
       }
     }
     if rows > 1 {
-      moveCursor(up: rows - 1)
+      moveCursor(context: context, up: rows - 1)
     }
-    write("\r", to: .standardOutput)
+    write(context: context, "\r", to: .standardOutput)
   }
 
-  private static func moveCursor(up rows: Int) {
+  private static func moveCursor(context: DrawThingsCLIContext, up rows: Int) {
     guard rows > 0 else { return }
-    write("\u{1B}[\(rows)A", to: .standardOutput)
+    write(context: context, "\u{1B}[\(rows)A", to: .standardOutput)
   }
 
-  private static func moveCursor(down rows: Int) {
+  private static func moveCursor(context: DrawThingsCLIContext, down rows: Int) {
     guard rows > 0 else { return }
-    write("\u{1B}[\(rows)B", to: .standardOutput)
+    write(context: context, "\u{1B}[\(rows)B", to: .standardOutput)
   }
 
   private static func inspectImage(path: URL) -> PixelSize? {
-    if let image = try? PNG.Data.Rectangular.decompress(path: path.path) {
+    if let image = try? PNGFile.read(path: path.path) {
       return PixelSize(width: image.size.x, height: image.size.y)
     }
     #if canImport(ImageIO)
@@ -3351,7 +3447,7 @@ private enum TerminalImageRenderer {
   }
 
   private static func loadKittyImage(path: URL) throws -> (data: Data, size: PixelSize) {
-    if let image = try? PNG.Data.Rectangular.decompress(path: path.path) {
+    if let image = try? PNGFile.read(path: path.path) {
       let rgba: [PNG.RGBA<UInt8>] = image.unpack(as: PNG.RGBA<UInt8>.self)
       var bytes = [UInt8]()
       bytes.reserveCapacity(rgba.count * 4)
@@ -3441,13 +3537,16 @@ private enum TerminalImageRenderer {
     return chunks
   }
 
-  private static func write(_ value: String, to handle: FileHandle) {
-    guard let data = value.data(using: .utf8) else { return }
-    handle.write(data)
+  private static func write(
+    context: DrawThingsCLIContext, _ value: String, to handle: DrawThingsCLIContext.Output
+  ) {
+    context.write(value, to: handle)
   }
 }
 
-private func printTable(headers: [String], rows: [[String]], maxWidths: [Int]? = nil) {
+private func printTable(
+  context: DrawThingsCLIContext, headers: [String], rows: [[String]], maxWidths: [Int]? = nil
+) {
   guard !headers.isEmpty else { return }
   let columnCount = headers.count
   let normalizedRows: [[String]] = rows.map { row in
@@ -3481,15 +3580,16 @@ private func printTable(headers: [String], rows: [[String]], maxWidths: [Int]? =
     }.joined(separator: "  ")
   }
 
-  print(formattedRow(headers))
-  print(widths.map { String(repeating: "-", count: $0) }.joined(separator: "  "))
+  context.print(formattedRow(headers))
+  context.print(widths.map { String(repeating: "-", count: $0) }.joined(separator: "  "))
   for row in normalizedRows {
-    print(formattedRow(row))
+    context.print(formattedRow(row))
   }
 }
 
 private func printModelList(
-  limit: Int? = nil, downloadedOnly: Bool = false, modelsDirectory: URL, allowNetwork: Bool = true
+  context: DrawThingsCLIContext, limit: Int? = nil, downloadedOnly: Bool = false,
+  modelsDirectory: URL, allowNetwork: Bool = true
 ) {
   let officialFiles = Set(
     ModelZoo.availableSpecifications
@@ -3500,7 +3600,7 @@ private func printModelList(
   let filtered = downloadedOnly ? specs.filter { ModelZoo.isModelDownloaded($0) } : specs
   let output = limit.map { Array(filtered.prefix($0)) } ?? filtered
   if output.isEmpty {
-    print("No models found.")
+    context.print("No models found.")
     return
   }
   let rows = output.map { spec in
@@ -3510,15 +3610,18 @@ private func printModelList(
     return [spec.file, spec.name, source, downloaded, hf]
   }
   printTable(
-    headers: ["MODEL", "NAME", "SOURCE", "DOWNLOADED", "HUGGING_FACE"],
+    context: context, headers: ["MODEL", "NAME", "SOURCE", "DOWNLOADED", "HUGGING_FACE"],
     rows: rows,
     maxWidths: [42, 42, 10, 10, 52])
 }
 
-private func printModelResolutionHelp(limit: Int = 20, modelsDirectory: URL) {
+private func printModelResolutionHelp(
+  context: DrawThingsCLIContext, limit: Int = 20, modelsDirectory: URL
+) {
   printModelList(
-    limit: limit, modelsDirectory: modelsDirectory, allowNetwork: !NetworkAccessPolicy.offline)
-  print("Tip: run `\(CLIIdentity.command("models list"))` for the full list.")
+    context: context, limit: limit, modelsDirectory: modelsDirectory, allowNetwork: !context.offline
+  )
+  context.print("Tip: run `\(CLIIdentity.command("models list"))` for the full list.")
 }
 
 private func unresolvedModelValidationError(_ input: String) -> ValidationError {
@@ -3548,11 +3651,13 @@ private func validateMiniMaxH3TemporalFrameCount(_ frames: Int, flag: String) th
 }
 
 private func createConfiguration(
-  modelSpecification: ModelZoo.Specification, steps: Int?, cfg: Float?, width: Int?, height: Int?,
+  context: DrawThingsCLIContext, modelSpecification: ModelZoo.Specification, steps: Int?,
+  cfg: Float?, width: Int?, height: Int?,
   frames: Int?, seed: UInt32?, strength: Float?, configJSON: String?, configFile: String?,
   modelsDirectory: URL
 ) throws -> ResolvedGenerationConfiguration {
   let resolvedConfiguration = try ConfigurationLoader.load(
+    context: context,
     modelSpecification: modelSpecification, configJSON: configJSON, configFile: configFile,
     modelsDirectory: modelsDirectory)
   var builder = GenerationConfigurationBuilder(from: resolvedConfiguration.configuration)
@@ -3606,32 +3711,37 @@ private func createConfiguration(
     loraOverrideMapping: resolvedConfiguration.loraOverrideMapping)
 }
 
-private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
+private func runLoRATraining(context: DrawThingsCLIContext, _ options: LoRATrainCommandOptions)
+  throws
+{
   let configJSON = options.configurationOverrides.configJSON
   let (config, configJSONDictionary) = try LoRATrainConfigLoader.load(configJSON: configJSON)
   let resumeCheckpoint = try mergedAlias(
     primary: options.output.resume, alias: options.output.trainCheckpoint, primaryFlag: "--resume",
-    aliasFlag: "--train-checkpoint")
+    aliasFlag: "--train-checkpoint"
+  ).map(context.path)
 
   let modelsDirectory = try ModelsDirectoryResolver.resolve(
+    context: context,
     path: options.modelAndDataset.modelsDirectoryOptions.modelsDir)
   ModelZoo.isExternalUrlsPreferred = true
   ModelZoo.externalUrls = [modelsDirectory]
 
   let modelInput = options.modelAndDataset.model ?? config.baseModel
   guard let modelInput else {
-    printModelResolutionHelp(modelsDirectory: modelsDirectory)
+    printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
     throw ValidationError("--model is required.")
   }
   guard
     let modelSpecification = ModelResolver.resolve(
+      context: context,
       modelInput, modelsDirectory: modelsDirectory)
   else {
-    printModelResolutionHelp(modelsDirectory: modelsDirectory)
+    printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
     throw unresolvedModelValidationError(modelInput)
   }
 
-  let datasetDirectory = options.modelAndDataset.dataset
+  let datasetDirectory = options.modelAndDataset.dataset.map(context.path)
   guard let datasetDirectory, !datasetDirectory.isEmpty else {
     throw ValidationError("--dataset is required.")
   }
@@ -3728,21 +3838,22 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
     throw ValidationError("No dataset images found in '\(datasetDirectory)'.")
   }
 
-  print("Models directory: \(modelsDirectory.path)")
-  print("Model: \(modelSpecification.file)")
-  print("Dataset: \(datasetDirectory)")
-  print("Name: \(name)")
-  print("Training steps: \(trainingSteps)")
-  print("Rank: \(rank), scale: \(loraScale)")
-  print("Resolution: \(widthPx)x\(heightPx)")
-  print("Dataset size: \(datasetInputs.count) sample(s)")
+  context.print("Models directory: \(modelsDirectory.path)")
+  context.print("Model: \(modelSpecification.file)")
+  context.print("Dataset: \(datasetDirectory)")
+  context.print("Name: \(name)")
+  context.print("Training steps: \(trainingSteps)")
+  context.print("Rank: \(rank), scale: \(loraScale)")
+  context.print("Resolution: \(widthPx)x\(heightPx)")
+  context.print("Dataset size: \(datasetInputs.count) sample(s)")
   if shouldDryRun {
-    print("Dry run completed. Use the same command without --dry-run to start training.")
+    context.print("Dry run completed. Use the same command without --dry-run to start training.")
     return
   }
 
   let files = ModelZoo.filesToDownload(modelSpecification).map(\.file)
   try ModelDownloader.ensureFiles(
+    context: context,
     files, modelsDirectory: modelsDirectory, downloadMissing: options.execution.downloadMissing)
 
   let tokenizers = createLoRATrainerTokenizers()
@@ -3801,17 +3912,17 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
       progressHandler: { state, index in
         switch state {
         case .imageEncoding:
-          print("\rEncoding images: \(index)/\(datasetInputs.count)", terminator: "")
+          context.print("\rEncoding images: \(index)/\(datasetInputs.count)", terminator: "")
         case .conditionalEncoding:
-          print("\rEncoding captions: \(index)/\(datasetInputs.count)", terminator: "")
+          context.print("\rEncoding captions: \(index)/\(datasetInputs.count)", terminator: "")
         }
-        fflush(stdout)
-        return true
+        fflush(context.output)
+        return !context.isCancelled
       })
   else {
     throw ValidationError("Failed to prepare training dataset.")
   }
-  print("")
+  context.print("")
 
   let trainableKeys: [String]
   let requestedTrainableLayers = Set(config.trainableLayers)
@@ -3878,12 +3989,12 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
   ) { state, loss, checkpoint in
     switch state {
     case .compile:
-      print("[LoRA] Compiling computation graph...")
+      context.print("[LoRA] Compiling computation graph...")
     case .step(let step):
       lastStep = step
       let elapsed = Date().timeIntervalSince(startTime)
       let itPerSec = step > 0 ? Double(step) / elapsed : 0
-      print(
+      context.print(
         "[LoRA] Step \(step)/\(trainingSteps) | Loss: \(String(format: "%.4f", loss)) | \(String(format: "%.2f", itPerSec)) it/s"
       )
       let shouldSave =
@@ -3901,31 +4012,106 @@ private func runLoRATraining(_ options: LoRATrainCommandOptions) throws {
             LoRAZoo.appendCustomSpecification(specification)
           }
         }
-        print("[LoRA] Saved checkpoint: \(filename)")
+        context.print("[LoRA] Saved checkpoint: \(filename)")
       }
     }
-    fflush(stdout)
-    return true
+    fflush(context.output)
+    return !context.isCancelled
   }
 
+  try context.checkCancellation()
   let totalTime = Date().timeIntervalSince(startTime)
-  print("Training complete in \(String(format: "%.1f", totalTime))s.")
-  print("Final checkpoint: \(output)_\(lastStep)_lora_f32.ckpt")
+  context.print("Training complete in \(String(format: "%.1f", totalTime))s.")
+  context.print("Final checkpoint: \(output)_\(lastStep)_lora_f32.ckpt")
 }
 
-@main
-struct DrawThingsCLI: ParsableCommand {
-  static let configuration = CommandConfiguration(
+private protocol DrawThingsCLICommand: ParsableCommand {
+  mutating func run(context: DrawThingsCLIContext) throws
+}
+
+extension DrawThingsCLICommand {
+  mutating func run() throws {
+    try run(context: .process())
+  }
+}
+
+public struct DrawThingsCLI: ParsableCommand {
+  public init() {}
+  public static let configuration = CommandConfiguration(
     commandName: CLIIdentity.commandName,
     abstract: "Local inference and training CLI for Draw Things models.",
     discussion: CLIHelpText.root,
     version: CLIIdentity.version,
     subcommands: [Generate.self, Auth.self, Models.self, Train.self, Completion.self]
   )
+
+  private static let invocationCondition = NSCondition()
+  private static var isRunning = false
+
+  /// Executes the same command tree in a process or an embedded shell. Returning
+  /// a status is essential: ArgumentParser's `exit` would terminate the host app.
+  public static func run(
+    arguments: [String], context: DrawThingsCLIContext = .process()
+  ) -> Int32 {
+    invocationCondition.lock()
+    while isRunning && !context.isCancelled {
+      invocationCondition.wait(until: Date().addingTimeInterval(0.1))
+    }
+    if context.isCancelled {
+      invocationCondition.unlock()
+      return 130
+    }
+    isRunning = true
+    invocationCondition.unlock()
+    defer {
+      invocationCondition.lock()
+      isRunning = false
+      invocationCondition.broadcast()
+      invocationCondition.unlock()
+    }
+    context.offline = false
+    do {
+      var command = try parseAsRoot(arguments)
+      if var command = command as? DrawThingsCLICommand {
+        let externalUrls = ModelZoo.externalUrls
+        let isExternalUrlsPreferred = ModelZoo.isExternalUrlsPreferred
+        let overrides = ModelZoo.overrideMapping
+        let huggingFaceOverrides = ModelZoo.huggingFaceRepoOverrideMapping
+        let loraOverrides = LoRAZoo.overrideMapping
+        let cacheUri = DeviceCapability.cacheUri
+        let flags = DynamicGraph.flags
+        defer {
+          ModelZoo.externalUrls = externalUrls
+          ModelZoo.isExternalUrlsPreferred = isExternalUrlsPreferred
+          ModelZoo.overrideMapping = overrides
+          ModelZoo.huggingFaceRepoOverrideMapping = huggingFaceOverrides
+          LoRAZoo.overrideMapping = loraOverrides
+          DeviceCapability.cacheUri = cacheUri
+          DynamicGraph.flags = flags
+        }
+        try command.run(context: context)
+      } else {
+        try command.run()
+      }
+      try context.checkCancellation()
+      return 0
+    } catch {
+      if context.isCancelled || error is DrawThingsCLIInvocationError {
+        context.write("\(error.localizedDescription)\n", to: .standardError)
+        return context.isCancelled ? 130 : 1
+      }
+      let status = exitCode(for: error).rawValue
+      let message = fullMessage(for: error)
+      if !message.isEmpty {
+        context.write(message + "\n", to: status == 0 ? .standardOutput : .standardError)
+      }
+      return status
+    }
+  }
 }
 
 extension DrawThingsCLI {
-  struct Generate: ParsableCommand {
+  struct Generate: DrawThingsCLICommand {
     static let configuration = CommandConfiguration(
       abstract: "Run local inference and save generated output image(s) or video.",
       discussion: CLIHelpText.generate)
@@ -3941,8 +4127,14 @@ extension DrawThingsCLI {
     @OptionGroup(title: "Execution") var execution: GenerateExecutionOptions
     @OptionGroup(title: "Backend") var backend: GenerateBackendOptions
 
-    mutating func run() throws {
-      NetworkAccessPolicy.offline = execution.offline
+    mutating func run(context: DrawThingsCLIContext) throws {
+      imageInput.image = imageInput.image.map(context.path)
+      imageInput.initImage = imageInput.initImage.map(context.path)
+      imageInput.inputImage = imageInput.inputImage.map(context.path)
+      imageInput.audio = imageInput.audio.map(context.path)
+      output.output = output.output.map(context.path)
+
+      context.offline = execution.offline
       try backend.validate()
       if execution.offline && backend.isRemoteOrCloud {
         throw ValidationError("--offline cannot be combined with --remote or --cloud-compute.")
@@ -3951,7 +4143,7 @@ extension DrawThingsCLI {
         if backend.isRemoteOrCloud {
           throw ValidationError("--avc currently supports only local generation.")
         }
-        try runLongCatAvatarAVC()
+        try runLongCatAvatarAVC(context: context)
         return
       }
       if imageInput.audio != nil && backend.isRemoteOrCloud {
@@ -3962,6 +4154,7 @@ extension DrawThingsCLI {
           "--segment-frames, --cond-frames, and --zero-audio-features require --avc.")
       }
       let modelsDirectory = try ModelsDirectoryResolver.resolve(
+        context: context,
         path: modelResolution.modelsDirectoryOptions.modelsDir)
       ModelZoo.isExternalUrlsPreferred = true
       ModelZoo.externalUrls = [modelsDirectory]
@@ -3983,28 +4176,30 @@ extension DrawThingsCLI {
         }
       try validateVideoOutputOptions(outputPath: outputPath, videoFormat: output.videoFormat)
       try TerminalImageRenderer.validateRequestedOutput(
-        outputPath: outputPath, mode: terminalImageMode,
+        context: context, outputPath: outputPath, mode: terminalImageMode,
         protocolChoice: output.terminalImageProtocol, requiresRenderableOutput: !writesOutputFile)
 
       guard let model = modelResolution.model else {
-        printModelResolutionHelp(modelsDirectory: modelsDirectory)
+        printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
         throw ValidationError("--model is required.")
       }
       guard
-        let modelSpecification = ModelResolver.resolve(model, modelsDirectory: modelsDirectory)
+        let modelSpecification = ModelResolver.resolve(
+          context: context, model, modelsDirectory: modelsDirectory)
       else {
-        printModelResolutionHelp(modelsDirectory: modelsDirectory)
+        printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
         throw unresolvedModelValidationError(model)
       }
 
       let resolvedConfiguration = try createConfiguration(
-        modelSpecification: modelSpecification, steps: sampling.steps, cfg: sampling.cfg,
+        context: context, modelSpecification: modelSpecification, steps: sampling.steps,
+        cfg: sampling.cfg,
         width: sampling.width, height: sampling.height, frames: sampling.frames,
         seed: sampling.seed, strength: sampling.strength,
         configJSON: configurationOverrides.configJSON,
         configFile: configurationOverrides.configFile,
         modelsDirectory: modelsDirectory)
-      let promptValues = try resolvedPrompts(prompts)
+      let promptValues = try resolvedPrompts(context: context, prompts)
       let configuration = resolvedConfiguration.configuration
       if modelSpecification.version == .longcatVideoAvatar1_5 {
         guard configuration.guidanceScale == 1 else {
@@ -4038,8 +4233,8 @@ extension DrawThingsCLI {
           } else {
             nil
           }
-        let runner = RemoteGenerationRunner(backendOptions: backend)
-        print(backend.cloudCompute ? "Backend: cloud-compute" : "Backend: remote")
+        let runner = RemoteGenerationRunner(context: context, backendOptions: backend)
+        context.print(backend.cloudCompute ? "Backend: cloud-compute" : "Backend: remote")
         let result = try runner.generate(
           prompt: promptValues.prompt,
           negativePrompt: resolvedNegativePrompt,
@@ -4057,19 +4252,20 @@ extension DrawThingsCLI {
         }
         if writesOutputFile {
           for path in result.outputPaths {
-            print("Wrote: \(path)")
+            context.print("Wrote: \(path)")
           }
         }
         TerminalImageRenderer.renderGeneratedOutputsIfRequested(
-          result.outputPaths,
+          context: context, result.outputPaths,
           mode: terminalImageMode,
           protocolChoice: output.terminalImageProtocol
         )
-        printGenerationTimingSummary(result.timing)
+        printGenerationTimingSummary(context: context, result.timing)
         return
       }
 
       try ModelDownloader.ensureFiles(
+        context: context,
         files, modelsDirectory: modelsDirectory, downloadMissing: execution.downloadMissing)
 
       let inputImageTensor: Tensor<FloatType>? =
@@ -4094,7 +4290,7 @@ extension DrawThingsCLI {
         let videoFrames = max(Int(configuration.numFrames), 1)
         let audioInput = try AudioInput(
           contentsOf: audioPath, sampleRate: LongCatAudioConditioningEncoder.sampleRate)
-        print("Encoding audio: \(audioPath)")
+        context.print("Encoding audio: \(audioPath)")
         let features = try LongCatAudioConditioningEncoder(filePath: audioEncoderFilePath).encode(
           audioInput, videoFrames: videoFrames, framesPerSecond: fps)
         audioConditioning = features.conditioning()
@@ -4103,11 +4299,11 @@ extension DrawThingsCLI {
         fallbackAudio = audioInput.waveformTensor(
           videoFrames: videoFrames, framesPerSecond: fps)
       }
-      let runner = try LocalGenerationRunner()
+      let runner = try LocalGenerationRunner(context: context)
       let livePreviewSession =
         livePreviewEnabled
         ? TerminalImageRenderer.LivePreviewSession.make(
-          mode: terminalImageMode, protocolChoice: output.terminalImageProtocol,
+          context: context, mode: terminalImageMode, protocolChoice: output.terminalImageProtocol,
           configuration: configuration)
         : nil
       defer {
@@ -4115,7 +4311,7 @@ extension DrawThingsCLI {
       }
       let hints: [(ControlHintType, [(AnyTensor, Float)])] =
         audioConditioning.map { [(.audio, $0.tensors.map { ($0, 1) })] } ?? []
-      print("Models directory: \(modelsDirectory.path)")
+      context.print("Models directory: \(modelsDirectory.path)")
       let result = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
         configuration: configuration, outputPath: outputPath, inputImage: inputImageTensor,
@@ -4137,15 +4333,15 @@ extension DrawThingsCLI {
       }
       if writesOutputFile {
         for path in result.outputPaths {
-          print("Wrote: \(path)")
+          context.print("Wrote: \(path)")
         }
       }
       if !renderedFinalImageInPlace {
         TerminalImageRenderer.renderGeneratedOutputsIfRequested(
-          result.outputPaths, mode: terminalImageMode,
+          context: context, result.outputPaths, mode: terminalImageMode,
           protocolChoice: output.terminalImageProtocol)
       }
-      printGenerationTimingSummary(result.timing)
+      printGenerationTimingSummary(context: context, result.timing)
     }
   }
 
@@ -4165,7 +4361,7 @@ extension DrawThingsCLI {
       var cloudAPIBaseURL: String?
     }
 
-    struct Login: ParsableCommand {
+    struct Login: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         abstract: "Sign in with Google in your browser and save the returned Draw Things API key."
       )
@@ -4176,7 +4372,7 @@ extension DrawThingsCLI {
       @Flag(name: .long, help: "Emit login result as JSON.")
       var json: Bool = false
 
-      mutating func run() throws {
+      mutating func run(context: DrawThingsCLIContext) throws {
         let baseURL: URL
         if let cloudAPIBaseURL {
           guard let parsedURL = URL(string: cloudAPIBaseURL) else {
@@ -4188,8 +4384,9 @@ extension DrawThingsCLI {
         }
 
         if !json {
-          print("Starting Google sign-in in your browser...")
-          print("Credentials will be saved to: \(DrawThingsCLICredentialsStore.description())")
+          context.print("Starting Google sign-in in your browser...")
+          context.print(
+            "Credentials will be saved to: \(DrawThingsCLICredentialsStore.description())")
         }
         let credentials = try CLICloudGoogleOAuthDesktopFlow.signIn(
           apiBaseURL: baseURL,
@@ -4206,15 +4403,15 @@ extension DrawThingsCLI {
           let encoder = JSONEncoder()
           encoder.outputFormatting = [.sortedKeys]
           let data = try encoder.encode(output)
-          print(String(decoding: data, as: UTF8.self))
+          context.print(String(decoding: data, as: UTF8.self))
         } else {
-          print("Google sign-in complete.")
-          print("Saved API key to: \(DrawThingsCLICredentialsStore.description())")
+          context.print("Google sign-in complete.")
+          context.print("Saved API key to: \(DrawThingsCLICredentialsStore.description())")
         }
       }
     }
 
-    struct Logout: ParsableCommand {
+    struct Logout: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         abstract: "Remove saved cloud credentials."
       )
@@ -4222,7 +4419,7 @@ extension DrawThingsCLI {
       @Flag(name: .long, help: "Emit logout result as JSON.")
       var json: Bool = false
 
-      mutating func run() throws {
+      mutating func run(context: DrawThingsCLIContext) throws {
         try DrawThingsCLICredentialsStore.remove()
         let output = AuthCommandOutput.logout(
           credentialsPath: DrawThingsCLICredentialsStore.description())
@@ -4230,26 +4427,26 @@ extension DrawThingsCLI {
           let encoder = JSONEncoder()
           encoder.outputFormatting = [.sortedKeys]
           let data = try encoder.encode(output)
-          print(String(decoding: data, as: UTF8.self))
+          context.print(String(decoding: data, as: UTF8.self))
         } else {
-          print(
+          context.print(
             "Removed saved cloud credentials from: \(DrawThingsCLICredentialsStore.description())")
         }
       }
     }
 
-    struct Token: ParsableCommand {
+    struct Token: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         abstract: "Fetch a short-term cloud token to validate credentials."
       )
 
       @OptionGroup var auth: CloudAuthOptions
 
-      mutating func run() throws {
+      mutating func run(context: DrawThingsCLIContext) throws {
         let storedCredentials = DrawThingsCLICredentialsStore.load()
         guard
           let apiKey = effectiveCloudAPIKey(
-            explicit: auth.apiKey,
+            context: context, explicit: auth.apiKey,
             storedCredentials: storedCredentials
           )
         else {
@@ -4261,24 +4458,25 @@ extension DrawThingsCLI {
           explicit: auth.cloudAPIBaseURL,
           storedCredentials: storedCredentials
         )
-        _ = try fetchShortTermToken(apiKey: apiKey, baseURL: baseURL, emitStates: false)
-        print("Short-term token fetched successfully.")
-        print("Authentication test complete.")
+        _ = try fetchShortTermToken(
+          context: context, apiKey: apiKey, baseURL: baseURL, emitStates: false)
+        context.print("Short-term token fetched successfully.")
+        context.print("Authentication test complete.")
       }
     }
 
-    struct State: ParsableCommand {
+    struct State: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         abstract: "Validate auth-state progression."
       )
 
       @OptionGroup var auth: CloudAuthOptions
 
-      mutating func run() throws {
+      mutating func run(context: DrawThingsCLIContext) throws {
         let storedCredentials = DrawThingsCLICredentialsStore.load()
         guard
           let apiKey = effectiveCloudAPIKey(
-            explicit: auth.apiKey,
+            context: context, explicit: auth.apiKey,
             storedCredentials: storedCredentials
           )
         else {
@@ -4290,11 +4488,12 @@ extension DrawThingsCLI {
           explicit: auth.cloudAPIBaseURL,
           storedCredentials: storedCredentials
         )
-        print("Cloud authentication configured")
-        print("  API base URL: \(baseURL)")
-        print("  Testing authentication...")
-        _ = try fetchShortTermToken(apiKey: apiKey, baseURL: baseURL, emitStates: true)
-        print("Auth state validation complete.")
+        context.print("Cloud authentication configured")
+        context.print("  API base URL: \(baseURL)")
+        context.print("  Testing authentication...")
+        _ = try fetchShortTermToken(
+          context: context, apiKey: apiKey, baseURL: baseURL, emitStates: true)
+        context.print("Auth state validation complete.")
       }
     }
   }
@@ -4303,7 +4502,7 @@ extension DrawThingsCLI {
 extension DrawThingsCLI.Generate {
   // Keep this workflow model-specific because its audio conditioning, temporal alignment, and
   // continuation-frame semantics are defined by LongCat rather than a shared AVC contract.
-  private func runLongCatAvatarAVC() throws {
+  private func runLongCatAvatarAVC(context: DrawThingsCLIContext) throws {
     let segmentFrames = avc.segmentFrames ?? 93
     let condFrames = avc.condFrames ?? 13
     guard segmentFrames > condFrames, condFrames > 0 else {
@@ -4330,17 +4529,19 @@ extension DrawThingsCLI.Generate {
     }
 
     let modelsDirectory = try ModelsDirectoryResolver.resolve(
+      context: context,
       path: modelResolution.modelsDirectoryOptions.modelsDir)
     ModelZoo.isExternalUrlsPreferred = true
     ModelZoo.externalUrls = [modelsDirectory]
     guard let model = modelResolution.model else {
-      printModelResolutionHelp(modelsDirectory: modelsDirectory)
+      printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
       throw ValidationError("--model is required.")
     }
     guard
-      let modelSpecification = ModelResolver.resolve(model, modelsDirectory: modelsDirectory)
+      let modelSpecification = ModelResolver.resolve(
+        context: context, model, modelsDirectory: modelsDirectory)
     else {
-      printModelResolutionHelp(modelsDirectory: modelsDirectory)
+      printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
       throw unresolvedModelValidationError(model)
     }
     guard ModelZoo.versionForModel(modelSpecification.file) == .longcatVideoAvatar1_5 else {
@@ -4348,13 +4549,14 @@ extension DrawThingsCLI.Generate {
     }
 
     let resolvedConfiguration = try createConfiguration(
-      modelSpecification: modelSpecification, steps: sampling.steps, cfg: sampling.cfg,
+      context: context, modelSpecification: modelSpecification, steps: sampling.steps,
+      cfg: sampling.cfg,
       width: sampling.width, height: sampling.height, frames: segmentFrames,
       seed: sampling.seed, strength: sampling.strength,
       configJSON: configurationOverrides.configJSON,
       configFile: configurationOverrides.configFile,
       modelsDirectory: modelsDirectory)
-    let promptValues = try resolvedPrompts(prompts)
+    let promptValues = try resolvedPrompts(context: context, prompts)
     let configuration = resolvedConfiguration.configuration
     guard configuration.guidanceScale == 1 else {
       throw ValidationError("LongCat-Video-Avatar AVC currently requires --cfg 1.")
@@ -4371,6 +4573,7 @@ extension DrawThingsCLI.Generate {
       files.append(imageInput.audioEncoderFile)
     }
     try ModelDownloader.ensureFiles(
+      context: context,
       files, modelsDirectory: modelsDirectory, downloadMissing: execution.downloadMissing)
 
     guard
@@ -4402,22 +4605,22 @@ extension DrawThingsCLI.Generate {
 
     let features: LongCatAudioFeatures
     if avc.zeroAudioFeatures {
-      print("Using zero audio features for validation: \(audioPath)")
+      context.print("Using zero audio features for validation: \(audioPath)")
       features = .zero(videoFrames: generatedVideoFrames, framesPerSecond: fps)
     } else {
-      print("Encoding audio: \(audioPath)")
+      context.print("Encoding audio: \(audioPath)")
       features = try LongCatAudioConditioningEncoder(filePath: audioEncoderFilePath).encode(
         audioInput, videoFrames: generatedVideoFrames, framesPerSecond: fps)
     }
     let fallbackAudio = audioInput.waveformTensor(
       videoFrames: targetVideoFrames, framesPerSecond: fps)
 
-    let runner = try LocalGenerationRunner()
+    let runner = try LocalGenerationRunner(context: context)
     var allFrames = [Tensor<FloatType>]()
     var currentSegmentFrames = [Tensor<FloatType>]()
     var timings = [LocalGenerationRunner.GenerationTimingSummary]()
-    print("Models directory: \(modelsDirectory.path)")
-    print(
+    context.print("Models directory: \(modelsDirectory.path)")
+    context.print(
       "LongCat AVC: \(segmentCount) segments, \(generatedVideoFrames) generated frames, trimming to \(targetVideoFrames) frames."
     )
     for segmentIndex in 0..<segmentCount {
@@ -4427,7 +4630,7 @@ extension DrawThingsCLI.Generate {
       let hints: [(ControlHintType, [(AnyTensor, Float)])] = [
         (.audio, audioConditioning.tensors.map { ($0, 1) })
       ]
-      print("Generating segment \(segmentIndex + 1)/\(segmentCount)...")
+      context.print("Generating segment \(segmentIndex + 1)/\(segmentCount)...")
       let segmentConfiguration = configurationWithSegmentSeed(
         configuration, seedForSegment: segmentIndex)
       let tensorResult: LocalGenerationRunner.GenerationTensorResult
@@ -4459,9 +4662,9 @@ extension DrawThingsCLI.Generate {
       allFrames, audio: fallbackAudio, outputPath: outputURL.path, configuration: configuration,
       videoFormat: output.videoFormat)
     for path in outputPaths {
-      print("Wrote: \(path)")
+      context.print("Wrote: \(path)")
     }
-    printGenerationTimingSummary(combinedTimingSummary(timings))
+    printGenerationTimingSummary(context: context, combinedTimingSummary(timings))
   }
 }
 
@@ -4473,7 +4676,7 @@ extension DrawThingsCLI {
       subcommands: [List.self, Ensure.self, Import.self]
     )
 
-    struct List: ParsableCommand {
+    struct List: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         abstract: "List available local-inference model mappings.",
         discussion: CLIHelpText.modelList)
@@ -4488,20 +4691,21 @@ extension DrawThingsCLI {
         help: "Disable network access and use cached community model catalogs only.")
       var offline: Bool = false
 
-      mutating func run() throws {
-        NetworkAccessPolicy.offline = offline
+      mutating func run(context: DrawThingsCLIContext) throws {
+        context.offline = offline
         let modelsDirectory = try ModelsDirectoryResolver.resolve(
+          context: context,
           path: modelsDirectoryOptions.modelsDir)
         ModelZoo.isExternalUrlsPreferred = true
         ModelZoo.externalUrls = [modelsDirectory]
-        print("Models directory: \(modelsDirectory.path)")
+        context.print("Models directory: \(modelsDirectory.path)")
         printModelList(
-          downloadedOnly: downloadedOnly, modelsDirectory: modelsDirectory,
+          context: context, downloadedOnly: downloadedOnly, modelsDirectory: modelsDirectory,
           allowNetwork: !offline)
       }
     }
 
-    struct Ensure: ParsableCommand {
+    struct Ensure: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         abstract: "Ensure model files exist locally (download if missing).",
         discussion: CLIHelpText.modelEnsure)
@@ -4521,21 +4725,23 @@ extension DrawThingsCLI {
       )
       var offline: Bool = false
 
-      mutating func run() throws {
-        NetworkAccessPolicy.offline = offline
+      mutating func run(context: DrawThingsCLIContext) throws {
+        context.offline = offline
         let modelsDirectory = try ModelsDirectoryResolver.resolve(
+          context: context,
           path: modelsDirectoryOptions.modelsDir)
         ModelZoo.isExternalUrlsPreferred = true
         ModelZoo.externalUrls = [modelsDirectory]
 
         guard let model else {
-          printModelResolutionHelp(modelsDirectory: modelsDirectory)
+          printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
           throw ValidationError("--model is required.")
         }
         guard
-          let modelSpecification = ModelResolver.resolve(model, modelsDirectory: modelsDirectory)
+          let modelSpecification = ModelResolver.resolve(
+            context: context, model, modelsDirectory: modelsDirectory)
         else {
-          printModelResolutionHelp(modelsDirectory: modelsDirectory)
+          printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
           throw unresolvedModelValidationError(model)
         }
         let files =
@@ -4547,12 +4753,13 @@ extension DrawThingsCLI {
             "Model '\(modelSpecification.file)' has no local downloadable files.")
         }
         try ModelDownloader.ensureFiles(
+          context: context,
           files, modelsDirectory: modelsDirectory, downloadMissing: true)
-        print("Model ready: \(modelSpecification.file)")
+        context.print("Model ready: \(modelSpecification.file)")
       }
     }
 
-    struct Import: ParsableCommand {
+    struct Import: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         abstract: "Import a local checkpoint or safetensors artifact.",
         discussion: CLIHelpText.modelImport)
@@ -4607,9 +4814,15 @@ extension DrawThingsCLI {
       )
       var offline: Bool = false
 
-      mutating func run() throws {
-        NetworkAccessPolicy.offline = offline
+      mutating func run(context: DrawThingsCLIContext) throws {
+        artifact = context.path(artifact)
+        autoencoder = autoencoder.map(context.path)
+        textEncoder = textEncoder.map(context.path)
+        textEncoder2 = textEncoder2.map(context.path)
+
+        context.offline = offline
         let modelsDirectory = try ModelsDirectoryResolver.resolve(
+          context: context,
           path: modelsDirectoryOptions.modelsDir)
         ModelZoo.isExternalUrlsPreferred = true
         ModelZoo.externalUrls = [modelsDirectory]
@@ -4676,9 +4889,9 @@ extension DrawThingsCLI {
             upcastAttention: false,
             finetuneScale: finetuneScale
           )
-          print("Dry run: no files written.")
+          context.print("Dry run: no files written.")
           printImportedModelSummary(
-            specification: specification, version: inspection.version,
+            context: context, specification: specification, version: inspection.version,
             modifier: inspection.modifier, importedFiles: expectedFiles,
             dependencyFiles: importedDependencyFiles(
               specification: specification, additionalModels: additionalModels,
@@ -4688,13 +4901,13 @@ extension DrawThingsCLI {
 
         var lastPrintedPercent = -1
         let result = try importer.import { version in
-          print(
+          context.print(
             "Detected: \(ModelZoo.humanReadableNameForVersion(version)) (\(String(describing: version)))"
           )
         } progress: { progress in
           let percent = min(100, max(0, Int((progress * 100).rounded(.down))))
           if percent >= lastPrintedPercent + 5 || percent == 100 {
-            print("Importing: \(percent)%")
+            context.print("Importing: \(percent)%")
             lastPrintedPercent = percent
           }
         }
@@ -4721,6 +4934,7 @@ extension DrawThingsCLI {
         var dependencyWarning: String?
         do {
           try ModelDownloader.ensureFiles(
+            context: context,
             dependencyFiles, modelsDirectory: modelsDirectory, downloadMissing: downloadMissing)
         } catch {
           dependencyWarning = error.localizedDescription
@@ -4729,15 +4943,15 @@ extension DrawThingsCLI {
         ModelZoo.appendCustomSpecification(specification)
 
         printImportedModelSummary(
-          specification: specification, version: result.1, modifier: result.2,
+          context: context, specification: specification, version: result.1, modifier: result.2,
           importedFiles: fileNames, dependencyFiles: dependencyFiles)
         if let dependencyWarning {
-          print("")
-          print("Dependency download warning:")
-          print(dependencyWarning)
+          context.print("")
+          context.print("Dependency download warning:")
+          context.print(dependencyWarning)
         } else {
-          print("")
-          print("Model imported: \(specification.file)")
+          context.print("")
+          context.print("Model imported: \(specification.file)")
         }
       }
     }
@@ -4750,7 +4964,7 @@ extension DrawThingsCLI {
       subcommands: [LoRA.self]
     )
 
-    struct LoRA: ParsableCommand {
+    struct LoRA: DrawThingsCLICommand {
       static let configuration = CommandConfiguration(
         commandName: "lora",
         abstract: "Train a LoRA model locally.",
@@ -4758,14 +4972,14 @@ extension DrawThingsCLI {
 
       @OptionGroup var options: LoRATrainCommandOptions
 
-      mutating func run() throws {
-        NetworkAccessPolicy.offline = options.execution.offline
-        try runLoRATraining(options)
+      mutating func run(context: DrawThingsCLIContext) throws {
+        context.offline = options.execution.offline
+        try runLoRATraining(context: context, options)
       }
     }
   }
 
-  struct Completion: ParsableCommand {
+  struct Completion: DrawThingsCLICommand {
     static let configuration = CommandConfiguration(
       abstract: "Generate shell completion scripts.",
       discussion: CLIHelpText.completion
@@ -4794,12 +5008,12 @@ extension DrawThingsCLI {
     @Option(name: .shortAndLong, help: "Write the completion script to a file instead of stdout.")
     var output: String?
 
-    mutating func run() throws {
+    mutating func run(context: DrawThingsCLIContext) throws {
       let script = DrawThingsCLI.completionScript(for: shell.completionShell)
       if let output {
-        try script.write(toFile: output, atomically: true, encoding: .utf8)
+        try script.write(toFile: context.path(output), atomically: true, encoding: .utf8)
       } else {
-        print(script, terminator: "")
+        context.print(script, terminator: "")
       }
     }
   }
@@ -4815,7 +5029,8 @@ private func mergedAlias(
 }
 
 private func loadTextOption(
-  inline: String?, filePath: String?, inlineFlag: String, fileFlag: String
+  context: DrawThingsCLIContext, inline: String?, filePath: String?, inlineFlag: String,
+  fileFlag: String
 ) throws -> String? {
   if inline != nil && filePath != nil {
     throw ValidationError("Use only one of \(inlineFlag) or \(fileFlag)")
@@ -4827,28 +5042,31 @@ private func loadTextOption(
     return nil
   }
   if filePath == "-" {
-    let data = FileHandle.standardInput.readDataToEndOfFile()
+    let data = try context.readInput()
     guard let text = String(data: data, encoding: .utf8) else {
       throw ValidationError("Failed to read UTF-8 text from stdin for \(fileFlag)")
     }
     return text
   }
-  return try String(contentsOfFile: filePath, encoding: .utf8)
+  return try String(contentsOfFile: context.path(filePath), encoding: .utf8)
 }
 
-private func resolvedPrompts(_ options: GeneratePromptOptions) throws -> (
-  prompt: String, negative: String?
-) {
+private func resolvedPrompts(context: DrawThingsCLIContext, _ options: GeneratePromptOptions) throws
+  -> (
+    prompt: String, negative: String?
+  )
+{
   if options.promptFile == "-", options.negativePromptFile == "-" {
     throw ValidationError("Use stdin for only one of --prompt-file or --negative-prompt-file")
   }
   let prompt =
     try loadTextOption(
-      inline: options.prompt, filePath: options.promptFile, inlineFlag: "--prompt",
+      context: context, inline: options.prompt, filePath: options.promptFile,
+      inlineFlag: "--prompt",
       fileFlag: "--prompt-file") ?? ""
   let negative =
     try loadTextOption(
-      inline: options.negativePrompt, filePath: options.negativePromptFile,
+      context: context, inline: options.negativePrompt, filePath: options.negativePromptFile,
       inlineFlag: "--negative-prompt", fileFlag: "--negative-prompt-file")
   return (prompt, negative)
 }
@@ -5043,7 +5261,7 @@ private func createLoRATrainerTokenizers() -> LoRATrainerTokenizers {
 }
 
 private func inspectTrainingImage(url: URL) -> (width: Int, height: Int)? {
-  if let image = try? PNG.Data.Rectangular.decompress(path: url.path) {
+  if let image = try? PNGFile.read(path: url.path) {
     return (image.size.x, image.size.y)
   }
   #if canImport(ImageIO)
@@ -5064,7 +5282,7 @@ private func loadTrainingTensor(
 ) -> (
   Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
 )? {
-  if let image = try? PNG.Data.Rectangular.decompress(path: url.path) {
+  if let image = try? PNGFile.read(path: url.path) {
     let rgba: [PNG.RGBA<UInt8>] = image.unpack(as: PNG.RGBA<UInt8>.self)
     let sourceWidth = image.size.x
     let sourceHeight = image.size.y

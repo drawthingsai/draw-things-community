@@ -487,8 +487,8 @@ let package = Package(
       exclude: ["SupportingFiles"],
       sources: ["gRPCServerCLI.swift"]
     ),
-    .executableTarget(
-      name: "DrawThingsCLI",
+    .target(
+      name: "DrawThingsCLILib",
       dependencies: [
         "AudioConverter",
         "BinaryResources",
@@ -510,7 +510,13 @@ let package = Package(
         .product(name: "PNG", package: "swift-png"),
       ],
       path: "Apps/DrawThingsCLI",
-      sources: ["DrawThingsCLI.swift"]
+      exclude: ["Executable", "IOSSystem", "Tests"],
+      sources: ["DrawThingsCLI.swift", "DrawThingsCLIContext.swift"]
+    ),
+    .executableTarget(
+      name: "DrawThingsCLI",
+      dependencies: ["DrawThingsCLILib"],
+      path: "Apps/DrawThingsCLI/Executable"
     ),
     .target(
       name: "DeviceAttestation",

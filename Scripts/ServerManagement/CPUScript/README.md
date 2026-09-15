@@ -53,7 +53,9 @@ Start the ProxyServiceCLI CPU proxy server:
   -g 100.110.198.32:40001-40008:1
 ```
 
-**Note:** This will stop and remove any existing container before starting a new one.
+The launcher uses Envoy 1.39.1 pinned to its Linux amd64 image digest. It copies the configuration into `/etc/drawthings/envoy` and validates it before stopping the existing service. The previous container is retained under a timestamped rollback name. If replacement startup or readiness fails, the launcher restores the previous container.
+
+After an upgrade, verify public TLS, the binary/text gRPC-web `Pubkey` response, CORS preflight, and the 403/404 route restrictions. The canonical container name remains `envoy_grpc_web_proxy` so the certificate-renewal hook continues to find it.
 The script mounts the directory containing `model-list` into the container as `/app/Documents`
 so host-side edits and `update-model-list` control-panel writes target the same file.
 
