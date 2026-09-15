@@ -22,6 +22,11 @@ public final class DrawThingsCLIContext {
   public let isStandardOutputTTY: Bool
   private let resolvePath: (String) -> String
   private let cancellationRequested: () -> Bool
+  private let resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)?
+  private let unloadTextGenerator: (() -> Void)?
+  private var modelsDirectory: URL?
+  private var isAccessingModelsDirectory = false
+  private var didUnloadTextGenerator = false
   private let cancellationLock = NSLock()
   private var cancellation: (() -> Void)?
   private var cancelled = false
@@ -32,7 +37,9 @@ public final class DrawThingsCLIContext {
     error: UnsafeMutablePointer<FILE>, environment: [String: String],
     executablePath: String? = nil, isStandardOutputTTY: Bool,
     resolvePath: @escaping (String) -> String,
-    cancellationRequested: @escaping () -> Bool = { false }
+    cancellationRequested: @escaping () -> Bool = { false },
+    resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)? = nil,
+    unloadTextGenerator: (() -> Void)? = nil
   ) {
     self.input = input
     self.output = output
@@ -42,6 +49,8 @@ public final class DrawThingsCLIContext {
     self.isStandardOutputTTY = isStandardOutputTTY
     self.resolvePath = resolvePath
     self.cancellationRequested = cancellationRequested
+    self.resolveModelsDirectory = resolveModelsDirectory
+    self.unloadTextGenerator = unloadTextGenerator
   }
 
   public static func process() -> DrawThingsCLIContext {
@@ -90,6 +99,53 @@ public final class DrawThingsCLIContext {
   }
 
   func path(_ value: String) -> String { resolvePath(value) }
+
+  func resolveModelsDirectoryAccess(_ requested: URL?) throws -> URL? {
+    guard let resolveModelsDirectory else { return requested }
+    if let modelsDirectory { return modelsDirectory }
+    try checkCancellation()
+    // Folder permission is asynchronous UI. Wait only on the command thread;
+    // cancellation can return even if the picker is still being presented.
+    let condition = NSCondition()
+    var result: Result<URL, Error>?
+    resolveModelsDirectory(requested) { value in
+      condition.lock()
+      result = value
+      condition.broadcast()
+      condition.unlock()
+    }
+    condition.lock()
+    while result == nil && !isCancelled {
+      condition.wait(until: Date().addingTimeInterval(0.1))
+    }
+    let resolved = result
+    condition.unlock()
+    try checkCancellation()
+    guard let resolved else { throw DrawThingsCLIInvocationError.cancelled }
+    let url = try resolved.get()
+    #if canImport(Darwin)
+      isAccessingModelsDirectory = url.startAccessingSecurityScopedResource()
+    #endif
+    modelsDirectory = url
+    return url
+  }
+
+  func prepareForLocalModelExecution() throws {
+    try checkCancellation()
+    guard !didUnloadTextGenerator else { return }
+    unloadTextGenerator?()
+    didUnloadTextGenerator = true
+    try checkCancellation()
+  }
+
+  func finishInvocation() {
+    #if canImport(Darwin)
+      if isAccessingModelsDirectory { modelsDirectory?.stopAccessingSecurityScopedResource() }
+    #endif
+    modelsDirectory = nil
+    isAccessingModelsDirectory = false
+    didUnloadTextGenerator = false
+  }
 
   func write(_ value: String, to destination: Output = .standardOutput) {
     let stream = destination == .standardOutput ? output : error

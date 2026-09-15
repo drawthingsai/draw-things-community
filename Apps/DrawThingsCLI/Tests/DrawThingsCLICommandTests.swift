@@ -1,3 +1,4 @@
+import BashToolContext
 import DrawThingsCLICommand
 import DrawThingsCLILib
 import Foundation
@@ -34,6 +35,23 @@ struct DrawThingsCLICommandTests {
       free(session)
     }
     try expectEqual(ios_registerCommand("draw-things-cli", draw_things_main), 1)
+    var resolutionCount = 0
+    var unloadCount = 0
+    let callerThread = Thread.current
+    let previousContext = BashToolContext.current
+    Thread.current.threadDictionary["draw-things-tests.unrelated"] = "do not inherit"
+    BashToolContext.current = BashToolContext(
+      resloveDrawThingsModelsDirectory: { requested, completion in
+        try! expect(Thread.current !== callerThread)
+        try! expect(Thread.current.threadDictionary["draw-things-tests.unrelated"] == nil)
+        resolutionCount += 1
+        completion(.success(requested!))
+      }, unloadTextGenerator: { unloadCount += 1 })
+    weak var inheritedContext = BashToolContext.current
+    defer {
+      BashToolContext.current = previousContext
+      Thread.current.threadDictionary.removeObject(forKey: "draw-things-tests.unrelated")
+    }
     try withContext { context, directory, contents in
       let project = directory.appendingPathComponent("Project", isDirectory: true)
       try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
@@ -44,6 +62,8 @@ struct DrawThingsCLICommandTests {
       defer { ios_setStreams(stdin, stdout, stderr) }
       try expectEqual(ios_system_osh("draw-things-cli generate --help > help.txt; cat help.txt"), 0)
       try expect(contents().0.contains("--model"))
+      try expectEqual(resolutionCount, 0)
+      try expectEqual(unloadCount, 0)
       try expectEqual(ios_system_osh("draw-things-cli --not-a-flag"), 64)
       try expect(contents().1.contains("--not-a-flag"))
       try expectEqual(
@@ -55,6 +75,26 @@ struct DrawThingsCLICommandTests {
         ios_system_osh("DRAWTHINGS_MODELS_DIR=Models draw-things-cli models list --offline"), 0)
       try expect(
         FileManager.default.fileExists(atPath: project.appendingPathComponent("Models").path))
+      try expectEqual(resolutionCount, 1)
+      let script = project.appendingPathComponent("models.sh")
+      try "draw-things-cli models list --offline --models-dir Models | cat\n".write(
+        to: script, atomically: true, encoding: .utf8)
+      // Launch sh directly: nesting a new OSH invocation inside an active OSH
+      // session is intentionally rejected by ios_system. This still crosses
+      // both the sh command thread and the script's pipeline command threads.
+      let shellArguments = ["sh", "models.sh"].map { (value: String) in strdup(value) }
+      defer { shellArguments.forEach { free($0) } }
+      var shellPointers = shellArguments.map { $0.map { UnsafePointer($0) } }
+      // sh owns its redirected streams and closes them on exit.
+      let shellInput = try unwrap(fdopen(dup(fileno(context.input)), "r"))
+      let shellOutput = try unwrap(fdopen(dup(fileno(context.output)), "a"))
+      let shellError = try unwrap(fdopen(dup(fileno(context.error)), "a"))
+      ios_setStreams(shellInput, shellOutput, shellError)
+      let shellStatus = ios_system(Int32(shellPointers.count), &shellPointers)
+      ios_setStreams(context.input, context.output, context.error)
+      try expectEqual(shellStatus, 0)
+      try expectEqual(resolutionCount, 2)
+      try expectEqual(unloadCount, 0)
       try expectEqual(
         ios_system_osh(
           "printf 'test prompt' | draw-things-cli generate --offline --no-download-missing --models-dir Models --model flux_2_klein_4b_q6p.ckpt --prompt-file - --output result.png"
@@ -71,7 +111,11 @@ struct DrawThingsCLICommandTests {
       let finished = DispatchGroup()
       finished.enter()
       var cancelledStatus: Int32 = 0
+      let commandContext = BashToolContext.current
       DispatchQueue.global().async {
+        let previousContext = BashToolContext.current
+        BashToolContext.current = commandContext
+        defer { BashToolContext.current = previousContext }
         ios_switchSession(session)
         ios_setStreams(input, context.output, context.error)
         let strings: [String] = [
@@ -104,8 +148,12 @@ struct DrawThingsCLICommandTests {
           ), 0)
         let png = try Data(contentsOf: project.appendingPathComponent("generated.png"))
         try expectEqual(Array(png.prefix(8)), [137, 80, 78, 71, 13, 10, 26, 10])
+        try expectEqual(unloadCount, 1)
       }
     }
+    // Finished commands must not retain the context after its host releases it.
+    BashToolContext.current = nil
+    try expect(inheritedContext == nil)
   }
 
   private static func withContext(

@@ -12,11 +12,11 @@ let package = Package(
   ],
   dependencies: [
     .package(
-      url: "https://github.com/liuliu/ccv.git", revision: "3f64306fc78418fcb70a0f7492409c5ca2d32733"
+      url: "https://github.com/liuliu/ccv.git", revision: "3d0edb047483a5f99dc67659e1ffcf26e28e81e8"
     ),
     .package(
       url: "https://github.com/liuliu/s4nnc.git",
-      revision: "cb838f43dd846d9bb210c2945a5534aecf1204e6"),
+      revision: "e93b9ae39bd73ad90a0877950800d90152f8e433"),
     .package(
       url: "https://github.com/liuliu/dflat.git",
       revision: "73925e51e4f44add842177a229f9990cb13711ff"),
@@ -739,8 +739,14 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       path: "Apps/LocalCodeCatalyst/Support/ios_system"
     ),
     .target(
+      name: "BashToolContext",
+      dependencies: ["ios_system"],
+      path: "Libraries/BashToolContext/Sources"
+    ),
+    .target(
       name: "LocalCodeApp",
       dependencies: [
+        "BashToolContext",
         "BinaryResources",
         "Components",
         "DataModels",

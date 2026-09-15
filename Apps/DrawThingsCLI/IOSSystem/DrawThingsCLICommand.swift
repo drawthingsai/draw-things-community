@@ -1,3 +1,4 @@
+import BashToolContext
 import Darwin
 import DrawThingsCLILib
 import Foundation
@@ -28,6 +29,7 @@ public func draw_things_main(
     }
     let cancellation = ios_getCommandCancellationContext()
     let output = ios_stdout() ?? stdout
+    let configuration = BashToolContext.current
     let context = DrawThingsCLIContext(
       input: ios_stdin() ?? stdin, output: output, error: ios_stderr() ?? stderr,
       environment: environment, isStandardOutputTTY: ios_isatty(fileno(output)) != 0,
@@ -43,7 +45,9 @@ public func draw_things_main(
         return URL(
           fileURLWithPath: value, relativeTo: URL(fileURLWithPath: directory, isDirectory: true)
         ).standardizedFileURL.path
-      }, cancellationRequested: { ios_commandCancellationRequested(cancellation) != 0 })
+      }, cancellationRequested: { ios_commandCancellationRequested(cancellation) != 0 },
+      resolveModelsDirectory: configuration?.resloveDrawThingsModelsDirectory,
+      unloadTextGenerator: configuration?.unloadTextGenerator)
     // ios_system exposes cancellation by polling. Keep that polling at the host
     // boundary so the synchronous generation utilities need only a callback.
     let cancellationQueue = DispatchQueue(label: "com.drawthings.cli.cancellation")

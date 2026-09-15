@@ -838,13 +838,12 @@ private enum ModelsDirectoryResolver {
     "~/Library/Containers/com.liuliu.draw-things/Data/Documents/Models"
 
   static func resolve(context: DrawThingsCLIContext, path: String?) throws -> URL {
-    if let path, !path.isEmpty {
-      return try normalizeAndEnsureDirectory(
-        URL(fileURLWithPath: context.path(path), isDirectory: true))
-    }
-    if let envPath = context.environment["DRAWTHINGS_MODELS_DIR"], !envPath.isEmpty {
-      return try normalizeAndEnsureDirectory(
-        URL(fileURLWithPath: context.path(envPath), isDirectory: true))
+    let path =
+      path.flatMap { $0.isEmpty ? nil : $0 }
+      ?? context.environment["DRAWTHINGS_MODELS_DIR"].flatMap { $0.isEmpty ? nil : $0 }
+    let requested = path.map { URL(fileURLWithPath: context.path($0), isDirectory: true) }
+    if let directory = try context.resolveModelsDirectoryAccess(requested) {
+      return try normalizeAndEnsureDirectory(directory)
     }
     #if os(macOS)
       let appContainerModelsDirectory = URL(
@@ -2129,6 +2128,7 @@ private final class LocalGenerationRunner {
   private let imageGenerator: LocalImageGenerator
 
   init(context: DrawThingsCLIContext) throws {
+    try context.prepareForLocalModelExecution()
     self.context = context
     let (temporaryDirectory, imageGenerator) = try createLocalImageGenerator(queue: queue)
     self.temporaryDirectory = temporaryDirectory
@@ -2173,30 +2173,34 @@ private final class LocalGenerationRunner {
     progressPrinter.update(progress: 0, label: "Starting...", detail: nil)
     let generationResult: ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) = queue.sync {
       () -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) in
-      let feedback:
-        (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
-          Bool = { signpost, signposts, previewTensor in
-            timingTracker.record(signpost: signpost, signposts: signposts)
-            let (elapsed, estimatedTotal) = GenerationEstimator.estimateUpToDateDuration(
-              from: estimation, signpost: signpost, signposts: signposts)
-            if estimatedTotal > 0 {
-              let progress = Float(elapsed / estimatedTotal)
-              let progressText = cliProgressText(signpost: signpost, signposts: signposts)
-              progressPrinter.update(
-                progress: progress, label: progressText.label, detail: progressText.detail
-              )
+      // Dispatch may execute this block on a different worker from the CLI.
+      return DynamicGraph.fork {
+        let feedback:
+          (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
+            Bool = { signpost, signposts, previewTensor in
+              timingTracker.record(signpost: signpost, signposts: signposts)
+              let (elapsed, estimatedTotal) = GenerationEstimator.estimateUpToDateDuration(
+                from: estimation, signpost: signpost, signposts: signposts)
+              if estimatedTotal > 0 {
+                let progress = Float(elapsed / estimatedTotal)
+                let progressText = cliProgressText(signpost: signpost, signposts: signposts)
+                progressPrinter.update(
+                  progress: progress, label: progressText.label, detail: progressText.detail
+                )
+              }
+              if let previewTensor {
+                livePreviewSession?.update(tensor: previewTensor)
+              }
+              return !context.isCancelled
             }
-            if let previewTensor {
-              livePreviewSession?.update(tensor: previewTensor)
-            }
-            return !context.isCancelled
-          }
-      let result = imageGenerator.generate(
-        trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints,
-        text: prompt, negativeText: negativePrompt, configuration: configuration, fileMapping: [:],
-        keywords: [], cancellation: { context.setCancellation($0) },
-        feedback: feedback)
-      return result
+        let result = imageGenerator.generate(
+          trace: trace, image: inputImage, scaleFactor: 1, mask: nil, hints: hints,
+          text: prompt, negativeText: negativePrompt, configuration: configuration,
+          fileMapping: [:],
+          keywords: [], cancellation: { context.setCancellation($0) },
+          feedback: feedback)
+        return result
+      }
     }
     try context.checkCancellation()
     let (images, audio, _) = generationResult
@@ -3856,6 +3860,7 @@ private func runLoRATraining(context: DrawThingsCLIContext, _ options: LoRATrain
     context: context,
     files, modelsDirectory: modelsDirectory, downloadMissing: options.execution.downloadMissing)
 
+  try context.prepareForLocalModelExecution()
   let tokenizers = createLoRATrainerTokenizers()
   let session = UUID().uuidString
   let useMFA = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
@@ -4069,6 +4074,7 @@ public struct DrawThingsCLI: ParsableCommand {
       invocationCondition.broadcast()
       invocationCondition.unlock()
     }
+    defer { context.finishInvocation() }
     context.offline = false
     do {
       var command = try parseAsRoot(arguments)
@@ -4089,7 +4095,13 @@ public struct DrawThingsCLI: ParsableCommand {
           DeviceCapability.cacheUri = cacheUri
           DynamicGraph.flags = flags
         }
-        try command.run(context: context)
+        // Audio encoding and LoRA training can use the GPU on this calling thread,
+        // outside the generation queue. Isolate them from the host's text generator.
+        // The fork inside queue.sync reuses this state on the same thread or creates
+        // separate state if Dispatch runs generation on another worker.
+        try DynamicGraph.fork {
+          try command.run(context: context)
+        }
       } else {
         try command.run()
       }
@@ -4900,6 +4912,7 @@ extension DrawThingsCLI {
         }
 
         var lastPrintedPercent = -1
+        try context.prepareForLocalModelExecution()
         let result = try importer.import { version in
           context.print(
             "Detected: \(ModelZoo.humanReadableNameForVersion(version)) (\(String(describing: version)))"

@@ -7,6 +7,8 @@ import XCTest
 final class DrawThingsCLIInvocationTests: XCTestCase {
 
   private func withContext(
+    resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)? = nil,
+    unloadTextGenerator: (() -> Void)? = nil,
     _ body: (DrawThingsCLIContext, URL, () -> (String, String)) throws -> Void
   ) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -24,7 +26,8 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
     let context = DrawThingsCLIContext(
       input: input, output: output, error: error,
       environment: ["DRAWTHINGS_MODELS_DIR": "Models"], isStandardOutputTTY: false,
-      resolvePath: { URL(fileURLWithPath: $0, relativeTo: directory).standardizedFileURL.path })
+      resolvePath: { URL(fileURLWithPath: $0, relativeTo: directory).standardizedFileURL.path },
+      resolveModelsDirectory: resolveModelsDirectory, unloadTextGenerator: unloadTextGenerator)
     func contents(_ stream: UnsafeMutablePointer<FILE>) -> String {
       fflush(stream)
       rewind(stream)
@@ -94,6 +97,57 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
       context.cancel()
       XCTAssertEqual(DrawThingsCLI.run(arguments: ["--help"], context: context), 130)
       XCTAssertThrowsError(try context.readInput())
+    }
+  }
+
+  func testHostCallbacksAreLazyAndInvocationScoped() throws {
+    var resolutions = 0
+    var unloads = 0
+    try withContext(
+      resolveModelsDirectory: { requested, completion in
+        resolutions += 1
+        completion(.success(requested!.appendingPathComponent("Authorized")))
+      }, unloadTextGenerator: { unloads += 1 }
+    ) { context, directory, contents in
+      XCTAssertEqual(DrawThingsCLI.run(arguments: ["--help"], context: context), 0)
+      XCTAssertEqual(resolutions, 0)
+      XCTAssertEqual(unloads, 0)
+      for invocation in 1...2 {
+        XCTAssertEqual(
+          DrawThingsCLI.run(arguments: ["models", "list", "--offline"], context: context), 0)
+        XCTAssertEqual(resolutions, invocation)
+        XCTAssertEqual(unloads, 0)
+      }
+      XCTAssertTrue(
+        contents().0.contains(directory.appendingPathComponent("Models/Authorized").path))
+      try context.prepareForLocalModelExecution()
+      try context.prepareForLocalModelExecution()
+      XCTAssertEqual(unloads, 1)
+      context.finishInvocation()
+      try context.prepareForLocalModelExecution()
+      XCTAssertEqual(unloads, 2)
+      context.finishInvocation()
+    }
+  }
+
+  func testPermissionCancellationDoesNotUnload() throws {
+    enum PermissionError: Error { case denied }
+    try withContext(
+      resolveModelsDirectory: { _, completion in completion(.failure(PermissionError.denied)) },
+      unloadTextGenerator: { XCTFail("Permission failure must not unload the text generator") }
+    ) { context, _, _ in
+      XCTAssertNotEqual(
+        DrawThingsCLI.run(arguments: ["models", "list", "--offline"], context: context), 0)
+    }
+    var pendingCompletion: ((Result<URL, Error>) -> Void)?
+    try withContext(resolveModelsDirectory: { _, completion in pendingCompletion = completion }) {
+      context, directory, _ in
+      DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) { context.cancel() }
+      XCTAssertEqual(
+        DrawThingsCLI.run(arguments: ["models", "list", "--offline"], context: context), 130)
+      // A dismissed command may still receive the picker result; it owns no
+      // folder access and must not resume execution or touch closed streams.
+      pendingCompletion?(.success(directory))
     }
   }
 }
