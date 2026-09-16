@@ -146,8 +146,8 @@ int main(int argc, char **argv) {
     check("node -e \"setTimeout(() => console.log('node before lean'), 5)\"", 0,
           @"node before lean");
     check("which lean check_lean", 0, @"/usr/bin/check_lean");
-    check("lean --short-version", 0, @"4.33.1");
-    check("lean -V", 0, @"4.33.1");
+    check("lean --short-version", 0, @"4.34.0");
+    check("lean -V", 0, @"4.34.0");
     check("check_lean --help", 0, @"SOURCE is Lean source text");
     check("lean -DmaxHeartbeats=bad --stdin </dev/null", 1, @"");
     check("lean --plugin=/tmp/forbidden", 1, @"");

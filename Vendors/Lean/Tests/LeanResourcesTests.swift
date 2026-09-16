@@ -32,7 +32,7 @@ final class LeanResourcesTests: XCTestCase {
       modules[name] = ["imports": imports, "files": files]
     }
     try JSONSerialization.data(withJSONObject: [
-      "schemaVersion": 1, "leanVersion": "4.33.1",
+      "schemaVersion": 1, "leanVersion": "4.34.0",
       "archiveSHA256": digest(Data(contentsOf: archiveURL)), "modules": modules,
     ]).write(to: manifestURL)
   }

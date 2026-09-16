@@ -6,19 +6,19 @@ def lean_repositories():
         build_file = "//Vendors/Lean:lean4.BUILD.bazel",
         patch_args = ["-p1"],
         patches = ["//Vendors/Lean:apple.patch"],
-        sha256 = "561b500da16419aec0baeba5dc47ad11979b5bdcd30a02aafc88c3eed599b766",
-        strip_prefix = "lean4-4.33.1",
-        urls = ["https://github.com/leanprover/lean4/archive/refs/tags/v4.33.1.tar.gz"],
+        sha256 = "c6a2f9c57cebbe390beef82fafcb3a66274301cb9f9a70ceba0b125661533981",
+        strip_prefix = "lean4-4.34.0",
+        urls = ["https://github.com/leanprover/lean4/archive/refs/tags/v4.34.0.tar.gz"],
     )
 
     http_archive(
         name = "lean4_toolchain",
         build_file = "//Vendors/Lean:lean4_toolchain.BUILD.bazel",
-        sha256 = "88c45aad985b5d2a8d925fe10bd1296bd35f66f408480ab182d3facccd065a9d",
-        strip_prefix = "lean-4.33.1-darwin_aarch64",
+        sha256 = "69f263fa6e21bbc2466bbfb1affcd92479ee2714c883a07de548e099a5922932",
+        strip_prefix = "lean-4.34.0-darwin_aarch64",
         type = "tar.zst",
         urls = [
-            "https://github.com/leanprover/lean4/releases/download/v4.33.1/lean-4.33.1-darwin_aarch64.tar.zst",
+            "https://github.com/leanprover/lean4/releases/download/v4.34.0/lean-4.34.0-darwin_aarch64.tar.zst",
         ],
     )
 
