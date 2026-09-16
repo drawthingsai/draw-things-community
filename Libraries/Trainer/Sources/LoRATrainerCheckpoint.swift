@@ -104,10 +104,10 @@ extension LoRATrainerCheckpoint {
       case .sd3, .pixart, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
         .hiDreamO1,
         .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-        .flux2_4b, .ltx2, .ltx2_3:
+        .flux2_4b, .ltx2, .ltx2_3, .krea2:
         modelName = "dit"
       case .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-        .seedvr2_7b, .ideogram4, .krea2:
+        .seedvr2_7b, .ideogram4:
         fatalError()
       }
       $0.write(modelName, model: unet) { name, _ in
