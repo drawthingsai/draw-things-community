@@ -122,6 +122,20 @@ index 517fa7a..a3acef9 100644
  	if ((cp = getenv("HOME")) != NULL && *cp != '\0')
  		return xstrdup(cp);
  
+diff --git a/readconf.c b/readconf.c
+--- a/readconf.c
++++ b/readconf.c
+@@ -2899,2 +2899,8 @@ fill_default_options(Options * options)
+-	if (options->strict_host_key_checking == -1)
+-		options->strict_host_key_checking = SSH_STRICT_HOSTKEY_ASK;
++	if (options->strict_host_key_checking == -1) {
++#if IOS_SYSTEM_OPENSSH
++		/* Embedded commands cannot prompt; remember new keys, reject changes. */
++		options->strict_host_key_checking = SSH_STRICT_HOSTKEY_NEW;
++#else
++		options->strict_host_key_checking = SSH_STRICT_HOSTKEY_ASK;
++#endif
++	}
 diff --git a/readpass.c b/readpass.c
 --- a/readpass.c
 +++ b/readpass.c
