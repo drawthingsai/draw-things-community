@@ -592,6 +592,9 @@ let localCodePath = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 if FileManager.default.fileExists(atPath: localCodePath) {
   package.products.append(.library(name: "LocalCodeApp", targets: ["LocalCodeApp"]))
   package.dependencies += [
+    .package(
+      url: "https://github.com/airbnb/lottie-ios.git",
+      revision: "a004050748dc197c56256a14dca49a035d74726c"),
     .package(name: "HighlighterSwift", path: "Vendors/HighlighterSwift"),
     .package(name: "ExceptionCatcher", path: "Vendors/ExceptionCatcher"),
     .package(name: "Nantes", path: "Vendors/Nantes"),
@@ -655,6 +658,10 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         .product(name: "SQLiteDflat", package: "dflat"),
       ],
       path: "Libraries/Components/Sources"
+    ),
+    .target(
+      name: "Advance",
+      path: "Vendors/Advance/Sources/Advance"
     ),
     .target(
       name: "ProjectHistoryManager",
@@ -747,6 +754,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
     .target(
       name: "LocalCodeApp",
       dependencies: [
+        "Advance",
         "BashToolContext",
         "BinaryResources",
         "Components",
@@ -775,6 +783,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         "ios_system",
         .product(name: "Atomics", package: "swift-atomics"),
         .product(name: "Dflat", package: "dflat"),
+        .product(name: "Lottie", package: "lottie-ios"),
         .product(name: "NNC", package: "s4nnc"),
         .product(name: "SnapKit", package: "SnapKit"),
         .product(name: "SQLiteDflat", package: "dflat"),
