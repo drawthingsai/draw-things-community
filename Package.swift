@@ -649,6 +649,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         "NukeUI",
         "Style",
         .product(name: "Dflat", package: "dflat"),
+        .product(name: "ExceptionCatcher", package: "ExceptionCatcher"),
         .product(name: "Nantes", package: "Nantes"),
         .product(name: "SnapKit", package: "SnapKit"),
         .product(name: "SQLiteDflat", package: "dflat"),
