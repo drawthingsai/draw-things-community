@@ -24,10 +24,15 @@ final class WebSearchTests: XCTestCase {
     XCTAssertEqual(WebSearchProvider.duckDuckGo.identifier, "duckduckgo")
     XCTAssertEqual(WebSearchProvider.sogou.identifier, "sogou")
     XCTAssertEqual(WebSearchProvider.kagi(apiKey: "test-key").identifier, "kagi")
+    XCTAssertEqual(WebSearchProvider.brave(apiKey: "test-key").identifier, "brave")
     XCTAssertEqual(WebSearchProvider.disabled.identifier, "disabled")
     XCTAssertEqual(
       WebSearchProvider(identifier: "kagi", apiKey: "test-key"),
       .kagi(apiKey: "test-key"))
+    XCTAssertEqual(
+      WebSearchProvider(identifier: "brave", apiKey: "test-key"),
+      .brave(apiKey: "test-key"))
+    XCTAssertTrue(WebSearchProvider.allCases.contains(.brave(apiKey: "")))
     XCTAssertNil(WebSearchProvider(identifier: "unknown", apiKey: "test-key"))
   }
 
@@ -317,6 +322,295 @@ final class WebSearchTests: XCTestCase {
     XCTAssertFalse(results[0].title.isEmpty)
     XCTAssertFalse(results[0].url.absoluteString.isEmpty)
     XCTAssertEqual(results[0].source, "kagi")
+  }
+
+  func testBraveSearchRequestParameters() throws {
+    for (filter, freshness) in [
+      (WebSearchTimeFilter.day, "pd"), (.week, "pw"), (.month, "pm"), (.year, "py"),
+    ] {
+      let request = try BraveSearch.makeRequest(
+        endpoint: URL(string: "https://api.search.brave.com/res/v1/web/search")!,
+        apiKey: "test-key", query: "C++ & Swift 日本語", page: 2,
+        options: BraveSearchOptions(
+          timeFilter: filter, safeSearch: false, maxResults: 25, pages: 2, timeout: 12))
+      let components = try XCTUnwrap(
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
+      let items = Dictionary(
+        uniqueKeysWithValues: components.queryItems!.map { ($0.name, $0.value!) })
+      XCTAssertEqual(items["q"], "C++ & Swift 日本語")
+      XCTAssertTrue(components.percentEncodedQuery?.contains("C%2B%2B") == true)
+      XCTAssertEqual(items["count"], "20")
+      XCTAssertEqual(items["offset"], "1")
+      XCTAssertEqual(items["safesearch"], "off")
+      XCTAssertEqual(items["freshness"], freshness)
+      XCTAssertEqual(items["text_decorations"], "false")
+      XCTAssertEqual(items["result_filter"], "web")
+      XCTAssertEqual(request.httpMethod, "GET")
+      XCTAssertNil(request.httpBody)
+      XCTAssertFalse(request.url!.absoluteString.contains("test-key"))
+      XCTAssertEqual(request.value(forHTTPHeaderField: "X-Subscription-Token"), "test-key")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "application/json")
+      XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
+      XCTAssertEqual(request.timeoutInterval, 12)
+    }
+    XCTAssertEqual(BraveSearchOptions(maxResults: 1_000).maxResults, 200)
+    XCTAssertEqual(BraveSearchOptions(pages: 100).pages, 10)
+  }
+
+  func testBraveSearchPaginationDeduplicatesAndKeepsPageSize() throws {
+    var offsets = [String]()
+    let search = BraveSearch(
+      apiKey: " test-key\n",
+      httpTransport: StubHttpTransport { request in
+        let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+        let items = Dictionary(
+          uniqueKeysWithValues: components.queryItems!.map { ($0.name, $0.value!) })
+        offsets.append(items["offset"]!)
+        XCTAssertEqual(items["count"], "3")
+        XCTAssertEqual(items["q"], "example")
+        XCTAssertEqual(items["safesearch"], "moderate")
+        XCTAssertNil(items["freshness"])
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Subscription-Token"), "test-key")
+        let body =
+          offsets.count == 1
+          ? """
+          {"query":{"more_results_available":true},"web":{"results":[
+            {"url":"https://example.com/1","title":" First ","description":" A   result. "},
+            {"url":"https://example.com/1","title":"Duplicate"},
+            {"url":"https://example.com/blank","title":" "},
+            {"title":"Missing URL"}
+          ]}}
+          """
+          : """
+          {"query":{"more_results_available":true},"web":{"results":[
+            {"url":"https://example.com/1","title":"Duplicate"},
+            {"url":"https://example.com/2","title":"Second"},
+            {"url":"https://example.com/3","title":"Third"},
+            {"url":"https://example.com/4","title":"Beyond limit"}
+          ]}}
+          """
+        return .success(
+          (
+            Data(body.utf8),
+            HTTPURLResponse(
+              url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+          ))
+      })
+    var result: Result<[SearchResult], Error>?
+    search.search(query: " example\n", options: BraveSearchOptions(maxResults: 3, pages: 5)) {
+      result = $0
+    }
+    let results = try XCTUnwrap(result).get()
+    XCTAssertEqual(offsets, ["0", "1"])
+    XCTAssertEqual(results.map(\.rank), [1, 2, 3])
+    XCTAssertEqual(results.map(\.title), ["First", "Second", "Third"])
+    XCTAssertEqual(results.map(\.snippet), ["A result.", "", ""])
+    XCTAssertEqual(Set(results.map(\.url)).count, 3)
+  }
+
+  func testBraveSearchStopsAtLastOrEmptyPage() throws {
+    for body in [
+      """
+      {"query":{"more_results_available":false},"web":{"results":[
+        {"url":"https://example.com/doc","title":"Doc"}
+      ]}}
+      """,
+      "{\"web\":{\"results\":[]}}", "{\"query\":{\"more_results_available\":false}}",
+    ] {
+      var requestCount = 0
+      let search = BraveSearch(
+        apiKey: "test-key",
+        httpTransport: StubHttpTransport { request in
+          requestCount += 1
+          return .success(
+            (
+              Data(body.utf8),
+              HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            ))
+        })
+      var result: Result<[SearchResult], Error>?
+      search.search(query: "example", options: BraveSearchOptions(pages: 10)) { result = $0 }
+      _ = try XCTUnwrap(result).get()
+      XCTAssertEqual(requestCount, 1)
+    }
+  }
+
+  func testBraveSearchPropagatesHTTPFailuresWithoutRetry() {
+    for status in [401, 403, 422, 429, 500] {
+      var requestCount = 0
+      let search = BraveSearch(
+        apiKey: "test-key",
+        httpTransport: StubHttpTransport { request in
+          requestCount += 1
+          return .success(
+            (
+              Data("failure".utf8),
+              HTTPURLResponse(
+                url: request.url!, statusCode: status, httpVersion: nil,
+                headerFields: ["Retry-After": "1"])!
+            ))
+        })
+      var didComplete = false
+      search.search(query: "example", options: BraveSearchOptions(pages: 5)) { result in
+        if case .failure(
+          WebSearchError.httpStatus(let code, let url, let body, let headers, let bytes)) = result
+        {
+          XCTAssertEqual(code, status)
+          XCTAssertEqual(url?.host, "api.search.brave.com")
+          XCTAssertEqual(body, "failure")
+          XCTAssertEqual(headers["Retry-After"], "1")
+          XCTAssertEqual(bytes, 7)
+        } else {
+          XCTFail("Expected HTTP failure")
+        }
+        didComplete = true
+      }
+      XCTAssertTrue(didComplete)
+      XCTAssertEqual(requestCount, 1)
+    }
+  }
+
+  func testBraveSearchCompletionAPIUsesTransportDirectly() {
+    let body =
+      """
+      {
+        "web": {
+          "results": [
+            {
+              "url": "https://example.com/doc",
+              "title": " Example Doc ",
+              "description": " A useful result. "
+            }
+          ]
+        }
+      }
+      """
+    let response = HTTPURLResponse(
+      url: URL(string: "https://api.search.brave.com/res/v1/web/search")!, statusCode: 200,
+      httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+    let search = BraveSearch(
+      apiKey: "test-key",
+      httpTransport: StubHttpTransport { request in
+        XCTAssertEqual(request.httpMethod, "GET")
+        return .success((Data(body.utf8), response))
+      })
+    var didComplete = false
+
+    search.search(query: "example") { result in
+      switch result {
+      case .success(let results):
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].rank, 1)
+        XCTAssertEqual(results[0].title, "Example Doc")
+        XCTAssertEqual(results[0].url.absoluteString, "https://example.com/doc")
+        XCTAssertEqual(results[0].displayURL, "example.com")
+        XCTAssertEqual(results[0].snippet, "A useful result.")
+        XCTAssertEqual(results[0].source, "brave")
+      case .failure(let error):
+        XCTFail("Unexpected error: \(error)")
+      }
+      didComplete = true
+    }
+
+    XCTAssertTrue(didComplete)
+  }
+
+  func testBraveSearchPropagatesTransportAndDecodingFailures() {
+    for malformedJSON in [false, true] {
+      let search = BraveSearch(
+        apiKey: "test-key",
+        httpTransport: StubHttpTransport { request in
+          if !malformedJSON { return .failure(URLError(.cancelled)) }
+          return .success(
+            (
+              Data("not JSON".utf8),
+              HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            ))
+        })
+      var didComplete = false
+      search.search(query: "example") { result in
+        if case .failure(let error) = result {
+          if malformedJSON {
+            XCTAssertTrue(error is DecodingError)
+          } else {
+            XCTAssertEqual((error as? URLError)?.code, .cancelled)
+          }
+        } else {
+          XCTFail("Expected failure")
+        }
+        didComplete = true
+      }
+      XCTAssertTrue(didComplete)
+    }
+  }
+
+  func testBraveSearchEmptyQuerySkipsTransport() throws {
+    let search = BraveSearch(
+      apiKey: "test-key",
+      httpTransport: StubHttpTransport { _ in
+        XCTFail("Empty query must not send a request")
+        return .failure(URLError(.badURL))
+      })
+    var result: Result<[SearchResult], Error>?
+    search.search(query: " \n ") { result = $0 }
+    XCTAssertEqual(try XCTUnwrap(result).get(), [])
+  }
+
+  func testBraveSearchRequiresAPIKeyBeforeTransport() {
+    var didRequest = false
+    let search = BraveSearch(
+      apiKey: " ",
+      httpTransport: StubHttpTransport { _ in
+        didRequest = true
+        return .failure(BraveSearchError.missingAPIKey)
+      })
+    var didComplete = false
+
+    search.search(query: "example") { result in
+      if case .failure(BraveSearchError.missingAPIKey) = result {
+        didComplete = true
+      } else {
+        XCTFail("Expected missingAPIKey")
+      }
+    }
+
+    XCTAssertTrue(didComplete)
+    XCTAssertFalse(didRequest)
+  }
+
+  func testBraveLiveSearchWhenAPIKeyIsProvided() throws {
+    guard
+      let apiKey = ProcessInfo.processInfo.environment["BRAVE_API_KEY"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !apiKey.isEmpty
+    else {
+      throw XCTSkip("Set BRAVE_API_KEY to run the live Brave smoke test.")
+    }
+    let completionExpectation = expectation(description: "Brave search completion")
+    var searchResult: Result<[SearchResult], Swift.Error>?
+
+    BraveSearch(apiKey: apiKey).search(
+      query: "Draw Things app",
+      options: BraveSearchOptions(maxResults: 1, pages: 1, timeout: 20)
+    ) { result in
+      searchResult = result
+      completionExpectation.fulfill()
+    }
+
+    wait(for: [completionExpectation], timeout: 30)
+    let results: [SearchResult]
+    do {
+      results = try XCTUnwrap(searchResult).get()
+    } catch WebSearchError.httpStatus(let status, _, let body, _, _) {
+      XCTFail("Brave returned HTTP \(status): \(body ?? "no response body")")
+      return
+    }
+    XCTAssertEqual(results.count, 1)
+    XCTAssertFalse(results[0].title.isEmpty)
+    XCTAssertFalse(results[0].url.absoluteString.isEmpty)
+    XCTAssertEqual(results[0].source, "brave")
   }
 
   func testMarkdownConversionPreservesCommonShapes() throws {

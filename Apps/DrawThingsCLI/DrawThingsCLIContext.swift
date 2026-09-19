@@ -1,4 +1,8 @@
+import Diffusion
+import Downloader
 import Foundation
+import ImageGenerator
+import NNC
 
 #if canImport(Darwin)
   import Darwin
@@ -30,6 +34,11 @@ public final class DrawThingsCLIContext {
   private let cancellationLock = NSLock()
   private var cancellation: (() -> Void)?
   private var cancelled = false
+  private var cancellationError = DrawThingsCLIInvocationError.cancelled
+  private var modelDownloadID: UUID?
+  private var imageGenerationID: UUID?
+  let modelDownloadEvent: ((ModelDownloadEvent) -> Void)?
+  let imageGenerationEvent: ((ImageGenerationEvent) -> Void)?
   var offline = false
 
   public init(
@@ -39,7 +48,9 @@ public final class DrawThingsCLIContext {
     resolvePath: @escaping (String) -> String,
     cancellationRequested: @escaping () -> Bool = { false },
     resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)? = nil,
-    unloadTextGenerator: (() -> Void)? = nil
+    unloadTextGenerator: (() -> Void)? = nil,
+    modelDownloadEvent: ((ModelDownloadEvent) -> Void)? = nil,
+    imageGenerationEvent: ((ImageGenerationEvent) -> Void)? = nil
   ) {
     self.input = input
     self.output = output
@@ -51,6 +62,8 @@ public final class DrawThingsCLIContext {
     self.cancellationRequested = cancellationRequested
     self.resolveModelsDirectory = resolveModelsDirectory
     self.unloadTextGenerator = unloadTextGenerator
+    self.modelDownloadEvent = modelDownloadEvent
+    self.imageGenerationEvent = imageGenerationEvent
   }
 
   public static func process() -> DrawThingsCLIContext {
@@ -75,10 +88,35 @@ public final class DrawThingsCLIContext {
   }
 
   public func cancel() {
+    cancel(nil)
+  }
+
+  private enum Activity {
+    case modelDownload(UUID)
+    case imageGeneration(UUID)
+  }
+
+  private func cancel(_ activity: Activity?) {
     cancellationLock.lock()
-    if cancelled {
+    guard !cancelled else {
       cancellationLock.unlock()
       return
+    }
+    switch activity {
+    case .modelDownload(let id):
+      guard modelDownloadID == id else {
+        cancellationLock.unlock()
+        return
+      }
+      cancellationError = .modelDownloadCancelled
+    case .imageGeneration(let id):
+      guard imageGenerationID == id else {
+        cancellationLock.unlock()
+        return
+      }
+      cancellationError = .generationAborted
+    case nil:
+      cancellationError = .cancelled
     }
     cancelled = true
     let cancellation = self.cancellation
@@ -95,7 +133,72 @@ public final class DrawThingsCLIContext {
   }
 
   func checkCancellation() throws {
-    if isCancelled { throw DrawThingsCLIInvocationError.cancelled }
+    cancellationLock.lock()
+    let error = cancelled ? cancellationError : nil
+    cancellationLock.unlock()
+    if let error { throw error }
+    if cancellationRequested() { throw DrawThingsCLIInvocationError.cancelled }
+  }
+
+  func beginModelDownload(name: String, subtitle: String, files: [String]) -> UUID {
+    let id = UUID()
+    cancellationLock.lock()
+    modelDownloadID = id
+    cancellationLock.unlock()
+    modelDownloadEvent?(
+      .started(
+        id: id, name: name, subtitle: subtitle, files: files,
+        cancel: { [weak self] in self?.cancel(.modelDownload(id)) }))
+    return id
+  }
+
+  func finishModelDownload(_ id: UUID) {
+    cancellationLock.lock()
+    if modelDownloadID == id { modelDownloadID = nil }
+    cancellationLock.unlock()
+    modelDownloadEvent?(.finished(id: id))
+  }
+
+  func beginImageGeneration(
+    name: String, version: ModelVersion, prompt: String, signposts: Set<ImageGeneratorSignpost>
+  ) -> UUID {
+    let id = UUID()
+    cancellationLock.lock()
+    imageGenerationID = id
+    cancellationLock.unlock()
+    imageGenerationEvent?(
+      .started(
+        id: id, name: name, version: version, prompt: prompt, signposts: signposts,
+        cancel: { [weak self] in self?.cancel(.imageGeneration(id)) }))
+    return id
+  }
+
+  func updateImageGeneration(
+    signpost: ImageGeneratorSignpost, signposts: Set<ImageGeneratorSignpost>,
+    preview: Tensor<FloatType>?
+  ) {
+    guard let imageGenerationEvent else { return }
+    cancellationLock.lock()
+    let id = imageGenerationID
+    cancellationLock.unlock()
+    guard let id else { return }
+    imageGenerationEvent(
+      .progress(id: id, signpost: signpost, signposts: signposts, preview: preview))
+  }
+
+  func beginImageGenerationSegment() {
+    cancellationLock.lock()
+    let id = imageGenerationID
+    cancellationLock.unlock()
+    guard let id else { return }
+    imageGenerationEvent?(.segmentStarted(id: id))
+  }
+
+  func finishImageGeneration(_ id: UUID) {
+    cancellationLock.lock()
+    if imageGenerationID == id { imageGenerationID = nil }
+    cancellationLock.unlock()
+    imageGenerationEvent?(.finished(id: id))
   }
 
   func path(_ value: String) -> String { resolvePath(value) }
@@ -185,11 +288,15 @@ public final class DrawThingsCLIContext {
 
 enum DrawThingsCLIInvocationError: Error, LocalizedError {
   case cancelled
+  case modelDownloadCancelled
+  case generationAborted
   case inputFailed
 
   var errorDescription: String? {
     switch self {
     case .cancelled: return "Cancelled."
+    case .modelDownloadCancelled: return "Download model cancelled by user"
+    case .generationAborted: return "Generation aborted by user."
     case .inputFailed: return "Unable to read standard input."
     }
   }

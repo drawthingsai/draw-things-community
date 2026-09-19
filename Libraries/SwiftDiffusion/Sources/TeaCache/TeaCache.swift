@@ -39,6 +39,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let reducedModel: ModelBuilderOrModel
   private let inferModel: ModelBuilderOrModel?
   private let referenceImageCount: Int
+  private let referenceAudioCount: Int
   private var lastTs: [Int: [DynamicGraph.AnyTensor]]
   private var accumulatedRelL1Distances: [Int: Float]
   private var lastResiduals: [Int: DynamicGraph.AnyTensor]
@@ -50,7 +51,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     modelVersion: ModelVersion, coefficients: (Float, Float, Float, Float, Float), threshold: Float,
     steps: ClosedRange<Int>, maxSkipSteps: Int, reducedModel: ModelBuilderOrModel,
     inferModel: ModelBuilderOrModel? = nil,
-    referenceImageCount: Int = 0
+    referenceImageCount: Int = 0, referenceAudioCount: Int = 0
   ) {
     self.modelVersion = modelVersion
     self.coefficients = coefficients
@@ -60,6 +61,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     self.reducedModel = reducedModel
     self.inferModel = inferModel
     self.referenceImageCount = referenceImageCount
+    self.referenceAudioCount = referenceAudioCount
     lastTs = [Int: [DynamicGraph.AnyTensor]]()
     accumulatedRelL1Distances = [Int: Float]()
     lastResiduals = [Int: DynamicGraph.AnyTensor]()
@@ -200,7 +202,9 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     switch modelVersion {
     case .minimaxH3:
       let firstInputs = Array(
-        inputs.prefix(4 + referenceImageCount + (referenceImageCount > 0 ? 24 : 18)))
+        inputs.prefix(
+          4 + referenceImageCount + referenceAudioCount + 18 + (referenceImageCount > 0 ? 6 : 0)
+            + (referenceAudioCount > 0 ? 6 : 0)))
       inferModel?.compile(inputs: firstInputs)
       let text = inputs[2].as(of: Float.self)
       let placeholder = text.graph.variable(

@@ -97,6 +97,7 @@ extension TCDSampler: Sampler {
     _ x_T: DynamicGraph.Tensor<FloatType>, unets existingUNets: [UNet?],
     sample: DynamicGraph.Tensor<FloatType>?, conditionImage: DynamicGraph.Tensor<FloatType>?,
     referenceImages: [DynamicGraph.Tensor<FloatType>],
+    referenceAudios: [DynamicGraph.Tensor<FloatType>],
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -257,7 +258,8 @@ extension TCDSampler: Sampler {
           startWidth: startWidth,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond, lora: lora,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, isBF16: isBF16,
-          injectedControls: injectedControls, referenceImages: referenceImages)
+          injectedControls: injectedControls, referenceImages: referenceImages,
+          referenceAudios: referenceAudios)
         conditions = vector + encodings
         injectedControlsC = injectedControls.map {
           $0.model.encode(
@@ -289,6 +291,7 @@ extension TCDSampler: Sampler {
         unet.cancel()
       }
       let referenceImageCount = referenceImages.count
+      let referenceAudioCount = referenceAudios.count
       var controlNets = [Model?](repeating: nil, count: injectedControls.count)
       let injectControlsAndAdapters = InjectControlsAndAdapters(
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -324,12 +327,13 @@ extension TCDSampler: Sampler {
             of: FloatType.self,
             graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, conditions: newC,
-            referenceImageCount: referenceImageCount, version: version, modifier: modifier,
+            referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
+            version: version, modifier: modifier,
             isCfgEnabled: false),
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: false, extraProjection: extraProjection,
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-          referenceImageCount: referenceImageCount,
+          referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           isBF16: isBF16, activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
@@ -448,7 +452,7 @@ extension TCDSampler: Sampler {
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
                 teaCache: teaCache, isBF16: isBF16, injectedControls: injectedControls,
-                referenceImages: referenceImages
+                referenceImages: referenceImages, referenceAudios: referenceAudios
               ).0
             indexOffset = i
           }
@@ -488,12 +492,12 @@ extension TCDSampler: Sampler {
               of: FloatType.self,
               graph: graph, index: 0, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, conditions: newC,
-              referenceImageCount: referenceImageCount,
+              referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
               version: currentModelVersion, modifier: modifier, isCfgEnabled: false),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: false, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-            referenceImageCount: referenceImageCount,
+            referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
             isBF16: refiner.isBF16, activationQkScaling: refiner.activationQkScaling,
             activationProjScaling: refiner.activationProjScaling,
@@ -521,6 +525,7 @@ extension TCDSampler: Sampler {
           graph: graph, index: i - indexOffset, batchSize: batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           conditions: conditions, referenceImageCount: referenceImageCount,
+          referenceAudioCount: referenceAudioCount,
           version: currentModelVersion, modifier: modifier, isCfgEnabled: false)
         xIn[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<channels] = x
         let injectedIPAdapters = ControlModel<FloatType>
@@ -550,7 +555,8 @@ extension TCDSampler: Sampler {
           t, newC,
           extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: i,
+          injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+          referenceAudioCount: referenceAudioCount, step: i,
           tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: false, tiledDiffusion: tiledDiffusion,
           controlNets: &controlNets)

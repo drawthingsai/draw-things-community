@@ -264,6 +264,7 @@ public protocol Sampler<FloatType, UNet> {
     _ x_T: DynamicGraph.Tensor<FloatType>, unets: [UNet?], sample: DynamicGraph.Tensor<FloatType>?,
     conditionImage: DynamicGraph.Tensor<FloatType>?,
     referenceImages: [DynamicGraph.Tensor<FloatType>],
+    referenceAudios: [DynamicGraph.Tensor<FloatType>],
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,

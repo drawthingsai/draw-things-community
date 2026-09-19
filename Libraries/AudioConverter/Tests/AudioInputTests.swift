@@ -27,12 +27,25 @@ final class AudioInputTests: XCTestCase {
     }
   }
 
+  func testConditioningWaveformPreservesUntrimmedSamples() {
+    let input = AudioInput(samples: [0.25, -0.5, 0.75], sampleRate: 4)
+    let waveform = input.waveform
+
+    XCTAssertEqual(waveform.shape, [1, 3])
+    XCTAssertEqual(waveform[0, 0], 0.25)
+    XCTAssertEqual(waveform[0, 1], -0.5)
+    XCTAssertEqual(waveform[0, 2], 0.75)
+    // Export padding must not change the waveform supplied for loudness normalization.
+    _ = input.waveformTensor(videoFrames: 1, framesPerSecond: 1)
+    XCTAssertEqual(input.waveform.shape, [1, 3])
+  }
+
   func testRejectsInvalidSampleRate() {
     XCTAssertThrowsError(try AudioInput(contentsOf: "/tmp/missing.caf", sampleRate: 0))
   }
 
   #if canImport(AVFoundation)
-    func testConvertsStereoFileToRequestedMonoSampleRate() throws {
+    func testResamplesStereoWithoutMixingChannels() throws {
       let url = FileManager.default.temporaryDirectory.appendingPathComponent(
         "AudioConverterTests-\(UUID().uuidString).caf")
       defer { try? FileManager.default.removeItem(at: url) }
@@ -60,9 +73,14 @@ final class AudioInputTests: XCTestCase {
       let input = try AudioInput(contentsOf: url.path, sampleRate: 16_000)
 
       XCTAssertEqual(input.sampleRate, 16_000)
-      XCTAssertGreaterThanOrEqual(input.samples.count, 1_590)
-      XCTAssertLessThanOrEqual(input.samples.count, 1_610)
-      XCTAssertTrue(input.samples.contains { abs($0) > 0.1 })
+      XCTAssertGreaterThanOrEqual(input.waveform.shape[1], 1_590)
+      XCTAssertLessThanOrEqual(input.waveform.shape[1], 1_610)
+      XCTAssertEqual(input.waveform.shape[0], 2)
+      XCTAssertEqual(input.waveform[0, 800], 0.25, accuracy: 0.005)
+      XCTAssertEqual(input.waveform[1, 800], 0.5, accuracy: 0.005)
+      let exported = input.waveformTensor(videoFrames: 1, framesPerSecond: 10)
+      XCTAssertEqual(exported[0, 800], 0.25, accuracy: 0.005)
+      XCTAssertEqual(exported[1, 800], 0.5, accuracy: 0.005)
     }
   #endif
 }

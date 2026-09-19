@@ -38,6 +38,7 @@ swift_library(
     module_name = "LocalImageGenerator",
     visibility = ["//visibility:public"],
     deps = [
+        "//Libraries/AudioConverter",
         "//Libraries/DataModels",
         "//Libraries/ImageGenerator",
         "//Libraries/ModelZoo",
@@ -51,6 +52,7 @@ swift_library(
         "@SwiftLog//:Logging",
         "@ccv//lib:ccv",
         "@s4nnc//nnc",
+        "@swift-atomics//:SwiftAtomics",
     ] + select({
         ":ios_or_macos_build": [
             "//Libraries/FaceRestorer",
@@ -58,6 +60,28 @@ swift_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+swift_test(
+    name = "ModelPreloaderTests",
+    srcs = ["Tests/ModelPreloaderTests.swift"],
+    deps = [
+        ":LocalImageGenerator",
+        "//Libraries/DataModels",
+        "//Libraries/WeightsCache",
+        "@dflat//:Dflat",
+        "@dflat//:SQLiteDflat",
+    ],
+)
+
+swift_test(
+    name = "LongCatAvatarTests",
+    srcs = ["Tests/LongCatAvatarTests.swift"],
+    deps = [
+        ":LocalImageGenerator",
+        "//Libraries/SwiftDiffusion",
+        "@s4nnc//nnc",
+    ],
 )
 
 swift_test(

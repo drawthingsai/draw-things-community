@@ -1,7 +1,9 @@
 import BashToolContext
+import Downloader
 import DrawThingsCLICommand
 import DrawThingsCLILib
 import Foundation
+import ModelZoo
 import ios_system
 
 private enum TestFailure: Error {
@@ -37,16 +39,65 @@ struct DrawThingsCLICommandTests {
     try expectEqual(ios_registerCommand("draw-things-cli", draw_things_main), 1)
     var resolutionCount = 0
     var unloadCount = 0
+    var downloadStarts = 0
+    var downloadFinishes = 0
+    var generationStarts = 0
+    var generationFinishes = 0
+    var time: TimeInterval = 0
+    var expectedUserTime: TimeInterval = 0
+    var expectedSystemTime: TimeInterval = 0
+    let interaction = BashUserInteraction(time: { time })
     let callerThread = Thread.current
     let previousContext = BashToolContext.current
     Thread.current.threadDictionary["draw-things-tests.unrelated"] = "do not inherit"
     BashToolContext.current = BashToolContext(
-      resloveDrawThingsModelsDirectory: { requested, completion in
+      resloveDrawThingsModelsDirectory: { requested, interaction, completion in
         try! expect(Thread.current !== callerThread)
         try! expect(Thread.current.threadDictionary["draw-things-tests.unrelated"] == nil)
         resolutionCount += 1
+        let request = interaction.begin(isUserInteraction: true)
+        time += 2
+        expectedUserTime += 2
+        expectedSystemTime += 2
+        interaction.cancel(request)
         completion(.success(requested!))
-      }, unloadTextGenerator: { unloadCount += 1 })
+      }, bashUserInteraction: interaction, unloadTextGenerator: { unloadCount += 1 },
+      modelDownloadEvent: { event in
+        switch event {
+        case .started(_, _, _, _, let cancel):
+          downloadStarts += 1
+          time += 10
+          expectedSystemTime += 10
+          try! expectEqual(interaction.userInteractionInterval(since: 0), expectedUserTime)
+          try! expectEqual(interaction.systemInteractionInterval(since: 0), expectedSystemTime)
+          cancel()
+        case .progress: break
+        case .finished:
+          downloadFinishes += 1
+          time += 1
+          try! expectEqual(interaction.userInteractionInterval(since: 0), expectedUserTime)
+          try! expectEqual(interaction.systemInteractionInterval(since: 0), expectedSystemTime)
+        }
+      },
+      imageGenerationEvent: { event in
+        switch event {
+        case .started(_, _, _, let prompt, _, let cancel):
+          generationStarts += 1
+          try! expectEqual(prompt, "A mountain lake")
+          time += 20
+          expectedSystemTime += 20
+          try! expectEqual(interaction.userInteractionInterval(since: 0), expectedUserTime)
+          try! expectEqual(interaction.systemInteractionInterval(since: 0), expectedSystemTime)
+          cancel()
+        case .finished:
+          generationFinishes += 1
+          time += 1
+          try! expectEqual(interaction.userInteractionInterval(since: 0), expectedUserTime)
+          try! expectEqual(interaction.systemInteractionInterval(since: 0), expectedSystemTime)
+        case .progress, .segmentStarted:
+          try! expect(false)
+        }
+      })
     weak var inheritedContext = BashToolContext.current
     defer {
       BashToolContext.current = previousContext
@@ -100,6 +151,29 @@ struct DrawThingsCLICommandTests {
           "printf 'test prompt' | draw-things-cli generate --offline --no-download-missing --models-dir Models --model flux_2_klein_4b_q6p.ckpt --prompt-file - --output result.png"
         ), 1)
       try expect(contents().1.contains("Missing model files:"))
+
+      let downloadFile = "test-command-download-\(UUID().uuidString).ckpt"
+      let originalOverrides = ModelZoo.overrideMapping
+      ModelZoo.overrideMapping[downloadFile] = ModelZoo.Specification(
+        name: "Test command download", file: downloadFile, prefix: "", version: .v1)
+      let downloadStatus = ios_system_osh(
+        "draw-things-cli models ensure --models-dir Models --model \(downloadFile) --no-include-dependencies"
+      )
+      ModelZoo.overrideMapping = originalOverrides
+      try expectEqual(downloadStatus, 130)
+      try expectEqual(downloadStarts, 1)
+      try expectEqual(downloadFinishes, 1)
+      try expect(contents().1.contains("Download model cancelled by user\n"))
+
+      try expectEqual(
+        ios_system_osh(
+          "draw-things-cli generate --models-dir Models --remote --remote-url 127.0.0.1 --remote-port 1 --model flux_2_klein_4b_q6p.ckpt --prompt 'A mountain lake' --output result.png"
+        ), 130)
+      try expectEqual(generationStarts, 1)
+      try expectEqual(generationFinishes, 1)
+      try expect(contents().1.contains("Generation aborted by user.\n"))
+      try expect(
+        !FileManager.default.fileExists(atPath: project.appendingPathComponent("result.png").path))
 
       var descriptors: [Int32] = [0, 0]
       try expectEqual(pipe(&descriptors), 0)

@@ -2607,7 +2607,8 @@ extension ControlModel {
     var c = UNetExtractConditions(
       of: FloatType.self,
       graph: graph, index: index, batchSize: batchSize, tokenLengthUncond: tokenLengthUncond,
-      tokenLengthCond: tokenLengthCond, conditions: c, referenceImageCount: 0, version: version,
+      tokenLengthCond: tokenLengthCond, conditions: c, referenceImageCount: 0,
+      referenceAudioCount: 0, version: version,
       modifier: .none, isCfgEnabled: isCfgEnabled)
     if tiledDiffusionIsEnabled {
       let shape = hint[0].shape

@@ -763,7 +763,7 @@ public enum LoRAImporter {
               isEnabled: false, tileSize: .init(width: 0, height: 0), tileOverlap: 0),
             teaCache: TeaCacheConfiguration(
               coefficients: (0, 0, 0, 0, 0), steps: 0...0, threshold: 0, maxSkipSteps: 0),
-            isBF16: false, injectedControls: [], referenceImages: []
+            isBF16: false, injectedControls: [], referenceImages: [], referenceAudios: []
           ).0.map({ DynamicGraph.Tensor<FloatType>($0).toCPU() })
       case .flux1:
         cArr =

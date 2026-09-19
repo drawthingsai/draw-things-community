@@ -349,6 +349,7 @@ let package = Package(
     .target(
       name: "LocalImageGenerator",
       dependencies: [
+        "AudioConverter",
         "DataModels",
         "ImageGenerator",
         "ModelZoo",
@@ -359,6 +360,7 @@ let package = Package(
         "DiffusionUNetWrapper",
         "Upscaler",
         "FaceRestorer",
+        .product(name: "Atomics", package: "swift-atomics"),
         .product(name: "Logging", package: "swift-log"),
         .product(name: "ccv", package: "ccv"),
         .product(name: "NNC", package: "s4nnc"),
@@ -748,7 +750,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
     ),
     .target(
       name: "BashToolContext",
-      dependencies: ["ios_system"],
+      dependencies: ["Downloader", "ImageGenerator", "ios_system"],
       path: "Libraries/BashToolContext/Sources"
     ),
     .target(
@@ -761,9 +763,11 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         "DataModels",
         "Diffusion",
         "Downloader",
+        "ImageGenerator",
         .product(name: "ExceptionCatcher", package: "ExceptionCatcher"),
         "FBShimmer",
         "LLM",
+        "LocalImageGenerator",
         "Localization",
         "MarkdownEngine",
         "MarkdownEngineCodeBlocks",

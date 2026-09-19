@@ -432,9 +432,9 @@ final class TeaCacheTests: XCTestCase {
     let graph = DynamicGraph()
     try graph.withNoGrad {
       for useLoRA in [false, true] {
-        for references in [0, 1] {
+        for (references, audioReferences) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
           let visionLength = references
-          let perLayer = references > 0 ? 24 : 18
+          let perLayer = 18 + (references > 0 ? 6 : 0) + audioReferences * 6
           let layers = 50
           func build(layers: Int, startLayer: Int = 0, outputResidual: Bool, inputResidual: Bool)
             -> ModelBuilderOrModel
@@ -442,13 +442,16 @@ final class TeaCacheTests: XCTestCase {
             .modelBuilder(
               ModelBuilder { inputs in
                 let textLength =
-                  startLayer > 0 ? inputs[0].shape[1] - references - 5 : inputs[2].shape[1]
+                  startLayer > 0
+                  ? inputs[0].shape[1] - references - audioReferences * 6 - 5 : inputs[2].shape[1]
                 if useLoRA {
                   return LoRAMiniMaxH3(
                     hiddenSize: 8, layers: layers, startLayer: startLayer, textLength: textLength,
                     audioLength: 4,
                     videoFrames: 1, videoHeight: 2, videoWidth: 2, usesFlashAttention: .scale1,
-                    referenceImageSizes: references > 0 ? [(2, 2)] : [], visionLength: visionLength,
+                    referenceImageSizes: references > 0 ? [(2, 2)] : [],
+                    referenceAudioLengths: audioReferences > 0 ? [6] : [],
+                    visionLength: visionLength,
                     outputResidual: outputResidual, inputResidual: inputResidual,
                     LoRAConfiguration: LoRANetworkConfiguration(
                       rank: 2, scale: 0.1, highPrecision: false)
@@ -458,7 +461,8 @@ final class TeaCacheTests: XCTestCase {
                   hiddenSize: 8, layers: layers, startLayer: startLayer, textLength: textLength,
                   audioLength: 4,
                   videoFrames: 1, videoHeight: 2, videoWidth: 2, usesFlashAttention: .scale1,
-                  referenceImageSizes: references > 0 ? [(2, 2)] : [], visionLength: visionLength,
+                  referenceImageSizes: references > 0 ? [(2, 2)] : [],
+                  referenceAudioLengths: audioReferences > 0 ? [6] : [], visionLength: visionLength,
                   outputResidual: outputResidual, inputResidual: inputResidual
                 ).1
               })
@@ -474,7 +478,7 @@ final class TeaCacheTests: XCTestCase {
             steps: 1...10, maxSkipSteps: 2,
             reducedModel: reduced,
             inferModel: inferModel,
-            referenceImageCount: references)
+            referenceImageCount: references, referenceAudioCount: audioReferences)
           func inputs(textLength: Int) -> [DynamicGraph.AnyTensor] {
             let tensors: [DynamicGraph.AnyTensor] =
               [
@@ -482,10 +486,14 @@ final class TeaCacheTests: XCTestCase {
                 graph.variable(.GPU(0), .HWC(1, 4, 32), of: Float16.self),
                 graph.variable(.GPU(0), .HWC(1, textLength, 8), of: Float.self),
                 graph.variable(
-                  .GPU(0), .NHWC(1, textLength + references + 5, 1, 128), of: Float16.self),
+                  .GPU(0), .NHWC(1, textLength + references + audioReferences * 6 + 5, 1, 128),
+                  of: Float16.self),
               ]
               + (0..<references).map { _ in
                 graph.variable(.GPU(0), .NHWC(1, 1, 1, 8), of: Float16.self)
+              }
+              + (0..<audioReferences).map { _ in
+                graph.variable(.GPU(0), .HWC(1, 6, 8), of: Float16.self)
               }
               + (0..<(layers * perLayer + 4)).map { _ in
                 graph.variable(.GPU(0), .HWC(1, 1, 8), of: Float16.self)
@@ -519,10 +527,10 @@ final class TeaCacheTests: XCTestCase {
           }
           for (marker, length) in [5, 3].enumerated() {
             let inputs = inputs(textLength: length)
-            let audioStart = length - visionLength + references
-            let videoStart = length + references + 4
+            let audioStart = length - visionLength + references + audioReferences * 6
+            let videoStart = length + references + audioReferences * 6 + 4
             func run(_ step: Int) -> [DynamicGraph.AnyTensor] {
-              let firstInputs = Array(inputs.prefix(4 + references + perLayer))
+              let firstInputs = Array(inputs.prefix(4 + references + audioReferences + perLayer))
               let firstOutput = cache.infer(inputs: firstInputs)
               let hiddenState = firstOutput[0]
               let firstBlock = firstOutput[1].as(of: Float.self)
@@ -589,7 +597,7 @@ final class TeaCacheTests: XCTestCase {
             let refreshed = run(2)
             XCTAssertEqual(refreshed.count, 3)  // Enforce maxSkipSteps = 2 even at the same index.
             // Even on a hit, consume this step's block-0 output, not the previous hidden state.
-            let firstInputs = Array(inputs.prefix(4 + references + perLayer))
+            let firstInputs = Array(inputs.prefix(4 + references + audioReferences + perLayer))
             let previousFirst = inferModel(
               inputs: firstInputs[0], Array(firstInputs.dropFirst()))[0].as(of: Float.self)
             inputs[0].as(of: Float16.self).full(0.0101)
@@ -627,7 +635,7 @@ final class TeaCacheTests: XCTestCase {
             let tail = build(
               layers: layers - 1, startLayer: 1, outputResidual: true, inputResidual: false)
             full.compile(inputs: longest)
-            let firstInputs = Array(longest.prefix(4 + references + perLayer))
+            let firstInputs = Array(longest.prefix(4 + references + audioReferences + perLayer))
             let first = inferModel(inputs: firstInputs[0], Array(firstInputs.dropFirst()))
             let tailInputs = [first[0], longest[3]] + longest.dropFirst(firstInputs.count)
             tail.compile(inputs: tailInputs)

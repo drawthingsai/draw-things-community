@@ -236,9 +236,11 @@ public final class ModelPreloader {
         self.newConfiguration(newConfiguration)
       }
     }
+    // The outer subscriptions must also capture weakly, or the workspace keeps
+    // the preloader and its weights cache alive after the generator is released.
     keepModelInMemorySubscription = workspace.dictionary.subscribe(
       "keep_model_in_memory", of: Int.self
-    ) { value in
+    ) { [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -252,7 +254,7 @@ public final class ModelPreloader {
       }
     }
     useCoreMLSubscription = workspace.dictionary.subscribe("use_coreml", of: Bool.self) {
-      value in
+      [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -267,7 +269,7 @@ public final class ModelPreloader {
     }
     useAppleNeuralEngineFor8BitSModelsSubscription = workspace.dictionary.subscribe(
       "use_mfa_apple_neural_engine", of: Bool.self
-    ) { value in
+    ) { [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -281,7 +283,7 @@ public final class ModelPreloader {
       }
     }
     loraUseCoreMLSubscription = workspace.dictionary.subscribe("lora_use_coreml", of: Bool.self) {
-      value in
+      [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -296,7 +298,7 @@ public final class ModelPreloader {
     }
     weightsCacheSizeSubscription = workspace.dictionary.subscribe(
       "total_weights_cache", of: Int.self
-    ) { value in
+    ) { [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -317,7 +319,7 @@ public final class ModelPreloader {
     DeviceCapability.isPartialOffloadPreferred.store(
       externalStore == .alwaysPartially, ordering: .releasing)
     externalStoreSubscription = workspace.dictionary.subscribe("external_store_v2", of: Int.self) {
-      value in
+      [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -331,7 +333,7 @@ public final class ModelPreloader {
       }
     }
     useMFASubscription = workspace.dictionary.subscribe("use_mfa_v4", of: Int.self) {
-      value in
+      [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -345,7 +347,7 @@ public final class ModelPreloader {
       }
     }
     mergeLoRASubscription = workspace.dictionary.subscribe("merge_lora", of: Int.self) {
-      value in
+      [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
         switch value {
@@ -628,7 +630,7 @@ extension ModelPreloader {
               startHeight: startHeight,
               startWidth: startWidth, tokenLengthUncond: 77, tokenLengthCond: 77, lora: [],
               tiledDiffusion: tiledDiffusion, teaCache: teaCache, isBF16: false,
-              injectedControls: [], referenceImages: []
+              injectedControls: [], referenceImages: [], referenceAudios: []
             ).0  // No need to pass lora, one off use.
         }
         let _ = unet.compileModel(
@@ -646,7 +648,8 @@ extension ModelPreloader {
           extraProjection: nil,
           injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>(
             injectedControls: [], injectedT2IAdapters: [], injectedIPAdapters: [],
-            injectedAttentionKVs: []), referenceImageCount: 0, tiledDiffusion: tiledDiffusion,
+            injectedAttentionKVs: []), referenceImageCount: 0, referenceAudioCount: 0,
+          tiledDiffusion: tiledDiffusion,
           teaCache: teaCache, causalInference: (0, 0), isBF16: false,
           activationQkScaling: [:], activationProjScaling: [:],
           activationFfnProjUpScaling: [:], activationFfnScaling: [:],

@@ -60,7 +60,7 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerQwen3MinimaxH3: TiktokenTokenizer { tokenizerQwen3MinimaxH3Factory() }
   public var tokenizerMistral3: TiktokenTokenizer { tokenizerMistral3Factory() }
   public var tokenizerGemma3: SentencePieceTokenizer { tokenizerGemma3Factory() }
-  private let queue: DispatchQueue
+  let queue: DispatchQueue
   private let weightsCache: WeightsCache
   public init(
     queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
@@ -1068,6 +1068,26 @@ extension LocalImageGenerator {
       @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) ->
       Bool
   ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
+    generate(
+      trace: trace, image: image, scaleFactor: scaleFactor, mask: mask, hints: hints,
+      text: text, negativeText: negativeText, configuration: configuration,
+      fileMapping: fileMapping, keywords: keywords, audioContext: nil,
+      cancellation: cancellation, feedback: feedback)
+  }
+
+  // AVC shares the raw waveform and encoded conditioning across segment calls. Encoding happens
+  // inside the generation branch, alongside image conditioning.
+  func generate(
+    trace: ImageGeneratorTrace,
+    image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,
+    hints: [(ControlHintType, [(AnyTensor, Float)])],
+    text: String, negativeText: String, configuration: GenerationConfiguration,
+    fileMapping: [String: String], keywords: [String],
+    audioContext: AudioConditioningContext?,
+    cancellation: (@escaping () -> Void) -> Void,
+    feedback:
+      @escaping (ImageGeneratorSignpost, Set<ImageGeneratorSignpost>, Tensor<FloatType>?) -> Bool
+  ) -> ([Tensor<FloatType>]?, [Tensor<Float>]?, Int) {
 
     let depth =
       (hints.first {
@@ -1086,23 +1106,16 @@ extension LocalImageGenerator {
       hints.first(where: { $0.0 == .pose })?.1 as? [(Tensor<FloatType>, Float)] ?? []
 
     let audioHint = hints.first(where: { $0.0 == .audio })?.1 ?? []
-    let audioTensors = audioHint.compactMap { $0.0 as? Tensor<FloatType> }
-    guard audioTensors.count == audioHint.count else { return (nil, nil, 1) }
-    let audioConditioning: Tensor<FloatType>?
-    if audioTensors.isEmpty {
-      audioConditioning = nil
-    } else {
-      guard audioTensors.count == 2 else { return (nil, nil, 1) }
-      let firstCount = audioTensors[0].shape.reduce(1, *)
-      let latterCount = audioTensors[1].shape.reduce(1, *)
-      var packed = Tensor<FloatType>(.CPU, .C(firstCount + latterCount))
-      packed[0..<firstCount] = audioTensors[0].reshaped(.C(firstCount))
-      packed[firstCount..<(firstCount + latterCount)] =
-        audioTensors[1].reshaped(.C(latterCount))
-      audioConditioning = packed
+    // Audio hints carry one Float32 PCM tensor in [channels, samples] order, resampled to
+    // ModelZoo.audioSampleRateForModel. Feature tensors stay inside the model-specific path.
+    let audio = audioHint.first?.0 as? Tensor<Float>
+    if !audioHint.isEmpty {
+      guard audioHint.count == 1, let audio, audio.kind == .CPU, audio.shape.count == 2,
+        audio.shape[0] > 0, audio.shape[1] > 0
+      else { return (nil, nil, 1) }
     }
 
-    var hints: [ControlHintType: AnyTensor] = hints.reduce(into: [:]) { dict, hint in
+    let hints: [ControlHintType: AnyTensor] = hints.reduce(into: [:]) { dict, hint in
       if hint.0 != .depth, hint.0 != .custom, hint.0 != .shuffle, hint.0 != .pose,
         hint.0 != .audio,
         let tensor = hint.1.first?.0
@@ -1110,18 +1123,24 @@ extension LocalImageGenerator {
         dict[hint.0] = tensor
       }
     }
-    if let audioConditioning {
-      hints[.audio] = audioConditioning
-    }
-
     let file =
       (configuration.model.flatMap {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
     let modelVersion = ModelZoo.versionForModel(file)
-    if audioConditioning != nil {
-      guard modelVersion == .longcatVideoAvatar1_5, image != nil, mask == nil
-      else { return (nil, nil, 1) }
+    if audio != nil || audioContext != nil {
+      guard mask == nil else { return (nil, nil, 1) }
+      switch modelVersion {
+      case .longcatVideoAvatar1_5:
+        guard image != nil, configuration.guidanceScale == 1 else { return (nil, nil, 1) }
+      case .minimaxH3:
+        guard
+          ImageGeneratorUtils.modifierForModel(
+            file, LoRAs: configuration.loras.compactMap { $0.file }) == .ref2va
+        else { return (nil, nil, 1) }
+      default:
+        return (nil, nil, 1)
+      }
     }
     let denoiserParameterization: Denoiser.Parameterization
     switch ModelZoo.noiseDiscretizationForModel(file) {
@@ -1149,13 +1168,23 @@ extension LocalImageGenerator {
       shift = Double(configuration.shift)
     }
     let sampling = Sampling(steps: Int(configuration.steps), shift: shift)
-    if audioConditioning != nil {
-      guard let image else { return (nil, nil, 1) }
+    let audioContext =
+      audioContext
+      ?? audio.map { waveform in
+        let encoderFilePath = ModelZoo.audioEncoderForModel(file).map {
+          fileMapping[$0] ?? ModelZoo.filePathForModelDownloaded($0)
+        }
+        return AudioConditioningContext(
+          waveform: waveform, encoderFilePath: encoderFilePath,
+          videoFrames: Int(configuration.numFrames))
+      }
+    // Audio-conditioned LongCat and H3 Ref2VA treat images as references and start from full noise.
+    if let audioContext {
       return generateTextOnly(
         image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
         shuffles: shuffles, poses: poses, text: text, negativeText: negativeText,
         configuration: configuration,
-        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        denoiserParameterization: denoiserParameterization, sampling: sampling, audio: audioContext,
         cancellation: cancellation, feedback: feedback)
     }
     guard let image = image else {
@@ -1539,7 +1568,7 @@ extension LocalImageGenerator {
     graph: DynamicGraph, modelVersion: ModelVersion, textEncoderVersion: TextEncoderVersion?,
     modifier: SamplerModifier, paddedTextEncodingLength: Int, text: String, negativeText: String,
     negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
-    openClipG: String?, t5: String?, images: Int
+    openClipG: String?, t5: String?, images: Int, audios: Int = 0
   ) -> (
     //  return:
     //  tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
@@ -1653,10 +1682,11 @@ extension LocalImageGenerator {
         (modifier == .fl2va || modifier == .ref2va) && images > 0
         ? (1...images).map { "<Picture \($0)>: <|vision_start|><|image_pad|><|vision_end|>" }
           .joined() : ""
+      let audioPrefix = (0..<audios).map { "<Audio \($0 + 1)>: " }.joined()
       return tokenize(
         graph: graph, tokenizer: tokenizerQwen3MinimaxH3,
-        text: imagePrefix + (text.isEmpty ? " " : text),
-        negativeText: imagePrefix + (negativeText.isEmpty ? " " : negativeText),
+        text: imagePrefix + audioPrefix + (text.isEmpty ? " " : text),
+        negativeText: imagePrefix + audioPrefix + (negativeText.isEmpty ? " " : negativeText),
         paddingToken: nil, addSpecialTokens: false, conditionalLength: 5120, modifier: .qwen3,
         potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
     case .zImage:
@@ -3812,6 +3842,7 @@ extension LocalImageGenerator {
     shuffles: [(Tensor<FloatType>, Float)], poses: [(Tensor<FloatType>, Float)],
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
+    audio: AudioConditioningContext? = nil,
     colorCalibrationReference: Tensor<FloatType>? = nil,
     colorCalibrationMask: Tensor<UInt8>? = nil,
     cancellation: (@escaping () -> Void) -> Void,
@@ -3852,27 +3883,6 @@ extension LocalImageGenerator {
     } else {
       image = inputImage
       videoContinuationFrames = nil
-    }
-    let audioConditioning: [Tensor<FloatType>]
-    if let packedAudio = hints[.audio] {
-      let packedAudioTensor = Tensor<FloatType>(packedAudio)
-      let audioBlockSize = 5 * 1_280
-      let firstCount = 5 * audioBlockSize
-      let latentFrames = (Int(configuration.numFrames) - 1) / 4 + 1
-      let latterFrames = latentFrames - 1
-      let latterWidth = 8 * audioBlockSize
-      let latterCount = latterFrames * latterWidth
-      guard packedAudioTensor.shape.reduce(1, *) == firstCount + latterCount else {
-        return (nil, nil, 1)
-      }
-      let flattenedAudio = packedAudioTensor.reshaped(.C(firstCount + latterCount))
-      let audioFirst = flattenedAudio[0..<firstCount].copied().reshaped(
-        .HWC(1, 1, firstCount))
-      let audioLatter = flattenedAudio[firstCount..<(firstCount + latterCount)].copied().reshaped(
-        .HWC(1, latterFrames, latterWidth))
-      audioConditioning = [audioFirst, audioLatter]
-    } else {
-      audioConditioning = []
     }
     let colorCalibrationReference = colorCalibrationReference ?? image
     let textEncoderVersion = ModelZoo.textEncoderVersionForModel(file)
@@ -4340,7 +4350,7 @@ extension LocalImageGenerator {
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil,
       t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil,
-      images: (image == nil ? 0 : 1) + shuffles.count
+      images: (image == nil ? 0 : 1) + shuffles.count, audios: audio == nil ? 0 : 1
     )
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(
@@ -4604,11 +4614,12 @@ extension LocalImageGenerator {
           ].copied())
         firstPassImageCond.1[0] = Functional.concat(axis: 0, refLatent, continuationLatents)
       }
-      if !audioConditioning.isEmpty {
-        firstPassImageCond.1 += audioConditioning.map {
-          graph.variable($0.toGPU(0))
-        }
-      }
+      guard
+        let encodedAudioCond = encodeAudioCond(
+          audio, graph: graph, model: file, videoFrames: Int(configuration.numFrames),
+          framesPerSecond: max(Int(ModelZoo.framesPerSecondForModel(file).rounded()), 1),
+          cancellation: cancellation)
+      else { return (nil, nil, 1) }
 
       let injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: firstPassStartHeight,
@@ -4635,6 +4646,7 @@ extension LocalImageGenerator {
                 tokenLengthCond: tokenLengthCond), sample: nil,
               conditionImage: maskedImage ?? firstPassImageCond.0,
               referenceImages: firstPassImageCond.1,
+              referenceAudios: encodedAudioCond,
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -4937,17 +4949,12 @@ extension LocalImageGenerator {
           .bilinear, widthScale: Float(startHeight * startScaleFactor) / Float(customHeight),
           heightScale: Float(startWidth * startScaleFactor) / Float(customWidth))($0)
       }
-      var secondPassImageCond = encodeImageCond(
+      let secondPassImageCond = encodeImageCond(
         startHeight: startHeight, startWidth: startWidth, graph: graph,
         image: image, depth: secondPassDepthImage, custom: secondPassCustomImage,
         shuffles: shuffles,
         modifier: modifier, version: modelVersion, firstStage: firstStage,
         usesFlashAttention: isMFAEnabled)
-      if !audioConditioning.isEmpty {
-        secondPassImageCond.1 += audioConditioning.map {
-          graph.variable($0.toGPU(0))
-        }
-      }
       let (
         canInjectControls, canInjectT2IAdapters, canInjectAttentionKVs, _, injectIPAdapterLengths,
         canInjectedControls
@@ -5118,7 +5125,8 @@ extension LocalImageGenerator {
                 sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond),
               sample: nil, conditionImage: maskedImage ?? secondPassImageCond.0,
-              referenceImages: secondPassImageCond.1, mask: mask,
+              referenceImages: secondPassImageCond.1,
+              referenceAudios: encodedAudioCond, mask: mask,
               negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: secondPassInjectedControls,
@@ -5949,6 +5957,7 @@ extension LocalImageGenerator {
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: nil,
               conditionImage: maskedImage ?? imageCond.0, referenceImages: imageCond.1,
+              referenceAudios: [],
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -6083,7 +6092,8 @@ extension LocalImageGenerator {
                   sampler: secondPassSampler, scale: imageScale,
                   tokenLengthUncond: tokenLengthUncond,
                   tokenLengthCond: tokenLengthCond),
-                sample: nil, conditionImage: maskedImage, referenceImages: [], mask: mask,
+                sample: nil, conditionImage: maskedImage, referenceImages: [], referenceAudios: [],
+                mask: mask,
                 negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
@@ -7419,6 +7429,7 @@ extension LocalImageGenerator {
                 sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: sample,
               conditionImage: maskedImage ?? imageCond.0, referenceImages: imageCond.1,
+              referenceAudios: [],
               mask: initMaskMaybe,
               negMask: initNegMaskMaybe,
               conditioning: c, tokenLengthUncond: tokenLengthUncond,
@@ -7543,7 +7554,8 @@ extension LocalImageGenerator {
                   sampler: secondPassSampler, scale: imageScale,
                   tokenLengthUncond: tokenLengthUncond,
                   tokenLengthCond: tokenLengthCond),
-                sample: sample, conditionImage: nil, referenceImages: [], mask: initMask,
+                sample: sample, conditionImage: nil, referenceImages: [], referenceAudios: [],
+                mask: initMask,
                 negMask: initNegMask, conditioning: c, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
                 injectedControls: [],  // TODO: Support injectedControls for this.
@@ -8372,6 +8384,7 @@ extension LocalImageGenerator {
           sampler: sampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond), sample: sample,
         conditionImage: maskedImage1 ?? imageCond.0, referenceImages: imageCond.1,
+        referenceAudios: [],
         mask: initMask1Maybe,
         negMask: initNegMaskMaybe,
         conditioning: c, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
@@ -8489,6 +8502,7 @@ extension LocalImageGenerator {
             sampler.sample(
               x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
               conditionImage: maskedImage2 ?? imageCond.0, referenceImages: imageCond.1,
+              referenceAudios: [],
               mask: initMask2Maybe,
               negMask: initNegMask2Maybe,
               conditioning: c,
@@ -8597,7 +8611,8 @@ extension LocalImageGenerator {
             unets: modelPreloader.retrieveUNet(
               sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond),
-            sample: sample, conditionImage: nil, referenceImages: [], mask: initMask1,
+            sample: sample, conditionImage: nil, referenceImages: [], referenceAudios: [],
+            mask: initMask1,
             negMask: initNegMask, conditioning: c, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
             injectedControls: [],  // TODO: Support injectedControls for this.
@@ -8670,6 +8685,7 @@ extension LocalImageGenerator {
               secondPassSampler.sample(
                 x_T, unets: intermediateResult?.unets ?? [nil], sample: sample,
                 conditionImage: maskedImage2 ?? imageCond.0, referenceImages: imageCond.1,
+                referenceAudios: [],
                 mask: initMask2, negMask: initNegMask2, conditioning: c,
                 tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
                 extraProjection: extraProjection, injectedControls: injectedControls,

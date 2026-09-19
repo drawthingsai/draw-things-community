@@ -13,11 +13,13 @@ public enum WebSearchProvider: CaseIterable, Equatable {
   case sogou
   /// Kagi Search API.
   case kagi(apiKey: String)
+  /// Brave Search API.
+  case brave(apiKey: String)
   /// Web search disabled.
   case disabled
 
   public static let allCases: [WebSearchProvider] = [
-    .duckDuckGo, .sogou, .kagi(apiKey: ""), .disabled,
+    .duckDuckGo, .sogou, .kagi(apiKey: ""), .brave(apiKey: ""), .disabled,
   ]
 
   /// Creates a provider from its persisted identifier and API key.
@@ -29,6 +31,8 @@ public enum WebSearchProvider: CaseIterable, Equatable {
       self = .sogou
     case "kagi":
       self = .kagi(apiKey: apiKey)
+    case "brave":
+      self = .brave(apiKey: apiKey)
     case "disabled":
       self = .disabled
     default:
@@ -45,6 +49,8 @@ public enum WebSearchProvider: CaseIterable, Equatable {
       return "sogou"
     case .kagi:
       return "kagi"
+    case .brave:
+      return "brave"
     case .disabled:
       return "disabled"
     }
@@ -203,6 +209,39 @@ public struct KagiSearchOptions: Codable {
     self.timeFilter = timeFilter
     self.safeSearch = safeSearch
     self.maxResults = min(max(1, maxResults), 1_024)
+    self.pages = min(max(1, pages), 10)
+    self.timeout = timeout
+    self.userAgent = userAgent
+  }
+}
+
+/// Options for a Brave Search API request.
+public struct BraveSearchOptions: Codable {
+  /// Optional freshness filter.
+  public var timeFilter: WebSearchTimeFilter?
+  /// Whether safe search is enabled.
+  public var safeSearch: Bool
+  /// Maximum number of unique results to return.
+  public var maxResults: Int
+  /// Maximum number of Brave result pages to request.
+  public var pages: Int
+  /// Request timeout in seconds.
+  public var timeout: TimeInterval
+  /// User agent used for Brave requests.
+  public var userAgent: String
+
+  /// Creates Brave search options using limits supported by the v1 API.
+  public init(
+    timeFilter: WebSearchTimeFilter? = nil,
+    safeSearch: Bool = true,
+    maxResults: Int = 10,
+    pages: Int = 1,
+    timeout: TimeInterval = 15,
+    userAgent: String = WebSearchDefaultUserAgent
+  ) {
+    self.timeFilter = timeFilter
+    self.safeSearch = safeSearch
+    self.maxResults = min(max(1, maxResults), 200)
     self.pages = min(max(1, pages), 10)
     self.timeout = timeout
     self.userAgent = userAgent

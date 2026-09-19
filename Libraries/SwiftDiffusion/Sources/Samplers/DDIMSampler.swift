@@ -99,6 +99,7 @@ extension DDIMSampler: Sampler {
     _ x_T: DynamicGraph.Tensor<FloatType>, unets existingUNets: [UNet?],
     sample: DynamicGraph.Tensor<FloatType>?, conditionImage: DynamicGraph.Tensor<FloatType>?,
     referenceImages: [DynamicGraph.Tensor<FloatType>],
+    referenceAudios: [DynamicGraph.Tensor<FloatType>],
     mask: DynamicGraph.Tensor<FloatType>?, negMask: DynamicGraph.Tensor<FloatType>?,
     conditioning c: [DynamicGraph.Tensor<FloatType>], tokenLengthUncond: Int, tokenLengthCond: Int,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
@@ -232,7 +233,8 @@ extension DDIMSampler: Sampler {
           startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, lora: lora,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, isBF16: isBF16,
-          injectedControls: injectedControls, referenceImages: referenceImages)
+          injectedControls: injectedControls, referenceImages: referenceImages,
+          referenceAudios: referenceAudios)
         conditions = vector + encodings
         injectedControlsC = injectedControls.map {
           $0.model.encode(
@@ -264,6 +266,7 @@ extension DDIMSampler: Sampler {
         unet.cancel()
       }
       let referenceImageCount = referenceImages.count
+      let referenceAudioCount = referenceAudios.count
       var controlNets = [Model?](repeating: nil, count: injectedControls.count)
       let injectControlsAndAdapters = InjectControlsAndAdapters(
         injectControls: injectControls, injectT2IAdapters: injectT2IAdapters,
@@ -301,13 +304,13 @@ extension DDIMSampler: Sampler {
             graph: graph, index: 0, batchSize: cfgChannels * batchSize,
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             conditions: newC,
-            referenceImageCount: referenceImageCount,
+            referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
             version: version, modifier: modifier, isCfgEnabled: isCfgEnabled),
           tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
           extraProjection: extraProjection,
           injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-          referenceImageCount: referenceImageCount,
+          referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           isBF16: isBF16, activationQkScaling: activationQkScaling,
           activationProjScaling: activationProjScaling,
@@ -437,7 +440,7 @@ extension DDIMSampler: Sampler {
                 startWidth: startWidth, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond, lora: lora, tiledDiffusion: tiledDiffusion,
                 teaCache: teaCache, isBF16: isBF16, injectedControls: injectedControls,
-                referenceImages: referenceImages
+                referenceImages: referenceImages, referenceAudios: referenceAudios
               ).0
             indexOffset = i
           }
@@ -478,11 +481,12 @@ extension DDIMSampler: Sampler {
               graph: graph, index: 0, batchSize: cfgChannels * batchSize,
               tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
               conditions: newC, referenceImageCount: referenceImageCount,
+              referenceAudioCount: referenceAudioCount,
               version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled),
             tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
             isCfgEnabled: isCfgEnabled, extraProjection: extraProjection,
             injectedControlsAndAdapters: emptyInjectedControlsAndAdapters,
-            referenceImageCount: referenceImageCount,
+            referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
             tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
             isBF16: refiner.isBF16, activationQkScaling: refiner.activationQkScaling,
             activationProjScaling: refiner.activationProjScaling,
@@ -511,6 +515,7 @@ extension DDIMSampler: Sampler {
           graph: graph, index: i - indexOffset, batchSize: cfgChannels * batchSize,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           conditions: conditions, referenceImageCount: referenceImageCount,
+          referenceAudioCount: referenceAudioCount,
           version: currentModelVersion, modifier: modifier, isCfgEnabled: isCfgEnabled)
         var et: DynamicGraph.Tensor<FloatType>
         if version == .svdI2v, let textGuidanceVector = textGuidanceVector,
@@ -542,6 +547,7 @@ extension DDIMSampler: Sampler {
             extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+            referenceAudioCount: referenceAudioCount,
             step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
@@ -557,6 +563,7 @@ extension DDIMSampler: Sampler {
               extraProjection: extraProjection,
               injectedControlsAndAdapters: injectedControlsAndAdapters,
               injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+              referenceAudioCount: referenceAudioCount,
               step: i, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
               tiledDiffusion: tiledDiffusion,
@@ -607,6 +614,7 @@ extension DDIMSampler: Sampler {
             extraProjection: extraProjection,
             injectedControlsAndAdapters: injectedControlsAndAdapters,
             injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+            referenceAudioCount: referenceAudioCount,
             step: i, tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
             tiledDiffusion: tiledDiffusion,

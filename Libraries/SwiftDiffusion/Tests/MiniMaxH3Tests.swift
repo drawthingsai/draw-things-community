@@ -12,51 +12,56 @@ final class MiniMaxH3Tests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: directory) }
     let graph = DynamicGraph()
     graph.withNoGrad {
-      for fixed in [false, true] {
+      for (fixed, hasAudio) in [(false, false), (true, false), (false, true), (true, true)] {
         func build(_ configuration: LoRANetworkConfiguration?) -> (ModelWeightMapper, Model) {
           if fixed {
             if let configuration {
               return LoRAMiniMaxH3Fixed(
                 timesteps: 1, hiddenSize: 8, layers: 2, textLength: (3, 5),
                 usesFlashAttention: .scale1, referenceImageCount: 1,
+                referenceAudioCount: hasAudio ? 1 : 0,
                 LoRAConfiguration: configuration
               )
             }
             return MiniMaxH3Fixed(
               timesteps: 1, hiddenSize: 8, layers: 2, textLength: (3, 5),
-              usesFlashAttention: .scale1, referenceImageCount: 1
+              usesFlashAttention: .scale1, referenceImageCount: 1,
+              referenceAudioCount: hasAudio ? 1 : 0
             )
           }
           if let configuration {
             return LoRAMiniMaxH3(
               hiddenSize: 8, layers: 2, textLength: 3, audioLength: 4, videoFrames: 1,
               videoHeight: 2, videoWidth: 2, usesFlashAttention: .scale1,
-              referenceImageSizes: [(2, 2)], LoRAConfiguration: configuration
+              referenceImageSizes: [(2, 2)], referenceAudioLengths: hasAudio ? [6] : [],
+              LoRAConfiguration: configuration
             )
           }
           return MiniMaxH3(
             hiddenSize: 8, layers: 2, textLength: 3, audioLength: 4, videoFrames: 1,
             videoHeight: 2, videoWidth: 2, usesFlashAttention: .scale1,
-            referenceImageSizes: [(2, 2)]
+            referenceImageSizes: [(2, 2)], referenceAudioLengths: hasAudio ? [6] : []
           )
         }
         let inputs: [DynamicGraph.AnyTensor]
         if fixed {
-          inputs = [
-            graph.variable(.GPU(0), .HWC(2, 5, 5_120), of: Float16.self),
-            graph.variable(.GPU(0), .HWC(1, 3, 256), of: Float16.self),
-            graph.variable(.GPU(0), .NHWC(1, 2, 2, 24), of: Float16.self),
-          ]
+          inputs =
+            [
+              graph.variable(.GPU(0), .HWC(2, 5, 5_120), of: Float16.self),
+              graph.variable(.GPU(0), .HWC(1, hasAudio ? 4 : 3, 256), of: Float16.self),
+              graph.variable(.GPU(0), .NHWC(1, 2, 2, 24), of: Float16.self),
+            ] + (hasAudio ? [graph.variable(.GPU(0), .HWC(1, 6, 32), of: Float16.self)] : [])
         } else {
           inputs =
             [
               graph.variable(.GPU(0), .NHWC(1, 2, 2, 24), of: Float16.self),
               graph.variable(.GPU(0), .HWC(1, 4, 32), of: Float16.self),
               graph.variable(.GPU(0), .HWC(1, 3, 8), of: Float.self),
-              graph.variable(.GPU(0), .NHWC(1, 9, 1, 128), of: Float16.self),
+              graph.variable(.GPU(0), .NHWC(1, hasAudio ? 15 : 9, 1, 128), of: Float16.self),
               graph.variable(.GPU(0), .NHWC(1, 1, 1, 8), of: Float16.self),
             ]
-            + (0..<52).map { _ in
+            + (hasAudio ? [graph.variable(.GPU(0), .HWC(1, 6, 8), of: Float16.self)] : [])
+            + (0..<(hasAudio ? 64 : 52)).map { _ in
               graph.variable(.GPU(0), .HWC(1, 1, 8), of: Float16.self)
             }
         }
@@ -170,6 +175,114 @@ final class MiniMaxH3Tests: XCTestCase {
         }
         XCTAssertGreaterThan(changed, 1e-8)
         XCTAssertLessThan(sqrt(error / max(magnitude, 1e-30)), 0.01)
+      }
+    }
+  }
+
+  func testAudioReferencesAdvanceClockAndKeepStereoRowsTogether() {
+    let rotary = MiniMaxH3RotaryEmbedding(
+      textLength: 10, audioLength: 4, videoFrames: 1, videoHeight: 4, videoWidth: 6,
+      referenceImages: [(4, 6, 10)], referenceAudios: [(6, 11), (4, 14)], videoPosition: 16)
+    XCTAssertEqual(rotary.shape, [1, 36, 1, 128])
+    // Image rows follow text, then each reference's left and right channel.
+    for (offset, length, start) in [(16, 3, Float(11)), (22, 2, Float(14))] {
+      for channel in 0..<2 {
+        for i in 0..<length {
+          XCTAssertEqual(
+            rotary[0, offset + channel * length + i, 0, 0], cos(start + Float(i)), accuracy: 1e-6)
+        }
+      }
+      XCTAssertNotEqual(rotary[0, offset, 0, 64], rotary[0, offset + length, 0, 64])
+    }
+    // Generated audio/video both start after the references' temporal span.
+    XCTAssertEqual(rotary[0, 26, 0, 0], cos(Float(16)), accuracy: 1e-6)
+    XCTAssertEqual(rotary[0, 30, 0, 0], cos(Float(16)), accuracy: 1e-6)
+  }
+
+  func testAudioReferenceModulationStaysCleanAcrossTimesteps() {
+    let graph = DynamicGraph()
+    graph.withNoGrad {
+      let fixed = MiniMaxH3Fixed(
+        timesteps: 2, hiddenSize: 8, layers: 1, textLength: (0, 3),
+        usesFlashAttention: .scale1, referenceAudioCount: 1
+      ).1
+      let text = graph.variable(.GPU(0), .HWC(1, 3, 5_120), of: Float16.self)
+      text.full(0.1)
+      var frequencies = Tensor<Float16>(.CPU, .HWC(2, 3, 256))
+      for step in 0..<2 {
+        for modality in 0..<3 {
+          for feature in 0..<256 {
+            frequencies[step, modality, feature] = modality == 2 ? 0.9 : Float16(step) * 0.5
+          }
+        }
+      }
+      let reference = graph.variable(.GPU(0), .HWC(1, 6, 32), of: Float16.self)
+      reference.full(0.25)
+      let outputs = fixed(inputs: text, graph.variable(frequencies.toGPU(0)), reference)
+      XCTAssertEqual(outputs.count, 30)
+      XCTAssertEqual(outputs[1].shape, [1, 6, 8])
+      var targetChange: Float = 0
+      for chunk in 0..<6 {
+        let target = outputs[2 + chunk * 4 + 2].as(of: Float16.self).rawValue.toCPU()
+        let anchor = outputs[2 + chunk * 4 + 3].as(of: Float16.self).rawValue.toCPU()
+        for feature in 0..<8 {
+          XCTAssertEqual(anchor[0, 0, feature], anchor[1, 0, feature])
+          targetChange += abs(Float(target[0, 0, feature] - target[1, 0, feature]))
+        }
+      }
+      XCTAssertGreaterThan(targetChange, 0)
+    }
+  }
+
+  func testDenoiserUsesAudioWithoutReturningReferenceRows() {
+    let graph = DynamicGraph()
+    graph.withNoGrad {
+      for imageCount in 0...1 {
+        let model = MiniMaxH3(
+          hiddenSize: 8, layers: 1, textLength: 3, audioLength: 4,
+          videoFrames: 1, videoHeight: 2, videoWidth: 2, usesFlashAttention: .scale1,
+          referenceImageSizes: imageCount == 0 ? [] : [(2, 2)], referenceAudioLengths: [6]
+        ).1
+        let video = graph.variable(.GPU(0), .NHWC(1, 2, 2, 24), of: Float16.self)
+        let audio = graph.variable(.GPU(0), .HWC(1, 4, 32), of: Float16.self)
+        let text = graph.variable(.GPU(0), .HWC(1, 3, 8), of: Float.self)
+        let reference = graph.variable(.GPU(0), .HWC(1, 6, 8), of: Float16.self)
+        let image = graph.variable(.GPU(0), .NHWC(1, 1, 1, 8), of: Float16.self)
+        let modulation = graph.variable(.GPU(0), .HWC(1, 1, 8), of: Float16.self)
+        video.full(0.1)
+        audio.full(0.1)
+        text.full(0.1)
+        image.full(0.1)
+        modulation.full(0.1)
+        reference.full(0.25)
+        let rotary = graph.variable(
+          Tensor<Float16>(
+            from: MiniMaxH3RotaryEmbedding(
+              textLength: 3, audioLength: 4, videoFrames: 1, videoHeight: 2, videoWidth: 2,
+              referenceImages: imageCount == 0 ? [] : [(2, 2, 3)],
+              referenceAudios: [(6, Float(3 + imageCount))], videoPosition: Float(6 + imageCount))
+          ).toGPU(0))
+        let inputs: [DynamicGraph.AnyTensor] =
+          [audio, text, rotary]
+          + (imageCount == 0 ? [] : [image]) + [reference]
+          + Array(repeating: modulation, count: 28 + imageCount * 6)
+        let first = model(inputs: video, inputs).map { $0.as(of: Float16.self).rawValue.toCPU() }
+        reference.full(-0.4)
+        let second = model(inputs: video, inputs).map { $0.as(of: Float16.self).rawValue.toCPU() }
+        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(Array(first[0].shape), [1, 2, 2, 24])
+        XCTAssertEqual(Array(first[1].shape), [1, 4, 32])
+        for output in 0..<2 {
+          let count = first[output].shape.reduce(1, *)
+          let a = first[output].reshaped(.C(count))
+          let b = second[output].reshaped(.C(count))
+          var difference: Float = 0
+          for i in 0..<count {
+            XCTAssertTrue(a[i].isFinite && b[i].isFinite)
+            difference += abs(Float(a[i]) - Float(b[i]))
+          }
+          XCTAssertGreaterThan(difference, 0.001)
+        }
       }
     }
   }
@@ -422,7 +535,8 @@ final class MiniMaxH3Tests: XCTestCase {
           let extracted = UNetExtractConditions(
             of: Float.self, graph: graph, index: step, batchSize: 4,
             tokenLengthUncond: 2, tokenLengthCond: 3, conditions: conditions,
-            referenceImageCount: referenceCount, version: .minimaxH3, modifier: .fl2va,
+            referenceImageCount: referenceCount, referenceAudioCount: 0, version: .minimaxH3,
+            modifier: .fl2va,
             isCfgEnabled: true)
           XCTAssertEqual(extracted.count, prefix.count + count)
           XCTAssertEqual(Array(extracted[0].shape), [2, 3, 8])

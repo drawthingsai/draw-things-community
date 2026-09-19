@@ -76,6 +76,7 @@ extension UNetWrapper {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
+    referenceAudioCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
@@ -95,7 +96,7 @@ extension UNetWrapper {
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
         extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-        referenceImageCount: referenceImageCount,
+        referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         isBF16: isBF16, activationQkScaling: activationQkScaling,
         activationProjScaling: activationProjScaling,
@@ -117,7 +118,7 @@ extension UNetWrapper {
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled,
       extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
-      referenceImageCount: referenceImageCount,
+      referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       isBF16: isBF16, activationQkScaling: activationQkScaling,
       activationProjScaling: activationProjScaling,
@@ -139,7 +140,8 @@ extension UNetWrapper {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int,
+    referenceAudioCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -151,6 +153,7 @@ extension UNetWrapper {
           extraProjection: extraProjection,
           injectedControlsAndAdapters: injectedControlsAndAdapters,
           injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+          referenceAudioCount: referenceAudioCount,
           step: step, tokenLengthUncond: tokenLengthUncond,
           tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
           tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
@@ -161,7 +164,8 @@ extension UNetWrapper {
       timestep: t, audioShiftRatio: audioShiftRatio, inputs: xT, timestep, c,
       extraProjection: extraProjection,
       injectedControlsAndAdapters: injectedControlsAndAdapters,
-      injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount, step: step,
+      injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+      referenceAudioCount: referenceAudioCount, step: step,
       tokenLengthUncond: tokenLengthUncond,
       tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled, tiledDiffusion: tiledDiffusion,
       controlNets: &controlNets)

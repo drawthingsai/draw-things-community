@@ -3310,6 +3310,22 @@ public struct ModelZoo: DownloadZoo {
     return specification.noiseScalingFactor ?? 1
   }
 
+  public static func audioEncoderForModel(_ name: String) -> String? {
+    guard let specification = specificationForModel(name) else { return nil }
+    switch specification.version {
+    case .longcatVideoAvatar1_5:
+      return "whisper_large_v3_f16.ckpt"
+    case .minimaxH3:
+      return autoencoderForModel(name)
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
+      .wurstchenStageC, .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large,
+      .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
+      .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
+      .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
+      return nil
+    }
+  }
+
   public static func audioSampleRateForModel(_ name: String) -> Int {
     guard let specification = specificationForModel(name) else {
       return 24_000

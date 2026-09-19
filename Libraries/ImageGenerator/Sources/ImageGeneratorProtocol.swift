@@ -30,6 +30,8 @@ public struct ImageGeneratorTrace {
 }
 
 public protocol ImageGenerator {
+  /// An `.audio` hint contains one CPU `Tensor<Float>` in [channels, samples] order, resampled
+  /// to `ModelZoo.audioSampleRateForModel`. The generator owns model-specific audio encoding.
   func generate(
     trace: ImageGeneratorTrace,
     image: Tensor<FloatType>?, scaleFactor: Int, mask: Tensor<UInt8>?,

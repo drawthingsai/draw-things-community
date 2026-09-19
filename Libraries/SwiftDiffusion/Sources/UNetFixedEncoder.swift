@@ -219,7 +219,8 @@ extension UNetFixedEncoder {
     teaCache teaCacheConfiguration: TeaCacheConfiguration, isBF16: Bool,
     injectedControls: [(
       model: ControlModel<FloatType>, hints: [([DynamicGraph.Tensor<FloatType>], Float)]
-    )], referenceImages: [DynamicGraph.Tensor<FloatType>]
+    )], referenceImages: [DynamicGraph.Tensor<FloatType>],
+    referenceAudios: [DynamicGraph.Tensor<FloatType>]
   ) -> ([DynamicGraph.AnyTensor], ModelWeightMapper?) {
     func valueOr(
       _ usesFlashAttention: UseFlashAttention, _ value: FlashAttentionLevel
@@ -261,6 +262,7 @@ extension UNetFixedEncoder {
         externalOnDemand
         ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
       let referenceImageCount = referenceImages.count
+      let referenceAudioCount = referenceAudios.count
       let videoLatentFrames = batchSize
       let audioHeight = MiniMaxH3AudioHeight(
         videoLatentFrames: videoLatentFrames, latentWidth: startWidth)
@@ -292,7 +294,9 @@ extension UNetFixedEncoder {
             contextTextLength..<(contextTextLength + visionLength), 0..<textEncoding[0].shape[2]
           ].copied())
       }
-      let referenceLength = referenceImages.reduce(0) { $0 + $1.shape[1] / 2 * ($1.shape[2] / 2) }
+      let referenceLength =
+        referenceImages.reduce(0) { $0 + $1.shape[1] / 2 * ($1.shape[2] / 2) }
+        + referenceAudios.reduce(0) { $0 + $1.shape[1] }
       let videoLength = videoLatentFrames * videoHeight / 2 * (startWidth / 2)
       let mediaLength = referenceLength + audioRows + visionLength + videoLength
       var rotary = graph.variable(
@@ -309,13 +313,19 @@ extension UNetFixedEncoder {
                 ? (index == 0 ? 0 : Float(frames - 1) * 5 / 3) : Float(index))
           )
         }
+        var mediaPosition = Float(contextLength + (modifier == .ref2va ? referenceImageCount : 0))
+        let audioPositions = referenceAudios.map { audio in
+          let position = mediaPosition
+          mediaPosition += Float(audio.shape[1] / 2)
+          return (length: audio.shape[1], position: position)
+        }
         let embedding = graph.variable(
           Tensor<FloatType>(
             from: MiniMaxH3RotaryEmbedding(
               textLength: 0, audioLength: audioRows,
               videoFrames: videoLatentFrames,
               videoHeight: videoHeight, videoWidth: startWidth, referenceImages: positions,
-              videoPosition: Float(contextLength + (modifier == .ref2va ? referenceImageCount : 0)))
+              referenceAudios: audioPositions, videoPosition: mediaPosition)
           ).toGPU(0))
         let contextBatch = (batch + textBatchOffset)..<(batch + textBatchOffset + 1)
         rotary[batch..<(batch + 1), 0..<length, 0..<1, 0..<128] =
@@ -337,7 +347,10 @@ extension UNetFixedEncoder {
             0..<1, 0..<128]
       }
       var frequencies = Tensor<Float>(
-        .CPU, .HWC(timesteps.count, referenceImageCount > 0 ? 3 : 2, 256))
+        .CPU,
+        .HWC(
+          timesteps.count,
+          2 + (referenceImageCount > 0 ? 1 : 0) + (referenceAudioCount > 0 ? 1 : 0), 256))
       for index in timesteps.indices {
         let videoSigma = timesteps[index] / 1_000
         let audioSigma = MiniMaxH3AudioSigma(
@@ -345,6 +358,7 @@ extension UNetFixedEncoder {
         let values =
           [1 - videoSigma, 1 - audioSigma]
           + (referenceImageCount > 0 ? [max(1 - videoSigma, 0.999)] : [])
+          + (referenceAudioCount > 0 ? [Float(1)] : [])
         for (modality, timestep) in values.enumerated() {
           frequencies[
             index..<(index + 1), modality..<(modality + 1),
@@ -379,7 +393,7 @@ extension UNetFixedEncoder {
               isCfgEnabled ? tokenLengthUncond + visionLength : 0, tokenLengthCond + visionLength
             ),
             usesFlashAttention: valueOr(usesFlashAttention, .scale1),
-            referenceImageCount: referenceImageCount,
+            referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
             visionLength: visionLength, LoRAConfiguration: configuration
           ).1
       } else {
@@ -390,13 +404,14 @@ extension UNetFixedEncoder {
               isCfgEnabled ? tokenLengthUncond + visionLength : 0, tokenLengthCond + visionLength
             ),
             usesFlashAttention: valueOr(usesFlashAttention, .scale1),
-            referenceImageCount: referenceImageCount,
+            referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
             visionLength: visionLength
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
-      unetFixed.compile(inputs: [text, timestepFrequencies] + references)
-      let suffix = referenceImageCount > 0 ? ":ref" : ""
+      unetFixed.compile(inputs: [text, timestepFrequencies] + references + referenceAudios)
+      let suffix =
+        (referenceImageCount > 0 ? ":ref" : "") + (referenceAudioCount > 0 ? ":audio-ref" : "")
       let loadedFromWeightsCache = weightsCache.detach(
         "\(filePath):[fixed]\(suffix)", to: unetFixed.parameters)
       if !loadedFromWeightsCache || !lora.isEmpty {
@@ -447,9 +462,13 @@ extension UNetFixedEncoder {
           }
         }
       }
-      let fixedConditions = unetFixed(inputs: text, [timestepFrequencies] + references)
-      let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
-      precondition(fixedConditions.count == fixedConditionCount + 1 + referenceImageCount)
+      let fixedConditions = unetFixed(
+        inputs: text, [timestepFrequencies] + references + referenceAudios)
+      let fixedConditionCount =
+        50 * (18 + (referenceImageCount > 0 ? 6 : 0) + (referenceAudioCount > 0 ? 6 : 0)) + 4
+      precondition(
+        fixedConditions.count == fixedConditionCount + 1 + referenceImageCount + referenceAudioCount
+      )
       let context = fixedConditions[0]
       weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       return ([context, rotary] + fixedConditions.dropFirst(), nil)
@@ -1715,8 +1734,8 @@ extension UNetFixedEncoder {
       c[0..<1, 0..<condTokens, 0..<4096] = c0[
         (c0.shape[0] - 1)..<c0.shape[0], 0..<condTokens, 0..<4096
       ].copied()
-      // referenceImages layout for this model: [cleanCondLatents, audioFirst, audioLatter].
-      // cleanCondLatents is 1 frame for AI2V and 1 ref + 4 continuation frames for AVC.
+      // referenceImages holds clean cond latents: 1 frame for AI2V, or 1 ref + 4 continuation
+      // frames for AVC. referenceAudios holds the first and latter Whisper feature windows.
       var timeEmbeds = graph.variable(
         .GPU(0), .WC(timesteps.count * batchSize, 256), of: Float.self)
       for (i, timestep) in timesteps.enumerated() {
@@ -1739,9 +1758,10 @@ extension UNetFixedEncoder {
       let vaeScale = 4
       let audioFirst: DynamicGraph.Tensor<FloatType>
       let audioLatter: DynamicGraph.Tensor<FloatType>
-      if referenceImages.count >= 3 {
-        audioFirst = referenceImages[1]
-        audioLatter = referenceImages[2]
+      if !referenceAudios.isEmpty {
+        precondition(referenceAudios.count == 2)
+        audioFirst = referenceAudios[0]
+        audioLatter = referenceAudios[1]
       } else {
         let zeroFirst = graph.variable(
           .GPU(0), .HWC(1, 1, audioWindow * audioBlocks * audioChannels), of: FloatType.self)

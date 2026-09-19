@@ -2,6 +2,34 @@
 
 DuckDuckGo and Sogou offer an HTTP path with persistent WebKit fallback. The [Sogou study](#sogou-browser-fallback-and-quality-study--2026-09-08) includes its transport and relevance measurements.
 
+## Brave Search API
+
+`BraveSearch(apiKey:).search(query:options:completion:)` mirrors Kagi's callback-first
+interface and calls `HttpTransport.data(for:completion:)` directly. Local Code
+offers Brave in Search Provider settings, persists its key separately from Kagi,
+and uses it for local and remote agents. The Local Code CLI accepts
+`--web-search-provider brave` with `BRAVE_API_KEY`, or a custom variable named by
+`--web-search-api-key-environment`.
+
+Options mirror `KagiSearchOptions`: freshness, safe search, result/page limits,
+timeout, and user agent. The implementation maps these to Brave's web API,
+authenticates with `X-Subscription-Token`, requests undecorated web results, and
+deduplicates URLs. Brave supports at most 20 results per page and ten pages; the
+page size stays fixed across requests because `offset` counts pages. HTTP errors
+are surfaced without retries. See the [Brave API reference](https://api-dashboard.search.brave.com/api-reference/web/search/get).
+
+Run the optional live smoke test with `BRAVE_API_KEY` in the environment:
+
+```sh
+bazel test //Libraries/WebSearch:WebSearchTests --test_env=BRAVE_API_KEY \
+  --test_filter=WebSearchTests.testBraveLiveSearchWhenAPIKeyIsProvided
+```
+
+A separate [native WKWebView feasibility study](Validation/2026-09-16-brave.md)
+found that keyless Brave results and pagination work, but rapid sequential searches
+can require interactive verification. This study does not add a browser provider
+or change the API provider's missing-key behavior.
+
 ## DuckDuckGo browser fallback
 
 `DuckDuckGoSearch()` first uses the HTML endpoint and falls back to `WebKitDuckDuckGoSearch` on Apple platforms when it receives a challenge, an unrecognized page, HTTP 403/408/429/5xx, or a transient timeout/connection loss. A successful HTTP search stays on that path. Offline, cancellation and TLS errors do not launch a browser. Pass `browserSearch: nil` to explicitly use HTTP only.
@@ -30,7 +58,7 @@ The parser distinguishes genuine no-results pages from incomplete pages, includi
 
 - **Cookie-enabled URLSession or the Lite endpoint:** potentially useful, but neither executes the regular site's JavaScript. DuckDuckGo describes HTML and Lite as non-JavaScript alternatives; another lightweight endpoint does not establish a reliable browser session. The working browser path avoids adding another scrape/retry chain. [DuckDuckGo documentation](https://safe.duckduckgo.com/duckduckgo-help-pages/features/non-javascript).
 - **Model solving the image challenge:** adds vision-model dependencies and challenge-specific interaction logic. The browser fallback recovered these failures without solving a CAPTCHA. The implemented final step lets a user complete a persistent challenge directly in the provider's UI.
-- **A supported search API:** the appropriate option when contractual reliability and sustained automated volume are required. Kagi is already supported by this library and provides a programmable search API. Brave also provides an independent search API requiring an API key. Neither is silently selected, since this changes provider/account/billing requirements. [Kagi Search API](https://help.kagi.com/kagi/api/search.html), [Brave Search API](https://brave.com/search/api/).
+- **A supported search API:** the appropriate option when contractual reliability and sustained automated volume are required. Kagi and Brave are supported by this library and require an API key. Neither is silently selected, since this changes provider/account/billing requirements. [Kagi Search API](https://help.kagi.com/kagi/api/search.html), [Brave Search API](https://brave.com/search/api/).
 
 ## Validation on 2026-09-08
 

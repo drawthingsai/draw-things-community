@@ -4,15 +4,21 @@ import NNC
 
 public enum LongCatAudioConditioningEncoderError: Swift.Error, LocalizedError {
   case missingAudioEncoder(String)
-  case invalidSampleRate(Int)
+  case invalidWaveform
+  case invalidFrameCount
+  case cancelled
 
   public var errorDescription: String? {
     switch self {
     case .missingAudioEncoder(let path):
       return
         "Missing Whisper audio encoder at \(path). Convert it with ModelConverter --audio-encoder."
-    case .invalidSampleRate(let sampleRate):
-      return "LongCat audio input must be 16000 Hz, but received \(sampleRate) Hz."
+    case .invalidWaveform:
+      return "LongCat audio input must be a nonempty CPU waveform in [channels, samples] order."
+    case .invalidFrameCount:
+      return "LongCat audio conditioning requires a positive frame count and frame rate."
+    case .cancelled:
+      return "Audio encoding cancelled."
     }
   }
 }
@@ -21,8 +27,39 @@ public struct LongCatAudioConditioning {
   public let audioFirst: Tensor<FloatType>
   public let audioLatter: Tensor<FloatType>
 
+  public init(audioFirst: Tensor<FloatType>, audioLatter: Tensor<FloatType>) {
+    self.audioFirst = audioFirst
+    self.audioLatter = audioLatter
+  }
+
   public var tensors: [Tensor<FloatType>] {
     [audioFirst, audioLatter]
+  }
+
+  /// Slices packed full-video conditioning at a VAE-aligned AVC segment boundary.
+  public func segment(startFrame: Int, videoFrames: Int) -> LongCatAudioConditioning {
+    let scale = LongCatAudioConditioningEncoder.vaeScale
+    precondition(startFrame >= 0 && startFrame % scale == 0)
+    precondition(videoFrames > 0 && videoFrames % scale == 1)
+    let start = startFrame / scale
+    let count = (videoFrames - 1) / scale
+    precondition(start + count <= audioLatter.shape[1])
+    if start == 0 && count == audioLatter.shape[1] {
+      return self
+    }
+    let first: Tensor<FloatType>
+    if start == 0 {
+      first = audioFirst
+    } else {
+      // The previous latent group's final five windows are centered on this segment's
+      // first frame. Reuse them to preserve context from both sides of the boundary.
+      let width = audioLatter.shape[2]
+      first = audioLatter[
+        0..<1, (start - 1)..<start, (width - audioFirst.shape[2])..<width
+      ].copied()
+    }
+    let latter = audioLatter[0..<1, start..<(start + count), 0..<audioLatter.shape[2]].copied()
+    return LongCatAudioConditioning(audioFirst: first, audioLatter: latter)
   }
 }
 
@@ -31,7 +68,7 @@ public struct LongCatAudioFeatures {
   public let videoFrames: Int
   public let framesPerSecond: Int
 
-  fileprivate init(values: [Float], videoFrames: Int, framesPerSecond: Int) {
+  init(values: [Float], videoFrames: Int, framesPerSecond: Int) {
     precondition(
       values.count
         == videoFrames * LongCatAudioConditioningEncoder.audioBlocks
@@ -78,21 +115,38 @@ public struct LongCatAudioConditioningEncoder {
     return samples.map { $0 * gain }
   }
 
+  /// The waveform must be resampled to 16 kHz. Downmix channels before Whisper normalization.
   public func encode(
-    _ input: AudioInput, videoFrames: Int, framesPerSecond: Int
+    _ waveform: Tensor<Float>, videoFrames: Int, framesPerSecond: Int,
+    shouldContinue: () -> Bool = { true }
   ) throws -> LongCatAudioFeatures {
-    guard input.sampleRate == Self.sampleRate else {
-      throw LongCatAudioConditioningEncoderError.invalidSampleRate(input.sampleRate)
+    guard waveform.kind == .CPU, waveform.shape.count == 2,
+      waveform.shape[0] > 0, waveform.shape[1] > 0
+    else {
+      throw LongCatAudioConditioningEncoderError.invalidWaveform
+    }
+    guard videoFrames > 0, framesPerSecond > 0 else {
+      throw LongCatAudioConditioningEncoderError.invalidFrameCount
+    }
+    guard shouldContinue() else {
+      throw LongCatAudioConditioningEncoderError.cancelled
+    }
+    var samples = [Float](repeating: 0, count: waveform.shape[1])
+    for channel in 0..<waveform.shape[0] {
+      for i in 0..<samples.count {
+        samples[i] += waveform[channel, i] / Float(waveform.shape[0])
+      }
     }
     let values = try whisperFeatures(
-      samples: input.samples, videoFrames: videoFrames, framesPerSecond: framesPerSecond)
+      samples: samples, videoFrames: videoFrames, framesPerSecond: framesPerSecond,
+      shouldContinue: shouldContinue)
     return LongCatAudioFeatures(
       values: values, videoFrames: videoFrames, framesPerSecond: framesPerSecond)
   }
 
   /// Runs Whisper over the padded speech and returns per-video-frame features [frames, 5, 1280].
   private func whisperFeatures(
-    samples: [Float], videoFrames: Int, framesPerSecond: Int
+    samples: [Float], videoFrames: Int, framesPerSecond: Int, shouldContinue: () -> Bool
   ) throws -> [Float] {
     guard FileManager.default.fileExists(atPath: filePath) else {
       throw LongCatAudioConditioningEncoderError.missingAudioEncoder(filePath)
@@ -116,12 +170,15 @@ public struct LongCatAudioConditioningEncoder {
       repeating: [Float](
         repeating: 0, count: chunks * encoderFramesPerChunk * Self.audioChannels),
       count: Self.audioBlocks)
-    graph.withNoGrad {
+    try graph.withNoGrad {
       let (_, encoder) = WhisperEncoder(
         width: 1_280, layers: 32, heads: 20, melBins: 128, frames: 3_000,
         intermediateSize: 5_120, usesFlashAttention: true)
       var loaded = false
       for chunk in 0..<chunks {
+        guard shouldContinue() else {
+          throw LongCatAudioConditioningEncoderError.cancelled
+        }
         let start = chunk * chunkSamples
         let chunkArray = Array(
           samples[min(start, samples.count)..<min(start + chunkSamples, samples.count)])

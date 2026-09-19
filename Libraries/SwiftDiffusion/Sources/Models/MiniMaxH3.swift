@@ -41,6 +41,7 @@ func MiniMaxH3AudioSigma(forVideoSigma sigma: Float, audioShiftRatio: Float) -> 
 public func MiniMaxH3RotaryEmbedding(
   textLength: Int, audioLength: Int = 0, videoFrames: Int = 0, videoHeight: Int = 0,
   videoWidth: Int = 0, referenceImages: [(height: Int, width: Int, position: Float)] = [],
+  referenceAudios: [(length: Int, position: Float)] = [],
   videoPosition: Float? = nil, visionTokenRanges: [Range<Int>] = []
 ) -> Tensor<Float> {
   precondition(audioLength % 2 == 0)
@@ -52,9 +53,11 @@ public func MiniMaxH3RotaryEmbedding(
   let rowsPerFrame = height * width
   let videoLength = videoFrames * rowsPerFrame
   let conditionLength = referenceImages.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
+  let referenceAudioLength = referenceAudios.reduce(0) { $0 + $1.length }
   let visionLength = visionTokenRanges.reduce(0) { $0 + $1.count }
   let mediaPosition = videoPosition ?? Float(textLength)
-  let sequenceLength = textLength + conditionLength + audioLength + videoLength
+  let sequenceLength =
+    textLength + conditionLength + referenceAudioLength + audioLength + videoLength
   let squareRootArea = max(1, sqrt(Double(videoHeight * videoWidth)))
   let heightRatio = Double(videoHeight) / squareRootArea
   let widthRatio = Double(videoWidth) / squareRootArea
@@ -97,7 +100,7 @@ public func MiniMaxH3RotaryEmbedding(
       }
     }
     var textRow = 0
-    var visionRow = textLength - visionLength + conditionLength + audioLength
+    var visionRow = textLength - visionLength + conditionLength + referenceAudioLength + audioLength
     for token in 0..<textLength {
       if visionTokenRanges.contains(where: { $0.contains(token) }) {
         write(row: visionRow, position: (Float(token), 0, 0))
@@ -127,7 +130,17 @@ public func MiniMaxH3RotaryEmbedding(
         }
       }
     }
-    let audioOffset = textLength - visionLength + conditionLength
+    for audio in referenceAudios {
+      precondition(audio.length > 0 && audio.length % 2 == 0)
+      for channel in 0..<2 {
+        let spatialPosition = channel == 0 ? widthGrid.first! : widthGrid.last!
+        for index in 0..<(audio.length / 2) {
+          write(row: referenceRow, position: (audio.position + Float(index), 0, spatialPosition))
+          referenceRow += 1
+        }
+      }
+    }
+    let audioOffset = textLength - visionLength + conditionLength + referenceAudioLength
     for channel in 0..<(audioLatents > 0 ? 2 : 0) {
       let spatialPosition = channel == 0 ? widthGrid.first! : widthGrid.last!
       for index in 0..<audioLatents {
@@ -291,22 +304,27 @@ private func H3SwiGLU(
 
 private func H3TransformerBlock(
   prefix: (String, String), hiddenSize: Int, textLength: Int, audioLength: Int, videoLength: Int,
-  conditionLength: Int,
+  conditionLength: Int, referenceAudioLength: Int,
   usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int
 ) -> (ModelWeightMapper, Model) {
-  let sequenceLength = textLength + conditionLength + audioLength + videoLength
+  let sequenceLength =
+    textLength + conditionLength + referenceAudioLength + audioLength + videoLength
   let x = Input()
   let rot = Input()
-  let modulationCount = conditionLength > 0 ? 4 : 3
+  let modulationCount = 3 + (conditionLength > 0 ? 1 : 0) + (referenceAudioLength > 0 ? 1 : 0)
   let modulations = (0..<(6 * modulationCount)).map { _ in Input() }
-  // Modulation order: video, text, audio, and (when present) the fixed video keyframe.
+  // Modulation order: video, text, audio, then optional image and audio references.
   var spans: [(range: Range<Int>, modality: Int)] = [(0..<textLength, 1)]
   if conditionLength > 0 {
     spans.append((textLength..<(textLength + conditionLength), 3))
   }
+  let audioStart = textLength + conditionLength + referenceAudioLength
+  if referenceAudioLength > 0 {
+    spans.append(((textLength + conditionLength)..<audioStart, conditionLength > 0 ? 4 : 3))
+  }
   spans += [
-    ((textLength + conditionLength)..<(textLength + conditionLength + audioLength), 2),
-    ((textLength + conditionLength + audioLength)..<sequenceLength, 0),
+    (audioStart..<(audioStart + audioLength), 2),
+    ((audioStart + audioLength)..<sequenceLength, 0),
   ]
   spans.removeAll { $0.range.isEmpty }
   let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm1")
@@ -477,12 +495,14 @@ private func H3TimestepEmbedding(prefix: String, hiddenSize: Int) -> (ModelWeigh
 public func MiniMaxH3Fixed(
   timesteps: Int, hiddenSize: Int, layers: Int, textLength: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, referenceImageCount: Int = 0,
+  referenceAudioCount: Int = 0,
   visionLength: Int = 0
 ) -> (ModelWeightMapper, Model) {
   precondition(timesteps > 0 && hiddenSize > 0 && layers > 0)
   precondition(textLength.0 >= 0 && textLength.1 > 0)
   let text = Input()
   let referenceImages = (0..<referenceImageCount).map { _ in Input() }
+  let referenceAudios = (0..<referenceAudioCount).map { _ in Input() }
   let paddedLength = max(textLength.0, textLength.1)
   let contextInput: Model.IO
   if textLength.0 > 0 {
@@ -544,7 +564,7 @@ public func MiniMaxH3Fixed(
     prefix: "time_embedder", hiddenSize: hiddenSize)
   mappers.append(timeMapper)
   let activatedTimestep = timeEmbedding(timestepFrequencies).swish()
-  let timestepCount = referenceImages.isEmpty ? 2 : 3
+  let timestepCount = 2 + (referenceImages.isEmpty ? 0 : 1) + (referenceAudios.isEmpty ? 0 : 1)
   var outputs = [context]
   if !referenceImages.isEmpty {
     let xEmbedder = Convolution(
@@ -563,10 +583,28 @@ public func MiniMaxH3Fixed(
       }
     }
   }
+  if !referenceAudios.isEmpty {
+    let audioInput = Dense(count: hiddenSize, name: "audio_proj_in")
+    outputs += referenceAudios.map { audioInput($0) }
+    mappers.append { format in
+      switch format {
+      case .diffusers:
+        return [
+          "audio_proj_in.weight": [audioInput.weight.name],
+          "audio_proj_in.bias": [audioInput.bias.name],
+        ]
+      case .generativeModels:
+        return [
+          "audio_patch_proj.weight": [audioInput.weight.name],
+          "audio_patch_proj.bias": [audioInput.bias.name],
+        ]
+      }
+    }
+  }
   for i in 0..<layers {
     var projections = [Model]()
     for chunk in 0..<6 {
-      var condition: Model.IO? = nil
+      var conditions = [Model.IO]()
       for modality in 0..<3 {
         let projection = Dense(count: hiddenSize, name: "adaln_\(chunk)_\(modality)")
         projections.append(projection)
@@ -578,13 +616,21 @@ public func MiniMaxH3Fixed(
             strides: [timestepCount * hiddenSize, hiddenSize, 1]
           ).contiguous())
         if !referenceImages.isEmpty && modality == 0 {
-          condition = projected.reshaped(
-            [timesteps, 1, hiddenSize], offset: [0, 2, 0],
-            strides: [timestepCount * hiddenSize, hiddenSize, 1]
-          ).contiguous()
+          conditions.append(
+            projected.reshaped(
+              [timesteps, 1, hiddenSize], offset: [0, 2, 0],
+              strides: [timestepCount * hiddenSize, hiddenSize, 1]
+            ).contiguous())
+        }
+        if !referenceAudios.isEmpty && modality == 2 {
+          conditions.append(
+            projected.reshaped(
+              [timesteps, 1, hiddenSize], offset: [0, timestepCount - 1, 0],
+              strides: [timestepCount * hiddenSize, hiddenSize, 1]
+            ).contiguous())
         }
       }
-      if let condition { outputs.append(condition) }
+      outputs += conditions
     }
     mappers.append { format in
       // Checkpoints store [modality, modulation, hidden], not construction order.
@@ -625,7 +671,9 @@ public func MiniMaxH3Fixed(
       ).contiguous())
   }
   precondition(
-    outputs.count == layers * (referenceImages.isEmpty ? 18 : 24) + 5 + referenceImages.count)
+    outputs.count == layers
+      * (18 + (referenceImages.isEmpty ? 0 : 6) + (referenceAudios.isEmpty ? 0 : 6)) + 5
+      + referenceImages.count + referenceAudios.count)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
@@ -649,14 +697,15 @@ public func MiniMaxH3Fixed(
     }
     return mapping
   }
-  return (mapper, Model([text, timestepFrequencies] + referenceImages, outputs))
+  return (mapper, Model([text, timestepFrequencies] + referenceImages + referenceAudios, outputs))
 }
 
 public func MiniMaxH3(
   hiddenSize: Int, layers: Int, startLayer: Int = 0, textLength: Int, audioLength: Int,
   videoFrames: Int,
   videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel,
-  referenceImageSizes: [(height: Int, width: Int)] = [], visionLength: Int = 0,
+  referenceImageSizes: [(height: Int, width: Int)] = [], referenceAudioLengths: [Int] = [],
+  visionLength: Int = 0,
   outputResidual: Bool = false, inputResidual: Bool = false
 ) -> (ModelWeightMapper, Model) {
   precondition(hiddenSize > 0 && layers >= 0 && startLayer >= 0)
@@ -668,11 +717,15 @@ public func MiniMaxH3(
   let contextRows = Input()
   let rot = Input()
   let referenceImages = referenceImageSizes.map { _ in Input() }
-  let perLayerConditions = referenceImages.isEmpty ? 18 : 24
+  let referenceAudios = referenceAudioLengths.map { _ in Input() }
+  let referenceAudioLength = referenceAudioLengths.reduce(0, +)
+  let perLayerConditions =
+    18 + (referenceImages.isEmpty ? 0 : 6) + (referenceAudios.isEmpty ? 0 : 6)
   let fixedConditions = (0..<(layers * perLayerConditions)).map { _ in Input() }
   let videoLength = videoFrames * videoHeight / 2 * videoWidth / 2
   let conditionLength = referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
-  let sequenceLength = textLength + conditionLength + audioLength + videoLength
+  let sequenceLength =
+    textLength + conditionLength + referenceAudioLength + audioLength + videoLength
 
   var out: Model.IO
   var inputs: [Model.IO]
@@ -700,6 +753,7 @@ public func MiniMaxH3(
       rows.append(
         image.reshaped(.HWC(1, size.height / 2 * (size.width / 2), hiddenSize)).to(.Float32))
     }
+    rows += referenceAudios.map { $0.to(.Float32) }
     rows.append(audioRows)
     if visionLength > 0 {
       rows.append(
@@ -710,7 +764,7 @@ public func MiniMaxH3(
     }
     rows.append(videoRows)
     out = Concat(axis: 1)(rows)
-    inputs = [video, audio, contextRows, rot] + referenceImages
+    inputs = [video, audio, contextRows, rot] + referenceImages + referenceAudios
     outputType = video
     mappers.append { format in
       switch format {
@@ -762,6 +816,7 @@ public func MiniMaxH3(
       prefix: ("blocks.\(layer)", "transformer_blocks.\(layer)"), hiddenSize: hiddenSize,
       textLength: textLength - visionLength, audioLength: audioLength,
       videoLength: visionLength + videoLength, conditionLength: conditionLength,
+      referenceAudioLength: referenceAudioLength,
       usesFlashAttention: usesFlashAttention,
       scaleFactor: scaleFactor, startIndex: startLayer)
     mappers.append(mapper)
@@ -806,12 +861,14 @@ public func MiniMaxH3(
   let normalized = outputNorm(out)
   let audioOutRows =
     normalized.reshaped(
-      [1, audioLength, hiddenSize], offset: [0, textLength - visionLength + conditionLength, 0],
+      [1, audioLength, hiddenSize],
+      offset: [0, textLength - visionLength + conditionLength + referenceAudioLength, 0],
       strides: [sequenceLength * hiddenSize, hiddenSize, 1]
     ).contiguous() .* (1 + audioScale).to(.Float32) + audioShift.to(.Float32)
   let videoOutRows =
     normalized.reshaped(
-      [1, videoLength, hiddenSize], offset: [0, textLength + conditionLength + audioLength, 0],
+      [1, videoLength, hiddenSize],
+      offset: [0, textLength + conditionLength + referenceAudioLength + audioLength, 0],
       strides: [sequenceLength * hiddenSize, hiddenSize, 1]
     ).contiguous() .* (1 + videoScale).to(.Float32) + videoShift.to(.Float32)
   let videoOutput = Dense(count: 96, name: "proj_out")
@@ -997,22 +1054,27 @@ private func LoRAH3TransformerBlock(
   prefix: (String, String), hiddenSize: Int, layerIndex: Int,
   configuration: LoRANetworkConfiguration, textLength: Int,
   audioLength: Int, videoLength: Int,
-  conditionLength: Int,
+  conditionLength: Int, referenceAudioLength: Int,
   usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int
 ) -> (ModelWeightMapper, Model) {
-  let sequenceLength = textLength + conditionLength + audioLength + videoLength
+  let sequenceLength =
+    textLength + conditionLength + referenceAudioLength + audioLength + videoLength
   let x = Input()
   let rot = Input()
-  let modulationCount = conditionLength > 0 ? 4 : 3
+  let modulationCount = 3 + (conditionLength > 0 ? 1 : 0) + (referenceAudioLength > 0 ? 1 : 0)
   let modulations = (0..<(6 * modulationCount)).map { _ in Input() }
-  // Modulation order: video, text, audio, and (when present) the fixed video keyframe.
+  // Modulation order: video, text, audio, then optional image and audio references.
   var spans: [(range: Range<Int>, modality: Int)] = [(0..<textLength, 1)]
   if conditionLength > 0 {
     spans.append((textLength..<(textLength + conditionLength), 3))
   }
+  let audioStart = textLength + conditionLength + referenceAudioLength
+  if referenceAudioLength > 0 {
+    spans.append(((textLength + conditionLength)..<audioStart, conditionLength > 0 ? 4 : 3))
+  }
   spans += [
-    ((textLength + conditionLength)..<(textLength + conditionLength + audioLength), 2),
-    ((textLength + conditionLength + audioLength)..<sequenceLength, 0),
+    (audioStart..<(audioStart + audioLength), 2),
+    ((audioStart + audioLength)..<sequenceLength, 0),
   ]
   spans.removeAll { $0.range.isEmpty }
   let norm1 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm1")
@@ -1197,6 +1259,7 @@ private func LoRAH3TimestepEmbedding(
 public func LoRAMiniMaxH3Fixed(
   timesteps: Int, hiddenSize: Int, layers: Int, textLength: (Int, Int),
   usesFlashAttention: FlashAttentionLevel, referenceImageCount: Int = 0,
+  referenceAudioCount: Int = 0,
   visionLength: Int = 0, LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
   let configuration = LoRAConfiguration
@@ -1205,6 +1268,7 @@ public func LoRAMiniMaxH3Fixed(
   precondition(textLength.0 >= 0 && textLength.1 > 0)
   let text = Input()
   let referenceImages = (0..<referenceImageCount).map { _ in Input() }
+  let referenceAudios = (0..<referenceAudioCount).map { _ in Input() }
   let paddedLength = max(textLength.0, textLength.1)
   let contextInput: Model.IO
   if textLength.0 > 0 {
@@ -1268,7 +1332,7 @@ public func LoRAMiniMaxH3Fixed(
     prefix: "time_embedder", hiddenSize: hiddenSize, configuration: configuration)
   mappers.append(timeMapper)
   let activatedTimestep = timeEmbedding(timestepFrequencies).swish()
-  let timestepCount = referenceImages.isEmpty ? 2 : 3
+  let timestepCount = 2 + (referenceImages.isEmpty ? 0 : 1) + (referenceAudios.isEmpty ? 0 : 1)
   var outputs = [context]
   if !referenceImages.isEmpty {
     let xEmbedder = LoRAConvolution(
@@ -1287,10 +1351,29 @@ public func LoRAMiniMaxH3Fixed(
       }
     }
   }
+  if !referenceAudios.isEmpty {
+    let audioInput = LoRADense(
+      count: hiddenSize, configuration: configuration, index: layerIndex, name: "audio_proj_in")
+    outputs += referenceAudios.map { audioInput($0) }
+    mappers.append { format in
+      switch format {
+      case .diffusers:
+        return [
+          "audio_proj_in.weight": [audioInput.weight.name],
+          "audio_proj_in.bias": [audioInput.bias.name],
+        ]
+      case .generativeModels:
+        return [
+          "audio_patch_proj.weight": [audioInput.weight.name],
+          "audio_patch_proj.bias": [audioInput.bias.name],
+        ]
+      }
+    }
+  }
   for layerIndex in 0..<layers {
     var projections = [Model]()
     for chunk in 0..<6 {
-      var condition: Model.IO? = nil
+      var conditions = [Model.IO]()
       for modality in 0..<3 {
         let projection = LoRADense(
           count: hiddenSize, configuration: configuration, index: layerIndex,
@@ -1304,13 +1387,21 @@ public func LoRAMiniMaxH3Fixed(
             strides: [timestepCount * hiddenSize, hiddenSize, 1]
           ).contiguous())
         if !referenceImages.isEmpty && modality == 0 {
-          condition = projected.reshaped(
-            [timesteps, 1, hiddenSize], offset: [0, 2, 0],
-            strides: [timestepCount * hiddenSize, hiddenSize, 1]
-          ).contiguous()
+          conditions.append(
+            projected.reshaped(
+              [timesteps, 1, hiddenSize], offset: [0, 2, 0],
+              strides: [timestepCount * hiddenSize, hiddenSize, 1]
+            ).contiguous())
+        }
+        if !referenceAudios.isEmpty && modality == 2 {
+          conditions.append(
+            projected.reshaped(
+              [timesteps, 1, hiddenSize], offset: [0, timestepCount - 1, 0],
+              strides: [timestepCount * hiddenSize, hiddenSize, 1]
+            ).contiguous())
         }
       }
-      if let condition { outputs.append(condition) }
+      outputs += conditions
     }
     mappers.append { format in
       // Checkpoints store [modality, modulation, hidden], not construction order.
@@ -1354,7 +1445,9 @@ public func LoRAMiniMaxH3Fixed(
       ).contiguous())
   }
   precondition(
-    outputs.count == layers * (referenceImages.isEmpty ? 18 : 24) + 5 + referenceImages.count)
+    outputs.count == layers
+      * (18 + (referenceImages.isEmpty ? 0 : 6) + (referenceAudios.isEmpty ? 0 : 6)) + 5
+      + referenceImages.count + referenceAudios.count)
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     for mapper in mappers {
@@ -1378,14 +1471,15 @@ public func LoRAMiniMaxH3Fixed(
     }
     return mapping
   }
-  return (mapper, Model([text, timestepFrequencies] + referenceImages, outputs))
+  return (mapper, Model([text, timestepFrequencies] + referenceImages + referenceAudios, outputs))
 }
 
 public func LoRAMiniMaxH3(
   hiddenSize: Int, layers: Int, startLayer: Int = 0, textLength: Int, audioLength: Int,
   videoFrames: Int,
   videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel,
-  referenceImageSizes: [(height: Int, width: Int)] = [], visionLength: Int = 0,
+  referenceImageSizes: [(height: Int, width: Int)] = [], referenceAudioLengths: [Int] = [],
+  visionLength: Int = 0,
   outputResidual: Bool = false, inputResidual: Bool = false,
   LoRAConfiguration: LoRANetworkConfiguration
 ) -> (ModelWeightMapper, Model) {
@@ -1400,11 +1494,15 @@ public func LoRAMiniMaxH3(
   let contextRows = Input()
   let rot = Input()
   let referenceImages = referenceImageSizes.map { _ in Input() }
-  let perLayerConditions = referenceImages.isEmpty ? 18 : 24
+  let referenceAudios = referenceAudioLengths.map { _ in Input() }
+  let referenceAudioLength = referenceAudioLengths.reduce(0, +)
+  let perLayerConditions =
+    18 + (referenceImages.isEmpty ? 0 : 6) + (referenceAudios.isEmpty ? 0 : 6)
   let fixedConditions = (0..<(layers * perLayerConditions)).map { _ in Input() }
   let videoLength = videoFrames * videoHeight / 2 * videoWidth / 2
   let conditionLength = referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
-  let sequenceLength = textLength + conditionLength + audioLength + videoLength
+  let sequenceLength =
+    textLength + conditionLength + referenceAudioLength + audioLength + videoLength
 
   var out: Model.IO
   var inputs: [Model.IO]
@@ -1433,6 +1531,7 @@ public func LoRAMiniMaxH3(
       rows.append(
         image.reshaped(.HWC(1, size.height / 2 * (size.width / 2), hiddenSize)).to(.Float32))
     }
+    rows += referenceAudios.map { $0.to(.Float32) }
     rows.append(audioRows)
     if visionLength > 0 {
       rows.append(
@@ -1443,7 +1542,7 @@ public func LoRAMiniMaxH3(
     }
     rows.append(videoRows)
     out = Concat(axis: 1)(rows)
-    inputs = [video, audio, contextRows, rot] + referenceImages
+    inputs = [video, audio, contextRows, rot] + referenceImages + referenceAudios
     outputType = video
     mappers.append { format in
       switch format {
@@ -1496,6 +1595,7 @@ public func LoRAMiniMaxH3(
       layerIndex: layerIndex, configuration: configuration,
       textLength: textLength - visionLength, audioLength: audioLength,
       videoLength: visionLength + videoLength, conditionLength: conditionLength,
+      referenceAudioLength: referenceAudioLength,
       usesFlashAttention: usesFlashAttention,
       scaleFactor: scaleFactor, startIndex: startLayer)
     mappers.append(mapper)
@@ -1540,12 +1640,14 @@ public func LoRAMiniMaxH3(
   let normalized = outputNorm(out)
   let audioOutRows =
     normalized.reshaped(
-      [1, audioLength, hiddenSize], offset: [0, textLength - visionLength + conditionLength, 0],
+      [1, audioLength, hiddenSize],
+      offset: [0, textLength - visionLength + conditionLength + referenceAudioLength, 0],
       strides: [sequenceLength * hiddenSize, hiddenSize, 1]
     ).contiguous() .* (1 + audioScale).to(.Float32) + audioShift.to(.Float32)
   let videoOutRows =
     normalized.reshaped(
-      [1, videoLength, hiddenSize], offset: [0, textLength + conditionLength + audioLength, 0],
+      [1, videoLength, hiddenSize],
+      offset: [0, textLength + conditionLength + referenceAudioLength + audioLength, 0],
       strides: [sequenceLength * hiddenSize, hiddenSize, 1]
     ).contiguous() .* (1 + videoScale).to(.Float32) + videoShift.to(.Float32)
   let videoOutput = LoRADense(

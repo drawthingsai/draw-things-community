@@ -75,6 +75,7 @@ public protocol UNetProtocol {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
+    referenceAudioCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
@@ -94,7 +95,8 @@ public protocol UNetProtocol {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int,
+    referenceAudioCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType>
@@ -162,14 +164,16 @@ extension UNetProtocol {
 public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint>(
   of: FloatType.Type = FloatType.self, graph: DynamicGraph, index: Int, batchSize: Int,
   tokenLengthUncond: Int, tokenLengthCond: Int, conditions: [DynamicGraph.AnyTensor],
-  referenceImageCount: Int, version: ModelVersion, modifier: SamplerModifier, isCfgEnabled: Bool
+  referenceImageCount: Int, referenceAudioCount: Int, version: ModelVersion,
+  modifier: SamplerModifier, isCfgEnabled: Bool
 )
   -> [DynamicGraph.AnyTensor]
 {
   switch version {
   case .minimaxH3:
-    let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
-    let prefixCount = 2 + referenceImageCount
+    let fixedConditionCount =
+      50 * (18 + (referenceImageCount > 0 ? 6 : 0) + (referenceAudioCount > 0 ? 6 : 0)) + 4
+    let prefixCount = 2 + referenceImageCount + referenceAudioCount
     precondition(conditions.count == fixedConditionCount + prefixCount)
     let fixedConditions = conditions[prefixCount...].map {
       let shape = $0.shape
@@ -663,6 +667,7 @@ extension UNetFromNNC {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
+    referenceAudioCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache teaCacheConfiguration: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
@@ -747,6 +752,9 @@ extension UNetFromNNC {
       let referenceImageSizes = c[2..<(2 + referenceImageCount)].map {
         (height: $0.shape[1] * 2, width: $0.shape[2] * 2)
       }
+      let referenceAudioLengths = c[
+        (2 + referenceImageCount)..<(2 + referenceImageCount + referenceAudioCount)
+      ].map { $0.shape[1] }
       unet = .modelBuilder(
         ModelBuilder {
           let videoFrames = isTeaCacheEnabled ? videoLatentFrames : $0[0].shape[0]
@@ -756,6 +764,7 @@ extension UNetFromNNC {
             isTeaCacheEnabled
             ? $0[0].shape[1] - audioLength - videoFrames * videoHeight / 2 * (videoWidth / 2)
               - referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
+              - referenceAudioLengths.reduce(0, +)
             : $0[2].shape[1]
           if usesLoRA {
             return LoRAMiniMaxH3(
@@ -765,6 +774,7 @@ extension UNetFromNNC {
               videoFrames: videoFrames, videoHeight: videoHeight, videoWidth: videoWidth,
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
               referenceImageSizes: referenceImageSizes,
+              referenceAudioLengths: referenceAudioLengths,
               visionLength: visionLength, outputResidual: isTeaCacheEnabled,
               LoRAConfiguration: configuration
             ).1
@@ -775,7 +785,7 @@ extension UNetFromNNC {
             textLength: textLength, audioLength: audioLength,
             videoFrames: videoFrames, videoHeight: videoHeight, videoWidth: videoWidth,
             usesFlashAttention: valueOr(useFlashAttention, .scale1),
-            referenceImageSizes: referenceImageSizes,
+            referenceImageSizes: referenceImageSizes, referenceAudioLengths: referenceAudioLengths,
             visionLength: visionLength, outputResidual: isTeaCacheEnabled
           ).1
         })
@@ -785,6 +795,7 @@ extension UNetFromNNC {
             let textLength =
               $0[0].shape[1] - audioLength - videoLatentFrames * tiledHeight / 2 * (tiledWidth / 2)
               - referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
+              - referenceAudioLengths.reduce(0, +)
             if usesLoRA {
               return LoRAMiniMaxH3(
                 hiddenSize: 5_376, layers: 0, startLayer: 1,
@@ -792,6 +803,7 @@ extension UNetFromNNC {
                 videoFrames: videoLatentFrames, videoHeight: tiledHeight, videoWidth: tiledWidth,
                 usesFlashAttention: valueOr(useFlashAttention, .scale1),
                 referenceImageSizes: referenceImageSizes,
+                referenceAudioLengths: referenceAudioLengths,
                 visionLength: visionLength, inputResidual: true, LoRAConfiguration: configuration
               ).1
             }
@@ -801,6 +813,7 @@ extension UNetFromNNC {
               videoFrames: videoLatentFrames, videoHeight: tiledHeight, videoWidth: tiledWidth,
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
               referenceImageSizes: referenceImageSizes,
+              referenceAudioLengths: referenceAudioLengths,
               visionLength: visionLength, inputResidual: true
             ).1
           })
@@ -814,6 +827,7 @@ extension UNetFromNNC {
                 videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
                 usesFlashAttention: valueOr(useFlashAttention, .scale1),
                 referenceImageSizes: referenceImageSizes,
+                referenceAudioLengths: referenceAudioLengths,
                 visionLength: visionLength, outputResidual: true, LoRAConfiguration: configuration
               ).1
             }
@@ -823,6 +837,7 @@ extension UNetFromNNC {
               videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
               referenceImageSizes: referenceImageSizes,
+              referenceAudioLengths: referenceAudioLengths,
               visionLength: visionLength, outputResidual: true
             ).1
           })
@@ -831,7 +846,7 @@ extension UNetFromNNC {
           threshold: teaCacheConfiguration.threshold, steps: teaCacheConfiguration.steps,
           maxSkipSteps: teaCacheConfiguration.maxSkipSteps,
           reducedModel: reducedModel, inferModel: inferModel,
-          referenceImageCount: referenceImageCount)
+          referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount)
       }
     case .ideogram4:
       precondition(c.count >= Ideogram4ConditionCount)
@@ -1311,7 +1326,8 @@ extension UNetFromNNC {
             inferModel: .model(
               LoRAFlux1Norm1(
                 batchSize: 1, height: tiledHeight, width: tiledWidth, channels: 3072,
-                LoRAConfiguration: configuration)), referenceImageCount: referenceImageCount)
+                LoRAConfiguration: configuration)), referenceImageCount: referenceImageCount,
+            referenceAudioCount: referenceAudioCount)
         }
       } else {
         unet = ModelBuilderOrModel.model(
@@ -1344,7 +1360,8 @@ extension UNetFromNNC {
             inferModel: .model(
               Flux1Norm1(
                 batchSize: 1, height: tiledHeight,
-                width: tiledWidth, channels: 3072)), referenceImageCount: referenceImageCount)
+                width: tiledWidth, channels: 3072)), referenceImageCount: referenceImageCount,
+            referenceAudioCount: referenceAudioCount)
         }
       }
     case .hunyuanVideo:
@@ -2182,19 +2199,20 @@ extension UNetFromNNC {
       let inputs = sliceInputs(
         inputs, originalShape: shape, xyTiles: xTiles * yTiles, index: 0, inputStartYPad: 0,
         inputEndYPad: tiledHeight, inputStartXPad: 0, inputEndXPad: tiledWidth, modifier: modifier,
-        referenceImageCount: referenceImageCount,
+        referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
         tokenLength: isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond)
       compile(
         unet, unconditionalUNet: unconditionalUNet, tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
-        referenceImageCount: referenceImageCount,
+        referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
         inputs: [xT.reshaped(.NHWC(shape[0], tiledHeight + tiledAudioHeight, tiledWidth, shape[3]))]
           + inputs)
     } else {
       compile(
         unet, unconditionalUNet: unconditionalUNet, tokenLengthUncond: tokenLengthUncond,
         tokenLengthCond: tokenLengthCond, isCfgEnabled: isCfgEnabled,
-        referenceImageCount: referenceImageCount, inputs: [xT] + inputs)
+        referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
+        inputs: [xT] + inputs)
     }
     if let timeEmbed = timeEmbed, let timestep = timestep {
       timeEmbed.compile(inputs: timestep)
@@ -2398,7 +2416,7 @@ extension UNetFromNNC {
               ) {
                 name, dataType, format, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
-                  if case let .continue(name, _, store) = result, shouldOffload(name: name) {
+                  if case .continue(let name, _, let store) = result, shouldOffload(name: name) {
                     return .continue(
                       name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit], store: store)
                   } else {
@@ -2469,7 +2487,7 @@ extension UNetFromNNC {
               ) {
                 name, dataType, _, shape in
                 if let result = controlModelLoader.loadMergedWeight(name: name) {
-                  if case let .continue(name, _, store) = result, shouldOffload(name: name) {
+                  if case .continue(let name, _, let store) = result, shouldOffload(name: name) {
                     return .continue(
                       name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit], store: store)
                   } else {
@@ -2538,7 +2556,7 @@ extension UNetFromNNC {
           ) {
             name, _, _, _ in
             if let result = controlModelLoader.loadMergedWeight(name: name) {
-              if case let .continue(name, _, store) = result, shouldOffload(name: name) {
+              if case .continue(let name, _, let store) = result, shouldOffload(name: name) {
                 return .continue(
                   name, codec: [.ezm7, .externalOnDemand, .q6p, .q8p, .jit], store: store)
               } else {
@@ -2624,7 +2642,7 @@ extension UNetFromNNC {
   private func sliceInputs(
     _ inputs: [DynamicGraph.AnyTensor], originalShape: TensorShape, xyTiles: Int,
     index: Int, inputStartYPad: Int, inputEndYPad: Int, inputStartXPad: Int, inputEndXPad: Int,
-    modifier: SamplerModifier, referenceImageCount: Int, tokenLength: Int
+    modifier: SamplerModifier, referenceImageCount: Int, referenceAudioCount: Int, tokenLength: Int
   ) -> [DynamicGraph.AnyTensor] {
     let count = inputs.count
     return inputs.enumerated().map {
@@ -3083,13 +3101,15 @@ extension UNetFromNNC {
 
   private func compile(
     _ unet: ModelBuilderOrModel, unconditionalUNet: ModelBuilderOrModel?, tokenLengthUncond: Int,
-    tokenLengthCond: Int, isCfgEnabled: Bool, referenceImageCount: Int,
+    tokenLengthCond: Int, isCfgEnabled: Bool, referenceImageCount: Int, referenceAudioCount: Int,
     inputs: [DynamicGraph.AnyTensor]
   ) {
     switch version {
     case .minimaxH3:
-      let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
-      precondition(inputs.count == fixedConditionCount + 3 + referenceImageCount)
+      let fixedConditionCount =
+        50 * (18 + (referenceImageCount > 0 ? 6 : 0) + (referenceAudioCount > 0 ? 6 : 0)) + 4
+      precondition(
+        inputs.count == fixedConditionCount + 3 + referenceImageCount + referenceAudioCount)
       let firstInput = DynamicGraph.Tensor<FloatType>(inputs[0])
       let shape = firstInput.shape
       precondition(shape[3] == MiniMaxH3Configuration.videoChannels)
@@ -3551,7 +3571,8 @@ extension UNetFromNNC {
   }
 
   private func callAsFunction(
-    referenceImageCount: Int, step: Int, timestep: (now: Float, next: Float),
+    referenceImageCount: Int, referenceAudioCount: Int, step: Int,
+    timestep: (now: Float, next: Float),
     audioShiftRatio: Float, index: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     inputs firstInput: DynamicGraph.Tensor<FloatType>,
@@ -3560,8 +3581,10 @@ extension UNetFromNNC {
     guard let unet = unet else { return firstInput }
     switch version {
     case .minimaxH3:
-      let fixedConditionCount = 50 * (referenceImageCount > 0 ? 24 : 18) + 4
-      precondition(restInputs.count == fixedConditionCount + 2 + referenceImageCount)
+      let fixedConditionCount =
+        50 * (18 + (referenceImageCount > 0 ? 6 : 0) + (referenceAudioCount > 0 ? 6 : 0)) + 4
+      precondition(
+        restInputs.count == fixedConditionCount + 2 + referenceImageCount + referenceAudioCount)
       let graph = firstInput.graph
       // The RF schedule repeats alpha = 1 at the clean endpoint. The reference stops before this
       // zero-delta evaluation, and evaluating H3 at timestep zero can produce non-finite FP16 values.
@@ -3631,7 +3654,9 @@ extension UNetFromNNC {
         let result: [DynamicGraph.AnyTensor]
         if let teaCache {
           let firstInputs = Array(
-            modelInputs.prefix(4 + referenceImageCount + (referenceImageCount > 0 ? 24 : 18)))
+            modelInputs.prefix(
+              4 + referenceImageCount + referenceAudioCount + 18 + (referenceImageCount > 0 ? 6 : 0)
+                + (referenceAudioCount > 0 ? 6 : 0)))
           let firstOutput = teaCache.infer(inputs: firstInputs)
           let hiddenState = firstOutput[0]
           let firstBlock = firstOutput[1].as(of: Float.self)
@@ -5144,7 +5169,8 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), referenceImageCount: Int, step: Int, timestep: (now: Float, next: Float),
+    ), referenceImageCount: Int, referenceAudioCount: Int, step: Int,
+    timestep: (now: Float, next: Float),
     audioShiftRatio: Float,
     tokenLengthUncond: Int,
     tokenLengthCond: Int,
@@ -5193,9 +5219,10 @@ extension UNetFromNNC {
       index: index, inputStartYPad: inputStartYPad,
       inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
       modifier: modifier, referenceImageCount: referenceImageCount,
+      referenceAudioCount: referenceAudioCount,
       tokenLength: isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond)
     return self(
-      referenceImageCount: referenceImageCount,
+      referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
       step: step, timestep: timestep, audioShiftRatio: audioShiftRatio, index: index,
       tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
       isCfgEnabled: isCfgEnabled, inputs: x, inputs + injectedAttentionKVs)
@@ -5212,7 +5239,8 @@ extension UNetFromNNC {
       injectedControls: [DynamicGraph.Tensor<FloatType>],
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [DynamicGraph.Tensor<FloatType>]
-    ), referenceImageCount: Int, step: Int, timestep: (now: Float, next: Float),
+    ), referenceImageCount: Int, referenceAudioCount: Int, step: Int,
+    timestep: (now: Float, next: Float),
     audioShiftRatio: Float,
     tokenLengthUncond: Int,
     tokenLengthCond: Int,
@@ -5226,7 +5254,7 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, inputs, 0, 0, 0, 0, &controlNets)
       return self(
-        referenceImageCount: referenceImageCount,
+        referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
         step: step, timestep: timestep, audioShiftRatio: audioShiftRatio, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled,
@@ -5292,7 +5320,7 @@ extension UNetFromNNC {
             xyTiles: xTiles * yTiles, index: y * xTiles + x, inputStartYPad: inputStartYPad,
             inputEndYPad: inputEndYPad, inputStartXPad: inputStartXPad, inputEndXPad: inputEndXPad,
             xT: xT, inputs: inputs, injectedControlsAndAdapters: injectedControlsAndAdapters,
-            referenceImageCount: referenceImageCount,
+            referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
             step: step, timestep: timestep, audioShiftRatio: audioShiftRatio,
             tokenLengthUncond: tokenLengthUncond,
             tokenLengthCond: tokenLengthCond,
@@ -5431,7 +5459,8 @@ extension UNetFromNNC {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int,
+    referenceAudioCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
   ) -> DynamicGraph.Tensor<FloatType> {
@@ -5443,13 +5472,15 @@ extension UNetFromNNC {
         return tiledDiffuse(
           tiledDiffusion: tiledDiffusion, xT: xT, inputs: [embGPU, c[0]],
           injectedControlsAndAdapters: injectedControlsAndAdapters,
-          referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+          referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
+          step: step, timestep: timestepValue,
           audioShiftRatio: audioShiftRatio,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
       } else {
         return self(
-          referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+          referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
+          step: step, timestep: timestepValue,
           audioShiftRatio: audioShiftRatio, index: 0,
           tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
           isCfgEnabled: isCfgEnabled, inputs: xT, [embGPU, c[0]])
@@ -5505,7 +5536,8 @@ extension UNetFromNNC {
       return tiledDiffuse(
         tiledDiffusion: tiledDiffusion, xT: xT, inputs: (timestep.map { [$0] } ?? []) + c,
         injectedControlsAndAdapters: injectedControlsAndAdapters,
-        referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+        referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
+        step: step, timestep: timestepValue,
         audioShiftRatio: audioShiftRatio,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, controlNets: &controlNets)
@@ -5515,7 +5547,8 @@ extension UNetFromNNC {
         injectedControlsAndAdapters(
           xT, runtimeInputs, 0, 0, 0, 0, &controlNets)
       return self(
-        referenceImageCount: referenceImageCount, step: step, timestep: timestepValue,
+        referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
+        step: step, timestep: timestepValue,
         audioShiftRatio: audioShiftRatio, index: 0,
         tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
         isCfgEnabled: isCfgEnabled, inputs: xT,

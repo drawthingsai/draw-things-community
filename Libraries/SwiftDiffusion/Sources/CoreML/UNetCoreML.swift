@@ -44,6 +44,7 @@ extension UNetFromCoreML {
     tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
     extraProjection: DynamicGraph.Tensor<FloatType>?,
     injectedControlsAndAdapters: InjectedControlsAndAdapters<FloatType>, referenceImageCount: Int,
+    referenceAudioCount: Int,
     tiledDiffusion: TiledConfiguration, teaCache: TeaCacheConfiguration,
     causalInference: (Int, pad: Int), isBF16: Bool, activationQkScaling: [Int: Int],
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
@@ -333,7 +334,8 @@ extension UNetFromCoreML {
       injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
       injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
     ),
-    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int, step: Int,
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int,
+    referenceAudioCount: Int, step: Int,
     tokenLengthUncond: Int, tokenLengthCond: Int,
     isCfgEnabled: Bool, tiledDiffusion: TiledConfiguration,
     controlNets: inout [Model?]
