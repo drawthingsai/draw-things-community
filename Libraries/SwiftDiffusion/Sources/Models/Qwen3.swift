@@ -64,13 +64,14 @@ private func SelfAttention(
   let tokeys = Dense(count: k * hk, noBias: true, name: "k_proj")
   let toqueries = Dense(count: k * h, noBias: true, name: "q_proj")
   let tovalues = Dense(count: k * hk, noBias: true, name: "v_proj")
-  var keys = tokeys(x).reshaped([b, t, hk, k])
-  var queries = toqueries(x).reshaped([b, t, h, k])
+  // Token embeddings can carry NCHW metadata; Metal attention requires NHWC.
+  var keys = tokeys(x).reshaped(.NHWC(b, t, hk, k))
+  var queries = toqueries(x).reshaped(.NHWC(b, t, h, k))
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_k")
   keys = normK(keys)
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_q")
   queries = normQ(queries)
-  var values = tovalues(x).reshaped([b, t, hk, k])
+  var values = tovalues(x).reshaped(.NHWC(b, t, hk, k))
   queries = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: queries, right: rot)
   keys = (1.0 / Float(k).squareRoot().squareRoot()) * Functional.cmul(left: keys, right: rot)
   var out: Model.IO
