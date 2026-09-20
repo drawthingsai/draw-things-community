@@ -67,6 +67,14 @@ public struct DeepSeek4_1EngramHashConstants: Codable, Sendable {
   public var primes: [[[UInt64]]]
   public var offsets: [[UInt64]]
 
+  public init(tokenMap: [Int32], multipliers: [[UInt64]], primes: [[[UInt64]]], offsets: [[UInt64]])
+  {
+    self.tokenMap = tokenMap
+    self.multipliers = multipliers
+    self.primes = primes
+    self.offsets = offsets
+  }
+
   public func validate(
     configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
   ) throws {
