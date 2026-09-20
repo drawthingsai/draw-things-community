@@ -6,6 +6,7 @@ import ConfigurationZoo
 import DataModels
 import Dflat
 import Diffusion
+import DiffusionCoreMLModelManager
 import Dispatch
 import Downloader
 import Foundation
@@ -4169,6 +4170,13 @@ public struct DrawThingsCLI: ParsableCommand {
         let huggingFaceOverrides = ModelZoo.huggingFaceRepoOverrideMapping
         let loraOverrides = LoRAZoo.overrideMapping
         let cacheUri = DeviceCapability.cacheUri
+        let isPartialOffloadPreferred = DeviceCapability.isPartialOffloadPreferred.load(
+          ordering: .acquiring)
+        let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
+        let isMFAAppleNeuralEngineEnabled = DeviceCapability.isMFAAppleNeuralEngineEnabled.load(
+          ordering: .acquiring)
+        let isCoreMLSupported = CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring)
+        let isLoRASupported = CoreMLModelManager.isLoRASupported.load(ordering: .acquiring)
         let flags = DynamicGraph.flags
         defer {
           ModelZoo.externalUrls = externalUrls
@@ -4177,6 +4185,13 @@ public struct DrawThingsCLI: ParsableCommand {
           ModelZoo.huggingFaceRepoOverrideMapping = huggingFaceOverrides
           LoRAZoo.overrideMapping = loraOverrides
           DeviceCapability.cacheUri = cacheUri
+          DeviceCapability.isPartialOffloadPreferred.store(
+            isPartialOffloadPreferred, ordering: .releasing)
+          DeviceCapability.isMFAEnabled.store(isMFAEnabled, ordering: .releasing)
+          DeviceCapability.isMFAAppleNeuralEngineEnabled.store(
+            isMFAAppleNeuralEngineEnabled, ordering: .releasing)
+          CoreMLModelManager.isCoreMLSupported.store(isCoreMLSupported, ordering: .releasing)
+          CoreMLModelManager.isLoRASupported.store(isLoRASupported, ordering: .releasing)
           DynamicGraph.flags = flags
         }
         // LoRA training can use the GPU on this calling thread, outside the generation queue.

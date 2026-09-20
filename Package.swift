@@ -506,6 +506,7 @@ let package = Package(
         "RemoteImageGenerator",
         "ScriptDataModels",
         "Diffusion",
+        "DiffusionCoreMLModelManager",
         "Trainer",
         "Tokenizer",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
