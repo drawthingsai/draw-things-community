@@ -75,5 +75,12 @@ final class TiktokenIncrementalDecoderTests: XCTestCase {
         text: "<｜begin▁of▁sentence｜>OK<｜end▁of▁sentence｜>"
       ).0,
       [0, 11_932, 1])
+    XCTAssertEqual(tokenizer.tokenize(text: "\u{200b}\u{0000}").0, [35_020, 191])
+    for text in [
+      "\u{200b}\u{0000}text", "text\u{200b}\u{0000}", "a\u{200b}\u{0000}b",
+      "\u{200b}<｜begin▁of▁sentence｜>\u{0000}<｜end▁of▁sentence｜>\u{200b}",
+    ] {
+      XCTAssertEqual(tokenizer.decode(tokenizer.tokenize(text: text).0), text)
+    }
   }
 }

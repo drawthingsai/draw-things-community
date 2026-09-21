@@ -7,41 +7,140 @@ import NNC
   import Glibc
 #endif
 
-/// Hash text n-grams on CPU using the exact exported tokenizer map and integer
-/// constants. `previousTokens` holds up to the preceding three original token
+public struct DeepSeek4_1EngramConfiguration: Codable, Sendable {
+  public var layers = [1, 14]
+  public var rows = [384_006_168, 384_016_682]
+  public var heads = 8
+  public var headDim = 256
+  public var maxNgramSize = 4
+  public var padID = 2
+
+  public var compressedVocabularySize: Int { 99_092 }
+  public var rowBytes: Int { headDim + headDim / 32 }
+  public var tableOffsets: [UInt64] {
+    var offset: UInt64 = 0
+    return rows.map { rows in
+      defer { offset += UInt64(rows) * UInt64(rowBytes) }
+      return offset
+    }
+  }
+  public var fileSize: UInt64 {
+    rows.reduce(0) { $0 + UInt64($1) * UInt64(rowBytes) }
+  }
+  // Exact draws from default_rng(10007 * layer), with compressed vocabulary 99,092.
+  public var multipliers: [[UInt64]] {
+    [
+      [76_632_096_046_245, 4_839_876_093_313, 35_959_672_319_349, 73_987_337_458_391],
+      [67_716_810_739_261, 51_510_806_800_915, 30_921_347_202_721, 82_619_226_485_591],
+    ]
+  }
+  public var primes: [[[UInt64]]] {
+    [
+      [
+        [
+          16_000_057, 16_000_079, 16_000_081, 16_000_097, 16_000_121, 16_000_129, 16_000_133,
+          16_000_183,
+        ],
+        [
+          16_000_189, 16_000_207, 16_000_211, 16_000_253, 16_000_277, 16_000_289, 16_000_307,
+          16_000_321,
+        ],
+        [
+          16_000_339, 16_000_381, 16_000_393, 16_000_399, 16_000_403, 16_000_409, 16_000_447,
+          16_000_463,
+        ],
+      ],
+      [
+        [
+          16_000_477, 16_000_487, 16_000_499, 16_000_507, 16_000_511, 16_000_573, 16_000_609,
+          16_000_627,
+        ],
+        [
+          16_000_667, 16_000_669, 16_000_693, 16_000_697, 16_000_711, 16_000_729, 16_000_759,
+          16_000_769,
+        ],
+        [
+          16_000_781, 16_000_799, 16_000_813, 16_000_819, 16_000_841, 16_000_877, 16_000_879,
+          16_000_889,
+        ],
+      ],
+    ]
+  }
+  public var bucketOffsets: [[UInt64]] {
+    primes.map { layer in
+      var offset: UInt64 = 0
+      return layer.flatMap { $0 }.map { prime in
+        defer { offset += prime }
+        return offset
+      }
+    }
+  }
+
+  public var embeddingSize: Int { (maxNgramSize - 1) * heads * headDim }
+
+  public init() {}
+
+  public static let deepSeekV4_1Flash = DeepSeek4_1EngramConfiguration()
+}
+
+public enum DeepSeek4_1EngramError: LocalizedError {
+  case invalidTableSize
+  case invalidTableValue(Int32)
+  case tableReadFailed(Int32)
+
+  public var errorDescription: String? {
+    switch self {
+    case .invalidTableSize:
+      return "The Engram file does not have the expected size."
+    case .invalidTableValue(let row):
+      return "Engram row \(row) contains an invalid value or exceeds the FP16 range."
+    case .tableReadFailed(let code):
+      return code == 0
+        ? "The Engram file ended during a row read."
+        : "Cannot read the Engram file (errno \(code))."
+    }
+  }
+}
+
+/// Hash text n-grams on CPU using the vocabulary-derived token map and fixed
+/// model constants. `previousTokens` holds up to the preceding three original token
 /// IDs; keep the returned history with the KV state for continuation/rollback.
 /// The returned tensor is [tokens, Engram layers, n-gram/head columns].
 public func DeepSeek4_1EngramHash(
-  tokens: [Int32], previousTokens: [Int32] = [], constants: DeepSeek4_1EngramHashConstants,
-  configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
-) throws -> (hashes: Tensor<Int32>, history: [Int32]) {
-  let ngram = configuration.engramMaxNgramSize
-  let layers = configuration.engramLayers.count
-  let heads = configuration.engramHeads
+  tokens: [Int32], previousTokens: [Int32] = [], tokenMap: [Int32],
+  configuration: DeepSeek4_1EngramConfiguration = .deepSeekV4_1Flash
+) -> (hashes: Tensor<Int32>, history: [Int32]) {
+  let ngram = configuration.maxNgramSize
+  let layers = configuration.layers.count
+  let heads = configuration.heads
   let columns = (ngram - 1) * heads
-  try constants.validate(configuration: configuration)
-  guard !tokens.isEmpty else { throw DeepSeek4_1EngramError.invalidHashConstants }
-  guard previousTokens.count < ngram else { throw DeepSeek4_1EngramError.invalidHistory }
+  precondition(tokenMap.count == DeepSeek4_1ModelConfiguration.deepSeekV4_1Flash.vocabularySize)
+  let multipliers = configuration.multipliers
+  let primes = configuration.primes
+  let offsets = configuration.bucketOffsets
+  precondition(!tokens.isEmpty && previousTokens.count < ngram)
   let combined = previousTokens + tokens
-  let compressed: [UInt64] = try combined.map { token in
-    guard token >= 0 && Int(token) < constants.tokenMap.count else {
-      throw DeepSeek4_1EngramError.invalidToken(token)
-    }
-    return UInt64(constants.tokenMap[Int(token)])
+  let compressed: [UInt64] = combined.map { token in
+    precondition(token >= 0 && Int(token) < tokenMap.count)
+    let compressed = tokenMap[Int(token)]
+    precondition(compressed >= 0 && compressed < configuration.compressedVocabularySize)
+    return UInt64(compressed)
   }
-  let pad = UInt64(constants.tokenMap[configuration.engramPadID])
+  let padding = tokenMap[configuration.padID]
+  precondition(padding >= 0 && padding < configuration.compressedVocabularySize)
+  let pad = UInt64(padding)
   var values = [Int32](repeating: 0, count: tokens.count * layers * columns)
   for token in 0..<tokens.count {
     let position = previousTokens.count + token
     for layer in 0..<layers {
-      var rolling = compressed[position] * constants.multipliers[layer][0]
+      var rolling = compressed[position] * multipliers[layer][0]
       for lookback in 1..<ngram {
         let previous = position >= lookback ? compressed[position - lookback] : pad
-        rolling ^= previous * constants.multipliers[layer][lookback]
+        rolling ^= previous * multipliers[layer][lookback]
         for head in 0..<heads {
           let column = (lookback - 1) * heads + head
           let row =
-            rolling % constants.primes[layer][lookback - 1][head] + constants.offsets[layer][column]
+            rolling % primes[layer][lookback - 1][head] + offsets[layer][column]
           values[(token * layers + layer) * columns + column] = Int32(row)
         }
       }
@@ -52,111 +151,108 @@ public func DeepSeek4_1EngramHash(
   )
 }
 
-/// Reads only requested FP8 rows and their E8M0/32 scales. Regions can point to
-/// original safetensors payloads or copied packed table files. No full-table
-/// mapping or BF16 expansion is required. Tables are immutable for this reader's
-/// lifetime; a bounded cache retains decoded rows across prefill and decode calls.
-public final class DeepSeek4_1EngramTable {
-  public let descriptor: DeepSeek4_1EngramTableDescriptor
-  private let values: FileHandle
-  private let scales: FileHandle
-  private var cachedRows = [Int32: [BFloat16]]()
-  private var cacheOrder = [Int32]()
-  private var nextCacheIndex = 0
-  private let cacheCapacity: Int
+/// The headerless file contains layer 1 followed by layer 14. Each row stores
+/// 256 E4M3 bytes followed by eight E8M0 scales. Copies share the file handle;
+/// positional reads do not mutate its seek position. Scheduling and persistent
+/// row caches belong to the caller.
+public struct DeepSeek4_1EngramReader {
+  // E4M3 lookup values match F8_E4M3 in Diffusion's SafeTensors.swift.
+  private static let fp8: [Float] = [
+    0.0, 0.001953125, 0.00390625, 0.005859375, 0.0078125, 0.009765625, 0.01171875, 0.013671875,
+    0.015625, 0.017578125, 0.01953125, 0.021484375, 0.0234375, 0.025390625, 0.02734375, 0.029296875,
+    0.03125, 0.03515625, 0.0390625, 0.04296875, 0.046875, 0.05078125, 0.0546875, 0.05859375, 0.0625,
+    0.0703125, 0.078125, 0.0859375, 0.09375, 0.1015625, 0.109375, 0.1171875, 0.125, 0.140625,
+    0.15625,
+    0.171875, 0.1875, 0.203125, 0.21875, 0.234375, 0.25, 0.28125, 0.3125, 0.34375, 0.375, 0.40625,
+    0.4375, 0.46875, 0.5, 0.5625, 0.625, 0.6875, 0.75, 0.8125, 0.875, 0.9375, 1.0, 1.125, 1.25,
+    1.375,
+    1.5, 1.625, 1.75, 1.875, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0, 4.5, 5.0, 5.5, 6.0,
+    6.5,
+    7.0, 7.5, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0,
+    28.0,
+    30.0, 32.0, 36.0, 40.0, 44.0, 48.0, 52.0, 56.0, 60.0, 64.0, 72.0, 80.0, 88.0, 96.0, 104.0,
+    112.0,
+    120.0, 128.0, 144.0, 160.0, 176.0, 192.0, 208.0, 224.0, 240.0, 256.0, 288.0, 320.0, 352.0,
+    384.0,
+    416.0, 448.0, .nan, -0.0, -0.001953125, -0.00390625, -0.005859375, -0.0078125, -0.009765625,
+    -0.01171875, -0.013671875, -0.015625, -0.017578125, -0.01953125, -0.021484375, -0.0234375,
+    -0.025390625, -0.02734375, -0.029296875, -0.03125, -0.03515625, -0.0390625, -0.04296875,
+    -0.046875, -0.05078125, -0.0546875, -0.05859375, -0.0625, -0.0703125, -0.078125, -0.0859375,
+    -0.09375, -0.1015625, -0.109375, -0.1171875, -0.125, -0.140625, -0.15625, -0.171875, -0.1875,
+    -0.203125, -0.21875, -0.234375, -0.25, -0.28125, -0.3125, -0.34375, -0.375, -0.40625, -0.4375,
+    -0.46875, -0.5, -0.5625, -0.625, -0.6875, -0.75, -0.8125, -0.875, -0.9375, -1.0, -1.125, -1.25,
+    -1.375, -1.5, -1.625, -1.75, -1.875, -2.0, -2.25, -2.5, -2.75, -3.0, -3.25, -3.5, -3.75, -4.0,
+    -4.5, -5.0, -5.5, -6.0, -6.5, -7.0, -7.5, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+    -16.0, -18.0, -20.0, -22.0, -24.0, -26.0, -28.0, -30.0, -32.0, -36.0, -40.0, -44.0, -48.0,
+    -52.0,
+    -56.0, -60.0, -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0, -128.0, -144.0, -160.0,
+    -176.0, -192.0, -208.0, -224.0, -240.0, -256.0, -288.0, -320.0, -352.0, -384.0, -416.0, -448,
+    .nan,
+  ]
 
-  public init(
-    directory: URL, descriptor: DeepSeek4_1EngramTableDescriptor, cacheCapacity: Int = 16_384
-  ) throws {
-    guard descriptor.rows > 0 && descriptor.rows <= Int(Int32.max),
-      descriptor.width == 256, cacheCapacity > 0,
-      descriptor.values.offset <= UInt64(Int64.max), descriptor.scales.offset <= UInt64(Int64.max)
-    else { throw DeepSeek4_1EngramError.invalidTableDescriptor }
-    self.descriptor = descriptor
-    self.cacheCapacity = cacheCapacity
-    values = try FileHandle(
-      forReadingFrom: URL(fileURLWithPath: descriptor.values.file, relativeTo: directory))
-    scales = try FileHandle(
-      forReadingFrom: URL(fileURLWithPath: descriptor.scales.file, relativeTo: directory))
-    let valuesSize = try values.seekToEnd()
-    let scalesSize = try scales.seekToEnd()
-    guard descriptor.values.offset <= valuesSize, descriptor.scales.offset <= scalesSize,
-      UInt64(descriptor.rows) * UInt64(descriptor.width) <= valuesSize - descriptor.values.offset,
-      UInt64(descriptor.rows) * UInt64(descriptor.width / 32) <= scalesSize
-        - descriptor.scales.offset
-    else { throw DeepSeek4_1EngramError.invalidTableDescriptor }
+  private let file: FileHandle
+
+  public init(filePath: String) throws {
+    let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: filePath))
+    guard try file.seekToEnd() == DeepSeek4_1EngramConfiguration.deepSeekV4_1Flash.fileSize
+    else {
+      try? file.close()
+      throw DeepSeek4_1EngramError.invalidTableSize
+    }
+    self.file = file
   }
 
-  deinit {
-    try? values.close()
-    try? scales.close()
-  }
-
-  private func read(_ file: FileHandle, offset: UInt64, count: Int) throws -> [UInt8] {
-    var bytes = [UInt8](repeating: 0, count: count)
-    try bytes.withUnsafeMutableBytes { buffer in
-      var readCount = 0
-      while readCount < count {
-        let result = pread(
-          file.fileDescriptor, buffer.baseAddress!.advanced(by: readCount),
-          count - readCount, off_t(offset + UInt64(readCount)))
-        if result < 0 && errno == EINTR { continue }
-        guard result > 0 else {
-          throw DeepSeek4_1EngramError.tableReadFailed(result < 0 ? errno : 0)
+  public func read(layerIndex: Int, rows: [Int32]) throws -> Tensor<Float16> {
+    let configuration = DeepSeek4_1EngramConfiguration.deepSeekV4_1Flash
+    precondition(configuration.layers.contains(layerIndex))
+    let layer = configuration.layers.firstIndex(of: layerIndex)!
+    let width = configuration.headDim
+    let rowBytes = configuration.rowBytes
+    let tableOffset = configuration.tableOffsets[layer]
+    let rowCount = configuration.rows[layer]
+    var packed = [UInt8](repeating: 0, count: rowBytes)
+    var output = [Float16](repeating: 0, count: rows.count * width)
+    var decoded = [Int32: Int]()
+    try output.withUnsafeMutableBufferPointer { destination in
+      for (index, row) in rows.enumerated() {
+        precondition(row >= 0 && Int(row) < rowCount)
+        if let previous = decoded[row] {
+          destination.baseAddress!.advanced(by: index * width).update(
+            from: destination.baseAddress!.advanced(by: previous * width), count: width)
+          continue
         }
-        readCount += result
+        let offset = tableOffset + UInt64(row) * UInt64(rowBytes)
+        try packed.withUnsafeMutableBytes { buffer in
+          var readCount = 0
+          while readCount < rowBytes {
+            let result = pread(
+              file.fileDescriptor, buffer.baseAddress!.advanced(by: readCount),
+              rowBytes - readCount, off_t(offset + UInt64(readCount)))
+            if result < 0 && errno == EINTR { continue }
+            guard result > 0 else {
+              throw DeepSeek4_1EngramError.tableReadFailed(result < 0 ? errno : 0)
+            }
+            readCount += result
+          }
+        }
+        for group in 0..<(width / 32) {
+          let scaleByte = packed[width + group]
+          guard scaleByte != 255 else {
+            throw DeepSeek4_1EngramError.invalidTableValue(row)
+          }
+          let scale = Float(sign: .plus, exponent: Int(scaleByte) - 127, significand: 1)
+          for column in (group * 32)..<((group + 1) * 32) {
+            // Apply the E8M0 scale in FP32 before rounding the input to FP16.
+            let value = Float16(Self.fp8[Int(packed[column])] * scale)
+            guard value.isFinite else {
+              throw DeepSeek4_1EngramError.invalidTableValue(row)
+            }
+            destination[index * width + column] = value
+          }
+        }
+        decoded[row] = index
       }
     }
-    return bytes
-  }
-
-  public func read(rows: [Int32]) throws -> Tensor<BFloat16> {
-    guard !rows.isEmpty else { throw DeepSeek4_1EngramError.invalidTableDescriptor }
-    let width = descriptor.width
-    var decoded = [Int32: [BFloat16]]()
-    for row in rows {
-      guard row >= 0 && Int(row) < descriptor.rows else {
-        throw DeepSeek4_1EngramError.invalidRow(row)
-      }
-      if decoded[row] != nil { continue }
-      if let cached = cachedRows[row] {
-        decoded[row] = cached
-        continue
-      }
-      let packed = try read(
-        values, offset: descriptor.values.offset + UInt64(row) * UInt64(width), count: width)
-      let scaleBytes = try read(
-        scales, offset: descriptor.scales.offset + UInt64(row) * UInt64(width / 32),
-        count: width / 32)
-      var output = [BFloat16](repeating: 0, count: width)
-      for column in 0..<width {
-        let byte = packed[column]
-        let exponent = Int((byte >> 3) & 15)
-        let mantissa = Int(byte & 7)
-        let scale = scaleBytes[column / 32]
-        guard !(exponent == 15 && mantissa == 7), scale != 255 else {
-          throw DeepSeek4_1EngramError.invalidTableValue(row)
-        }
-        let value = Float(
-          sign: byte < 128 ? .plus : .minus,
-          exponent: (exponent == 0 ? -6 : exponent - 7) + Int(scale) - 127,
-          significand: (exponent == 0 ? 0 : 1) + Float(mantissa) / 8)
-        let rounded = BFloat16(value)
-        guard rounded.floatValue.isFinite else {
-          throw DeepSeek4_1EngramError.invalidTableValue(row)
-        }
-        output[column] = rounded
-      }
-      decoded[row] = output
-      if cacheOrder.count == cacheCapacity {
-        cachedRows.removeValue(forKey: cacheOrder[nextCacheIndex])
-        cacheOrder[nextCacheIndex] = row
-        nextCacheIndex = (nextCacheIndex + 1) % cacheCapacity
-      } else {
-        cacheOrder.append(row)
-      }
-      cachedRows[row] = output
-    }
-    return Tensor(rows.flatMap { decoded[$0]! }, .CPU, .WC(rows.count, width))
+    return Tensor(output, .CPU, .WC(rows.count, width))
   }
 }

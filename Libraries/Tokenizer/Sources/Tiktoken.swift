@@ -369,6 +369,22 @@ public struct TiktokenTokenizer {
         tokenRegex = Self.joyAITokenRegex
       }
       if let tokenRegex = tokenRegex as? Regex<AnyRegexOutput> {
+        func split(_ text: Substring) -> [Substring] {
+          var tokens = [Substring]()
+          var lastIndex = text.startIndex
+          for match in text.matches(of: tokenRegex) {
+            // JoyAI isolates regex matches and preserves unmatched text, including controls.
+            if pretokenizer == .joyAI && lastIndex < match.range.lowerBound {
+              tokens.append(text[lastIndex..<match.range.lowerBound])
+            }
+            tokens.append(text[match.range])
+            lastIndex = match.range.upperBound
+          }
+          if pretokenizer == .joyAI && lastIndex < text.endIndex {
+            tokens.append(text[lastIndex..<text.endIndex])
+          }
+          return tokens
+        }
         if let specialTokensRegex = specialTokensRegex as? Regex<AnyRegexOutput> {
           var lastIndex = text.startIndex
           var tokens: [Substring] = []
@@ -376,26 +392,18 @@ public struct TiktokenTokenizer {
             let range = match.range
             if lastIndex < range.lowerBound {
               let unmatched = text[lastIndex..<range.lowerBound]
-              tokens.append(
-                contentsOf: unmatched.matches(of: tokenRegex).map {
-                  unmatched[$0.range]
-                })
+              tokens.append(contentsOf: split(unmatched))
             }
             tokens.append(text[range])  // match
             lastIndex = range.upperBound
           }
           if lastIndex < text.endIndex {
             let unmatched = text[lastIndex..<text.endIndex]
-            tokens.append(
-              contentsOf: unmatched.matches(of: tokenRegex).map {
-                unmatched[$0.range]
-              })
+            tokens.append(contentsOf: split(unmatched))
           }
           return tokens
         }
-        return text.matches(of: tokenRegex).map {
-          text[$0.range]
-        }
+        return split(text[...])
       }
     }
     return pretokenizeNoRegex(text)
