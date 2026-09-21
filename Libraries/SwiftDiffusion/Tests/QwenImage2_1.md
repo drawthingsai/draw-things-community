@@ -1,6 +1,6 @@
 # Qwen Image 2.1 integration reference
 
-The runtime implements text-to-image, reference-image editing, and native RGBA through `FirstStage`'s existing `.transparent` option. `QwenImage2_1Fixed` computes the invariant prefix once; `QwenImage2_1` only evaluates target-image tokens during denoising. Tiled diffusion remains deferred.
+The runtime implements text-to-image, reference-image editing, and native RGBA through `FirstStage`'s existing `.transparent` option. `QwenImage2_1Fixed` computes the invariant prefix once; `QwenImage2_1` only evaluates target-image tokens during denoising. Tiled diffusion slices the full-image target RoPE while sharing the prefix cache across tiles.
 
 ## Reference sources
 
@@ -67,6 +67,16 @@ GPU timings are not acceptance criteria because the device is shared. The frozen
 The checkpoint-backed parity test uses identical deterministic context/reference/target tensors against the frozen 32-layer baseline. It covers text-only and two adjacent reference blocks, unequal CFG lengths, two timesteps reusing one prefix cache, and all four attention levels. INT8 attention uses a separate smoke-test error budget (10% relative RMS versus 1% for FP16); the current quantized cases differ from the baseline by up to 6.7%. It requires the external-data codec used by the app loader; strict name checking alone does not decode external tensor storage.
 
 VAE parity covers encoder and decoder in FP32 and FP16 with Flash Attention enabled and disabled. FirstStage enables VAE Flash Attention when supported and the actual attention grid, accounting for tiling and the encoder's 16x downsampling, reaches 256 x 176 tokens.
+
+FirstStage also honors the existing high-precision retry when compiling either Qwen VAE graph. The retry compiles with FP32 inputs so checkpoint parameters match FP32 execution. `testDecoderHighPrecisionFallback` forces a failed first decode and checks that the checkpoint-backed retry returns finite RGBA pixels.
+
+The VAE retains input precision until the decoder's final upsample convolution. That upsample and the final residual stage run in FP32, returning to input precision after the final normalization. On the captured two-step reference-edit input, the correct final-upsample output reached 107,039, beyond FP16 range; the original decoder produced 2,240 nonfinite output values in the second batch image. Encoder, attention, and earlier residual-block normalization are unchanged. Both captured images decode with finite values using either attention backend without the full-decoder retry. Relative RMS error against full FP32 is 0.17–1.28%, with maximum absolute error up to 2.54; this is a finite-output smoke check, not strict per-pixel parity.
+
+`testDecoderFloat16Range` checks finite output and reports relative RMS and maximum absolute error against full FP32 as diagnostics. It uses deterministic unscaled latents in the observed input range by default. To replay a captured input, set `QWEN_IMAGE_2_1_VAE_LATENT` to a tensor store containing an NHWC tensor named `latent`, already unscaled for the VAE.
+
+`testTiledDiffusionMatchesExplicitTiles` exercises the public UNet runtime on a rectangular canvas with two images per CFG branch, unequal prompt lengths, and cached reference conditioning. It compares all four edge-anchored tiles and their overlap blending against explicit tile calls with independently gathered global RoPE coordinates. Target tokens use one latent pixel each, so tile coordinates are not divided by two. Cached K/V and timestep modulation are shared across tiles. Batched K/V concatenation disables the same optimization as Flux2 to keep RoPE outputs contiguous.
+
+Tiled runtime validation on 2026-09-21: the explicit-tile comparison passed with maximum absolute error 0 and finite outputs; the forced VAE precision retry also passed. Two-step CLI smoke runs completed for 512 x 384 text-to-image and 384 x 256 reference editing with CFG 2 and a batch of two, using 256 x 256 tiles and 64-pixel overlap. Both edit outputs are RGBA with alpha spanning 0–255. These low-step images exercise execution and PNG output only; their coarse artifacts do not establish image quality or edit fidelity.
 
 ```sh
 bazel test //Libraries/SwiftDiffusion:QwenImage2_1Tests \

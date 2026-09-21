@@ -227,8 +227,11 @@ private func TransformerBlock<T: TensorNumeric>(
   if usesFlashAttention == .scale1 {
     queries = (1 / Float(128).squareRoot()) * queries
   }
-  let allKeys = Functional.concat(axis: 1, cachedK, keys)
-  let allValues = Functional.concat(axis: 1, cachedV, values)
+  // Keep RoPE outputs contiguous when concatenating batched cached K/V, as in Flux2.
+  let allKeys = Functional.concat(
+    axis: 1, cachedK, keys, flags: batchSize > 1 ? [.disableOpt] : [])
+  let allValues = Functional.concat(
+    axis: 1, cachedV, values, flags: batchSize > 1 ? [.disableOpt] : [])
   let attended: Model.IO
   if usesFlashAttention != .none {
     let attention = ScaledDotProductAttention(

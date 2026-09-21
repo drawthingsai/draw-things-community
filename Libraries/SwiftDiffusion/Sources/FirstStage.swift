@@ -620,7 +620,13 @@ extension FirstStage {
           usesFlashAttention: decoderUsesFlashAttention)
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(1)
-        decoder.compile(inputs: z[0..<1, 0..<height, 0..<width, 0..<64].copied())
+        if highPrecision {
+          decoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: z[0..<1, 0..<height, 0..<width, 0..<64].copied()))
+        } else {
+          decoder.compile(inputs: z[0..<1, 0..<height, 0..<width, 0..<64].copied())
+        }
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) {
@@ -1729,7 +1735,13 @@ extension FirstStage {
           usesFlashAttention: encoderUsesFlashAttention)
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(1)
-        encoder.compile(inputs: x[0..<1, 0..<height, 0..<width, 0..<4].copied())
+        if highPrecision {
+          encoder.compile(
+            inputs: DynamicGraph.Tensor<Float>(
+              from: x[0..<1, 0..<height, 0..<width, 0..<4].copied()))
+        } else {
+          encoder.compile(inputs: x[0..<1, 0..<height, 0..<width, 0..<4].copied())
+        }
         graph.openStore(
           filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
         ) {

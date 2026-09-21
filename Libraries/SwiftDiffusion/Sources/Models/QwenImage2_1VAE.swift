@@ -201,7 +201,12 @@ public func QwenImage2_1Decoder(
         groups: 1, filters: channel, filterSize: [3, 3],
         hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
         format: .OIHW, name: "decoder_up_blocks_\(i)_upsampler_resample_1")
-      out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut
+      // The final upsampler and residual stage can exceed FP16 range.
+      // Return to input precision after the final normalization.
+      if i == channels.count - 2 {
+        out = out.to(.Float32)
+      }
+      out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut.to(of: out)
       h *= 2
       w *= 2
     }
@@ -212,6 +217,6 @@ public func QwenImage2_1Decoder(
     groups: 1, filters: 4, filterSize: [3, 3],
     hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
     format: .OIHW, name: "decoder_conv_out")
-  out = convOut(normOut(out).swish())
+  out = convOut(normOut(out).to(of: x).swish())
   return Model([x], [out])
 }

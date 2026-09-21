@@ -2871,8 +2871,7 @@ extension UNetFromNNC {
           return finalEncoding
         }
       case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
-        .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b,
-        .qwenImage2_1:
+        .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .seedvr2_3b, .seedvr2_7b:
         break
       case .ideogram4:
         let imageLength = (originalShape[1] / 2) * (originalShape[2] / 2)
@@ -2959,6 +2958,18 @@ extension UNetFromNNC {
             0..<t, (inputStartYPad / 2)..<(inputEndYPad / 2),
             (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
           ].copied().reshaped(.NHWC(shape[0], t * h * w, 1, shape[3]))
+        }
+      case .qwenImage2_1:
+        if $0.0 == 0 {
+          let shape = $0.1.shape
+          let rotary = DynamicGraph.Tensor<Float>($0.1).reshaped(
+            .NHWC(shape[0], originalShape[1], originalShape[2], shape[3]))
+          let h = inputEndYPad - inputStartYPad
+          let w = inputEndXPad - inputStartXPad
+          return rotary[
+            0..<shape[0], inputStartYPad..<inputEndYPad, inputStartXPad..<inputEndXPad,
+            0..<shape[3]
+          ].copied().reshaped(.NHWC(shape[0], h * w, 1, shape[3]))
         }
       case .qwenImage:
         if $0.0 == 0 {
