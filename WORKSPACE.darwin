@@ -94,6 +94,10 @@ load("//Vendors/Z3:repositories.bzl", "z3_repositories")
 
 z3_repositories()
 
+load("//Vendors/FFmpeg:repositories.bzl", "ffmpeg_repositories")
+
+ffmpeg_repositories()
+
 load("//Vendors/Lean:repositories.bzl", "lean_repositories")
 
 lean_repositories()
