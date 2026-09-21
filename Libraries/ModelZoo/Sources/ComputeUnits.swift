@@ -94,9 +94,9 @@ public enum ComputeUnits {
   ) -> (batchSize: Int, numFrames: Int) {
     switch context.modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1, .hiDreamO1, .seedvr2_3b,
-      .seedvr2_7b, .ideogram4, .krea2:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .qwenImage2_1,
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1, .hiDreamO1,
+      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (max(1, Int(configuration.batchSize)) * cfgChannels, 1)
     case .svdI2v:
       return (cfgChannels, max(1, Int(configuration.numFrames)))
@@ -141,7 +141,7 @@ public enum ComputeUnits {
       return 512
     case .hunyuanVideo:
       return 256
-    case .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
+    case .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
       return 512
     case .krea2:
       return 256
@@ -168,7 +168,7 @@ public enum ComputeUnits {
         Int((Double(rawWidth) * 3.0 / 2.0).rounded(.up)),
         Int((Double(rawHeight) * 3.0 / 2.0).rounded(.up))
       )
-    case .wan22_5b, .minimaxH3:
+    case .wan22_5b, .minimaxH3, .qwenImage2_1:
       return (rawWidth * 4, rawHeight * 4)
     case .ltx2, .ltx2_3:
       return (rawWidth * 2, rawHeight * 2)
@@ -423,6 +423,21 @@ public enum ComputeUnits {
         timesteps: 1, batchSize: (1, 1), channels: 3072, layers: 30, vaceLayers: [],
         textLength: baseTokenLength, injectImage: false)
       return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
+    case .qwenImage2_1:
+      let references = referenceImageCount(
+        context: context, hasImage: hasImage, shuffleCount: shuffleCount)
+      // Estimate the text before the image blocks; exact interleaving comes from the prompt at runtime.
+      let segments: [(length: Int, image: Bool)] =
+        [(baseTokenLength, false)]
+        + Array(repeating: (4096, true), count: references)
+      return (
+        main: QwenImage2_1InstructionCount(
+          batchSize: batchSize, height: startHeight, width: startWidth,
+          prefixLength: baseTokenLength + 4096 * references),
+        fixed: QwenImage2_1FixedInstructionCount(
+          batchSize: cfgChannels,
+          timesteps: max(1, Int(configuration.steps)), segments: segments)
+      )
     case .qwenImage:
       let mainCount = QwenImageInstructionCount(
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,

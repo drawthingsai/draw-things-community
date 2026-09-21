@@ -194,9 +194,9 @@ extension FirstStage {
           .reshaped(.HWC(1, audioFrames, shape[3])))
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
-      .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
-      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b, .seedvr2_7b,
-      .longcatVideoAvatar1_5:
+      .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b,
+      .seedvr2_7b, .longcatVideoAvatar1_5:
       z = x
       audioZ = nil
     }
@@ -265,6 +265,9 @@ extension FirstStage {
       scaleFactorZ = 1
     case .hiDreamO1:
       scaleFactor = 32
+      scaleFactorZ = 1
+    case .qwenImage2_1:
+      scaleFactor = 16
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
@@ -606,6 +609,26 @@ extension FirstStage {
         }
       }
       outputChannels = 3
+    case .qwenImage2_1:
+      let height = tiledDecoding ? decodingTileSize.height : startHeight
+      let width = tiledDecoding ? decodingTileSize.width : startWidth
+      let decoderUsesFlashAttention = usesFlashAttention && width * height >= 256 * 176
+      decoder =
+        existingDecoder
+        ?? QwenImage2_1Decoder(
+          channels: [1152, 1152, 576, 288, 144], height: height, width: width,
+          usesFlashAttention: decoderUsesFlashAttention)
+      if existingDecoder == nil {
+        decoder.maxConcurrency = .limit(1)
+        decoder.compile(inputs: z[0..<1, 0..<height, 0..<width, 0..<64].copied())
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("decoder", model: decoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 4
+      causalAttentionMask = nil
     case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
       .longcatVideoAvatar1_5:
       let startDepth =
@@ -1065,9 +1088,9 @@ extension FirstStage {
           }
         case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
           .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
-          .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
-          .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b, .seedvr2_7b,
-          .longcatVideoAvatar1_5:
+          .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
+          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b,
+          .seedvr2_7b, .longcatVideoAvatar1_5:
           audio = nil
         }
       } else {
@@ -1199,9 +1222,9 @@ extension FirstStage {
         return (std .* result + mean).clamped(0...1) * 2 - 1
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
-        .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
-        .seedvr2_7b, .longcatVideoAvatar1_5:
+        .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
+        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2,
+        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
         return result
       }
     }
@@ -1453,6 +1476,9 @@ extension FirstStage {
     case .hiDreamO1:
       scaleFactor = 32
       scaleFactorZ = 1
+    case .qwenImage2_1:
+      scaleFactor = 16
+      scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       scaleFactor = 8
@@ -1679,6 +1705,39 @@ extension FirstStage {
         }
       }
       outputChannels = 32
+    case .qwenImage2_1:
+      let height = (tiledEncoding ? encodingTileSize.height : startHeight) * 16
+      let width = (tiledEncoding ? encodingTileSize.width : startWidth) * 16
+      let encoderUsesFlashAttention =
+        usesFlashAttention && (width / 16) * (height / 16) >= 256 * 176
+      var rgba = graph.variable(.GPU(0), .NHWC(shape[0], shape[1], shape[2], 4), of: FloatType.self)
+      rgba.full(1)
+      if shape[3] == 4 {
+        rgba[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<3] =
+          x[0..<shape[0], 0..<shape[1], 0..<shape[2], 1..<4]
+        rgba[0..<shape[0], 0..<shape[1], 0..<shape[2], 3..<4] =
+          x[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<1] * 2 - 1
+      } else {
+        rgba[0..<shape[0], 0..<shape[1], 0..<shape[2], 0..<3] = x
+      }
+      x = rgba
+      shape[3] = 4
+      encoder =
+        existingEncoder
+        ?? QwenImage2_1Encoder(
+          channels: [96, 192, 384, 768, 768], height: height, width: width,
+          usesFlashAttention: encoderUsesFlashAttention)
+      if existingEncoder == nil {
+        encoder.maxConcurrency = .limit(1)
+        encoder.compile(inputs: x[0..<1, 0..<height, 0..<width, 0..<4].copied())
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) {
+          $0.read("encoder", model: encoder, codec: [.jit, externalData])
+        }
+      }
+      outputChannels = 128
+      causalAttentionMask = nil
     case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
       .longcatVideoAvatar1_5:
       let startDepth =
@@ -2153,7 +2212,8 @@ extension FirstStage {
     var pixel = decoder(inputs: z, (causalAttentionMask.map { [$0] } ?? []) + inputs)[0].as(
       of: T.self)
     if alternativeDecoderVersion == .transparent,
-      version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
+      version == .qwenImage || version == .qwenImage2_1 || version == .krea2
+        || version == .cosmos2_5_2b
     {
       // If this is the case, we need to switch alpha channel with rgb channel.
       let shape = pixel.shape

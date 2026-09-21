@@ -1085,7 +1085,13 @@ private enum RecommendedSettingsResolver {
     builder.model = modelSpecification.file
     builder.startWidth = defaultScale
     builder.startHeight = defaultScale
-    if modelSpecification.version == .hiDreamO1 {
+    if modelSpecification.version == .qwenImage2_1 {
+      builder.steps = 40
+      builder.guidanceScale = 1
+      builder.sampler = .dDIMTrailing
+      builder.resolutionDependentShift = true
+      builder.shift = 1
+    } else if modelSpecification.version == .hiDreamO1 {
       builder.steps = 28
       builder.guidanceScale = 1
       builder.sampler = .dPMPP2MTrailing
@@ -1702,9 +1708,9 @@ private func defaultImportScale(for version: ModelVersion, artifactFileName: Str
     return 12
   case .wan21_1_3b:
     return 8
-  case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .hiDreamO1, .qwenImage, .zImage, .ernieImage,
-    .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .auraflow, .flux1, .flux2, .flux2_9b,
-    .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .ideogram4, .krea2:
+  case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .zImage,
+    .ernieImage, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .auraflow, .flux1, .flux2,
+    .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .ideogram4, .krea2:
     return 16
   case .pixart:
     return artifactFileName.contains("512") ? 8 : 16
@@ -1727,7 +1733,7 @@ private func validateCustomTextEncoderSupport(
     return
   case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
     .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
-    .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+    .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
     .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
     throw ValidationError(
       "Custom text encoder import is not supported for \(ModelZoo.humanReadableNameForVersion(version))."
@@ -1755,8 +1761,8 @@ private func projectedImportedOutputFiles(
       files.append("\(modelName)_ministral_3_3b_q8p.ckpt")
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
-      .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
-      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+      .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2,
+      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       break
     }
   }
@@ -1997,16 +2003,19 @@ private func writePNG(tensor: Tensor<FloatType>, to outputPath: String) throws {
     guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else { return }
     for i in 0..<pixelCount {
       let base = i * shape.channels
-      rgba[i].r = pixelByte(fp16[base])
-      rgba[i].g = pixelByte(fp16[base + 1])
-      rgba[i].b = pixelByte(fp16[base + 2])
-      rgba[i].a = 255
+      let rgb = base + (shape.channels == 4 ? 1 : 0)
+      rgba[i].r = pixelByte(fp16[rgb])
+      rgba[i].g = pixelByte(fp16[rgb + 1])
+      rgba[i].b = pixelByte(fp16[rgb + 2])
+      rgba[i].a = shape.channels == 4 ? UInt8(min(max(Int(fp16[base] * 255), 0), 255)) : 255
     }
   }
   let image = PNG.Data.Rectangular(
     packing: rgba,
     size: (x: shape.width, y: shape.height),
-    layout: PNG.Layout(format: .rgb8(palette: [], fill: nil, key: nil)))
+    layout: PNG.Layout(
+      format: shape.channels == 4
+        ? .rgba8(palette: [], fill: nil) : .rgb8(palette: [], fill: nil, key: nil)))
   do {
     try PNGFile.write(image, path: outputPath)
   } catch {
@@ -3913,7 +3922,10 @@ private func runLoRATraining(context: DrawThingsCLIContext, _ options: LoRATrain
     } : []
   let resolvedShift: Float =
     config.resolutionDependentShift
-    ? Float(ModelZoo.shiftFor((width: imageScale.widthScale, height: imageScale.heightScale)))
+    ? Float(
+      ModelZoo.shiftFor(
+        (width: imageScale.widthScale, height: imageScale.heightScale),
+        version: modelSpecification.version))
     : config.shift
   let powerEMA: ClosedRange<Float>? =
     config.powerEmaLowerBound > 0 && config.powerEmaUpperBound > 0
@@ -3965,7 +3977,8 @@ private func runLoRATraining(context: DrawThingsCLIContext, _ options: LoRATrain
     maxTextLength: maxTextLength, session: session,
     resumeIfPossible: resumeCheckpoint?.isEmpty == false,
     usesFlashAttention: usesFlashAttention,
-    imageInspector: inspectTrainingImage, imageLoader: loadTrainingTensor)
+    imageInspector: inspectTrainingImage,
+    imageLoader: { loadTrainingTensor(url: $0, imageWidth: $1, imageHeight: $2) })
   let tokenizerStack: [TextualInversionPoweredTokenizer & Tokenizer]
   switch trainer.version {
   case .v1:
@@ -4374,7 +4387,8 @@ extension DrawThingsCLI {
       let inputImageTensors = try imagePaths.map {
         try loadInputImageTensor(
           path: $0, imageWidth: Int(configuration.startWidth) * 64,
-          imageHeight: Int(configuration.startHeight) * 64)
+          imageHeight: Int(configuration.startHeight) * 64,
+          preserveAlpha: modelSpecification.version == .qwenImage2_1)
       }
       var hints: [(ControlHintType, [(AnyTensor, Float)])] = []
       if inputImageTensors.count > 1 {
@@ -5188,7 +5202,9 @@ private func validateVideoOutputOptions(outputPath: String, videoFormat: VideoEx
   }
 }
 
-private func loadInputImageTensor(path: String, imageWidth: Int, imageHeight: Int) throws
+private func loadInputImageTensor(
+  path: String, imageWidth: Int, imageHeight: Int, preserveAlpha: Bool = false
+) throws
   -> Tensor<FloatType>
 {
   let filePath = URL(fileURLWithPath: path).standardizedFileURL.path
@@ -5197,7 +5213,8 @@ private func loadInputImageTensor(path: String, imageWidth: Int, imageHeight: In
   }
   guard
     let (tensor, _, _, _) = loadTrainingTensor(
-      url: URL(fileURLWithPath: filePath), imageWidth: imageWidth, imageHeight: imageHeight)
+      url: URL(fileURLWithPath: filePath), imageWidth: imageWidth, imageHeight: imageHeight,
+      preserveAlpha: preserveAlpha)
   else {
     throw DrawThingsCLIError.invalidInputImage(filePath)
   }
@@ -5336,7 +5353,7 @@ private func inspectTrainingImage(url: URL) -> (width: Int, height: Int)? {
 }
 
 private func loadTrainingTensor(
-  url: URL, imageWidth: Int, imageHeight: Int
+  url: URL, imageWidth: Int, imageHeight: Int, preserveAlpha: Bool = false
 ) -> (
   Tensor<FloatType>, (width: Int, height: Int), (top: Int, left: Int), (width: Int, height: Int)
 )? {
@@ -5359,7 +5376,7 @@ private func loadTrainingTensor(
 
     let offsetX = (scaledWidth - imageWidth) / 2
     let offsetY = (scaledHeight - imageHeight) / 2
-    var tensor = Tensor<FloatType>(.CPU, .NHWC(1, imageHeight, imageWidth, 3))
+    var tensor = Tensor<FloatType>(.CPU, .NHWC(1, imageHeight, imageWidth, preserveAlpha ? 4 : 3))
     for y in 0..<imageHeight {
       for x in 0..<imageWidth {
         let srcX = Int(Double(x + offsetX) * Double(sourceWidth) / Double(scaledWidth))
@@ -5367,9 +5384,11 @@ private func loadTrainingTensor(
         let clampedX = min(max(srcX, 0), sourceWidth - 1)
         let clampedY = min(max(srcY, 0), sourceHeight - 1)
         let pixel = rgba[clampedY * sourceWidth + clampedX]
-        tensor[0, y, x, 0] = FloatType(Float(pixel.r) / 127.5 - 1)
-        tensor[0, y, x, 1] = FloatType(Float(pixel.g) / 127.5 - 1)
-        tensor[0, y, x, 2] = FloatType(Float(pixel.b) / 127.5 - 1)
+        let rgb = preserveAlpha ? 1 : 0
+        if preserveAlpha { tensor[0, y, x, 0] = FloatType(Float(pixel.a) / 255) }
+        tensor[0, y, x, rgb] = FloatType(Float(pixel.r) / 127.5 - 1)
+        tensor[0, y, x, rgb + 1] = FloatType(Float(pixel.g) / 127.5 - 1)
+        tensor[0, y, x, rgb + 2] = FloatType(Float(pixel.b) / 127.5 - 1)
       }
     }
 
@@ -5432,13 +5451,18 @@ private func loadTrainingTensor(
 
     guard let data = bitmapContext.data else { return nil }
     let rgba = data.assumingMemoryBound(to: UInt8.self)
-    var tensor = Tensor<FloatType>(.CPU, .NHWC(1, imageHeight, imageWidth, 3))
+    var tensor = Tensor<FloatType>(.CPU, .NHWC(1, imageHeight, imageWidth, preserveAlpha ? 4 : 3))
     for y in 0..<imageHeight {
       for x in 0..<imageWidth {
         let i = (y * imageWidth + x) * 4
-        tensor[0, y, x, 0] = FloatType(Float(rgba[i]) / 127.5 - 1)
-        tensor[0, y, x, 1] = FloatType(Float(rgba[i + 1]) / 127.5 - 1)
-        tensor[0, y, x, 2] = FloatType(Float(rgba[i + 2]) / 127.5 - 1)
+        let rgb = preserveAlpha ? 1 : 0
+        let alpha = Float(rgba[i + 3]) / 255
+        if preserveAlpha { tensor[0, y, x, 0] = FloatType(alpha) }
+        let scale: Float = preserveAlpha && alpha > 0 ? 1 / alpha : 1
+        for channel in 0..<3 {
+          tensor[0, y, x, rgb + channel] = FloatType(
+            min(255, Float(rgba[i + channel]) * scale) / 127.5 - 1)
+        }
       }
     }
 

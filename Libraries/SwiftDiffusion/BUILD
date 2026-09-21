@@ -101,6 +101,15 @@ swift_test(
 )
 
 swift_test(
+    name = "QwenImage2_1ContractTests",
+    srcs = ["Tests/QwenImage2_1ContractTests.swift"],
+    deps = [
+        ":SwiftDiffusion",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
     name = "SamplerTests",
     srcs = ["Tests/SamplerTests.swift"],
     tags = [
@@ -167,5 +176,23 @@ swift_library(
     deps = [
         ":SwiftDiffusion",
         "@s4nnc//nnc:nnc_coreml",
+    ],
+)
+
+swift_test(
+    name = "QwenImage2_1Tests",
+    srcs = [
+        "Tests/QwenImage2_1Tests.swift",
+        "Tests/QwenImage2_1Unsplit.swift",
+        "Tests/QwenImage2_1VAEReference.swift",
+    ],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":Mappings",
+        ":SwiftDiffusion",
+        "@s4nnc//nnc",
     ],
 )

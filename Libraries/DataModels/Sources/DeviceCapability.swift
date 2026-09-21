@@ -716,7 +716,7 @@ public struct DeviceCapability {
       guard (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force else {
         return false
       }
-    case .zImage, .ernieImage, .ideogram4, .krea2:
+    case .zImage, .qwenImage2_1, .ernieImage, .ideogram4, .krea2:
       guard (!isUltraPerformance && !(isMaxPerformance && is8BitModel)) || force else {
         return false
       }

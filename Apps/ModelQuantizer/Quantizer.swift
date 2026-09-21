@@ -208,7 +208,7 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
-          case .qwenImage, .krea2, .ernieImage, .seedvr2_3b, .seedvr2_7b:
+          case .qwenImage, .qwenImage2_1, .krea2, .ernieImage, .seedvr2_3b, .seedvr2_7b:
             if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
               $0.write(key, tensor: fp16)
             } else {

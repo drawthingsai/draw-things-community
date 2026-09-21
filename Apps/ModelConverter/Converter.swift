@@ -157,7 +157,7 @@ struct Converter: ParsableCommand {
       }
     case .hiDreamI1, .hiDreamO1, .minimaxH3:
       fatalError()
-    case .qwenImage:
+    case .qwenImage, .qwenImage2_1:
       fatalError()
     case .cosmos2_5_2b:
       textEncoder = "qwen_3_0.6b_f16.ckpt"

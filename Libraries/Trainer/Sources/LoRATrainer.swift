@@ -117,7 +117,7 @@ public struct LoRATrainer {
           return "sd3_vae_f16.ckpt"
         case .flux1, .hiDreamI1, .zImage:
           return "flux_1_vae_f16.ckpt"
-        case .hiDreamO1, .minimaxH3:
+        case .hiDreamO1, .qwenImage2_1, .minimaxH3:
           fatalError()
         case .hunyuanVideo:
           return "hunyuan_video_vae_f16.ckpt"
@@ -158,7 +158,7 @@ public struct LoRATrainer {
         // return "qwen_2.5_vl_7b_f16.ckpt" commented out in case it wont impact production usage.
         case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
           fatalError()
-        case .hiDreamI1, .hiDreamO1:
+        case .hiDreamI1, .hiDreamO1, .qwenImage2_1:
           fatalError()
         case .ernieImage:
           return "ministral_3_3b_f16.ckpt"
@@ -2006,9 +2006,8 @@ public struct LoRATrainer {
         ]
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-        .qwenImage,
-        .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       let tokensTensor = graph.variable(.CPU, format: .NHWC, shape: [77], of: Int32.self)
@@ -2069,11 +2068,10 @@ public struct LoRATrainer {
             } else if name == "__text_model__[t-\(258 - (min(clipSkip, 31) - 1) * 8)-1]" {
               name = "__text_model__[t-258-1]"
             }
-          case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
-            .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-            .hiDreamO1,
-            .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-            .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+          case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
+            .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
+            .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
             fatalError()
           }
           return .continue(name)
@@ -3369,7 +3367,9 @@ public struct LoRATrainer {
         var shift = shift
         if resolutionDependentShift {
           shift = Float(
-            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+            ModelZoo.shiftFor(
+              (width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8)), version: version
+            ))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let guidanceEmbed = (Float.random(in: guidanceEmbed, using: &sfmt) * 10).rounded() / 10
@@ -3778,7 +3778,9 @@ public struct LoRATrainer {
         var shift = shift
         if resolutionDependentShift {
           shift = Float(
-            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+            ModelZoo.shiftFor(
+              (width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8)), version: version
+            ))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let guidance = (Float.random(in: guidanceEmbed, using: &sfmt) * 10).rounded() / 10
@@ -4113,7 +4115,9 @@ public struct LoRATrainer {
         var shift = shift
         if resolutionDependentShift {
           shift = Float(
-            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+            ModelZoo.shiftFor(
+              (width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8)), version: version
+            ))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         var pendingBatch = batches.removeValue(forKey: tokenLength) ?? []
@@ -4505,7 +4509,9 @@ public struct LoRATrainer {
         var shift = shift
         if resolutionDependentShift {
           shift = Float(
-            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+            ModelZoo.shiftFor(
+              (width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8)), version: version
+            ))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let guidanceEmbed = (Float.random(in: guidanceEmbed, using: &sfmt) * 10).rounded() / 10
@@ -4938,7 +4944,9 @@ public struct LoRATrainer {
         var shift = shift
         if resolutionDependentShift {
           shift = Float(
-            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+            ModelZoo.shiftFor(
+              (width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8)), version: version
+            ))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let tokenLength = captionDropout ? zeroCaption.tokenLength : input.tokenLength
@@ -5344,7 +5352,9 @@ public struct LoRATrainer {
         var shift = shift
         if resolutionDependentShift {
           shift = Float(
-            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+            ModelZoo.shiftFor(
+              (width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8)), version: version
+            ))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let tokenLength = captionDropout ? zeroCaption.tokenLength : input.tokenLength
@@ -5734,7 +5744,9 @@ public struct LoRATrainer {
         var shift = shift
         if resolutionDependentShift {
           shift = Float(
-            ModelZoo.shiftFor((width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8))))
+            ModelZoo.shiftFor(
+              (width: UInt16(latentsWidth / 8), height: UInt16(latentsHeight / 8)), version: version
+            ))
         }
         timestep = Double(shift) * timestep / (1 + (Double(shift) - 1) * timestep)
         let tokenLength = textEncoding.shape[1]
@@ -6388,9 +6400,8 @@ public struct LoRATrainer {
         unetLoRAMapping = LoRAMapping.SDUNetXLSSD1B
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-        .qwenImage,
-        .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       let externalData: DynamicGraph.Store.Codec =
@@ -6473,9 +6484,9 @@ public struct LoRATrainer {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
-              .flux2,
-              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+              .ideogram4, .krea2:
               fatalError()
             }
             if name.contains("lora_up") {
@@ -6676,9 +6687,8 @@ public struct LoRATrainer {
         c = graph.variable(.GPU(0), .WC(1, 2560), of: FloatType.self)
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-        .qwenImage,
-        .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-        .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         fatalError()
       }
       c.full(0)
@@ -6873,9 +6883,8 @@ public struct LoRATrainer {
         case .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
-          .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b,
-          .zImage,
-          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
+          .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
+          .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3:
           embeddingName = ("string_to_param", "string_to_param")
           firstStd = 0.02
         case .sd3, .sd3Large, .sdxlBase, .ssd1b:
@@ -7165,9 +7174,9 @@ public struct LoRATrainer {
                 injectedEmbeddings.append(injectedEmbedding1)
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
                 .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-                .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
-                .flux2,
-                .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+                .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b,
+                .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b,
+                .seedvr2_7b, .ideogram4, .krea2:
                 fatalError()
               }
               if !hasTrainableEmbeddings {
@@ -7307,9 +7316,9 @@ public struct LoRATrainer {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
-              .flux2,
-              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+              .ideogram4, .krea2:
               fatalError()
             }
             condTokensTensorGPU = tokensTensorGPU
@@ -7413,9 +7422,9 @@ public struct LoRATrainer {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .hiDreamO1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
-              .flux2,
-              .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+              .ideogram4, .krea2:
               fatalError()
             }
             condTokensTensorGPU = nil

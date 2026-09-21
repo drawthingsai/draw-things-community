@@ -118,7 +118,7 @@ public enum LoRAExporter {
       textualInversionExport = ("string_to_param_mistral3", "mistral3")
     case .wan22_5b:
       fatalError()
-    case .hiDreamI1, .hiDreamO1:
+    case .hiDreamI1, .hiDreamO1, .qwenImage2_1:
       fatalError()
     case .flux2_4b:
       metadata["version"] = "flux_2_4b"
@@ -177,9 +177,9 @@ public enum LoRAExporter {
       textEncoderKeys2 = nil
       textEncoderKeysMapping2 = nil
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
-      .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
-      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
+      .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+      .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       textEncoderKeys = []
       textEncoderKeysMapping = [:]
       textEncoderKeys2 = nil

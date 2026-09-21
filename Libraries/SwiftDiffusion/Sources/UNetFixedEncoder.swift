@@ -56,8 +56,8 @@ extension UNetFixedEncoder {
     switch version {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+      .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       return true
     case .v1, .v2, .kandinsky21:
@@ -201,9 +201,9 @@ extension UNetFixedEncoder {
       // We don't need other vectors for sampling.
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5, .minimaxH3:
+      .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
+      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -1211,9 +1211,9 @@ extension UNetFixedEncoder {
           dualAttentionLayers: [])
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-        .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-        .longcatVideoAvatar1_5, .minimaxH3:
+        .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
       }
       var timeEmbeds = graph.variable(
@@ -2071,6 +2071,145 @@ extension UNetFixedEncoder {
         conditions.insert(contextScale, at: 6)
       }
       return ([graph.variable(rot)] + conditions, nil)
+    case .qwenImage2_1:
+      let source = textEncoding[0]
+      let imageMask = textEncoding[1].rawValue.toCPU()
+      let sourceLength = source.shape[1]
+      var segments = [QwenImage2_1Segment]()
+      var textRanges = [Range<Int>]()
+      var cursor = 0
+      var textOffset = 0
+      var imageOffset = 0
+      for image in referenceImages {
+        let start = (cursor..<sourceLength).first { imageMask[0, $0, 0] > 0 }!
+        if start > cursor {
+          textRanges.append(cursor..<start)
+          segments.append(.init(image: false, length: start - cursor, sourceOffset: textOffset))
+          textOffset += start - cursor
+        }
+        let h = image.shape[1]
+        let w = image.shape[2]
+        segments.append(
+          .init(image: true, length: h * w, sourceOffset: imageOffset, height: h, width: w))
+        imageOffset += h * w
+        cursor = start + h * w / 4
+      }
+      if cursor < sourceLength {
+        textRanges.append(cursor..<sourceLength)
+        segments.append(
+          .init(image: false, length: sourceLength - cursor, sourceOffset: textOffset))
+        textOffset += sourceLength - cursor
+      }
+      let textLength = textOffset
+      let prefixLength = textLength + imageOffset
+      let targetLength = startHeight * startWidth
+      let branches = isCfgEnabled ? 2 : 1
+      let totalBatch = batchSize * branches
+      let removedSlots = imageOffset / 4
+      let lengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
+      var context = graph.variable(.GPU(0), .HWC(branches, textLength, 4096), of: FloatType.self)
+      var prefixRotary = Tensor<Float>(.CPU, .NHWC(branches, prefixLength, 1, 128))
+      var targetRotary = Tensor<Float>(.CPU, .NHWC(totalBatch, targetLength, 1, 128))
+      for branch in 0..<branches {
+        let padding = sourceLength - lengths[branch]
+        var actualSegments = segments
+        if padding > 0 {
+          let last = actualSegments.count - 1
+          precondition(!actualSegments[last].image && actualSegments[last].length >= padding)
+          actualSegments[last] = .init(
+            image: false, length: actualSegments[last].length - padding,
+            sourceOffset: actualSegments[last].sourceOffset)
+        }
+        actualSegments.append(
+          .init(
+            image: true, length: targetLength, sourceOffset: imageOffset,
+            height: startHeight, width: startWidth))
+        let positions = QwenImage2_1RotaryEmbedding(actualSegments)
+        var offset = 0
+        for range in textRanges {
+          context[branch..<(branch + 1), offset..<(offset + range.count), 0..<4096] =
+            source[(branch * batchSize)..<(branch * batchSize + 1), range, 0..<4096]
+          offset += range.count
+        }
+        for row in 0..<prefixLength {
+          let positionRow = min(row, prefixLength - padding - 1)
+          for channel in 0..<128 {
+            prefixRotary[branch, row, 0, channel] = positions[0, positionRow, 0, channel]
+          }
+        }
+        for sample in 0..<batchSize {
+          let batch = branch * batchSize + sample
+          for row in 0..<targetLength {
+            for channel in 0..<128 {
+              targetRotary[batch, row, 0, channel] =
+                positions[0, prefixLength - padding + row, 0, channel]
+            }
+          }
+        }
+      }
+      precondition(textLength == sourceLength - removedSlots)
+      // Last row is t=0 for the invariant prefix; preceding rows follow the sampling schedule.
+      var times = Tensor<FloatType>(.CPU, .WC(timesteps.count + 1, 256))
+      for (step, timestep) in (timesteps + [0]).enumerated() {
+        let values = timeEmbedding(
+          timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+        for col in 0..<256 { times[step, col] = FloatType(values[0, col]) }
+      }
+      let (_, fixed) = QwenImage2_1Fixed(
+        FloatType.self, batchSize: branches,
+        textLength: textLength, referenceLength: imageOffset, timesteps: timesteps.count,
+        channels: 4096, layers: 32, segments: segments.map { ($0.length, $0.image) },
+        usesFlashAttention: valueOr(usesFlashAttention, .scaleMerged))
+      fixed.maxConcurrency = .limit(4)
+      var inputs: [DynamicGraph.AnyTensor] = [
+        context, graph.variable(times.toGPU(0)),
+        graph.variable(prefixRotary.toGPU(0)),
+      ]
+      if usesFlashAttention == .none {
+        inputs.append(
+          graph.variable(Tensor<FloatType>(from: QwenImage2_1AttentionMask(segments)).toGPU(0)))
+      }
+      if !referenceImages.isEmpty {
+        let images = referenceImages.map { $0.reshaped(.WC($0.shape[1] * $0.shape[2], 64)) }
+        inputs.append(
+          images.count == 1
+            ? images[0] : Concat(axis: 0)(inputs: images[0], Array(images.dropFirst()))[0])
+      }
+      fixed.compile(inputs: inputs)
+      let cacheKey = "\(filePath):[fixed]" + (imageOffset > 0 ? ":ref" : "")
+      if !weightsCache.detach(cacheKey, to: fixed.parameters) {
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          store.read(
+            "dit", model: fixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      let conditions = fixed(inputs: inputs[0], Array(inputs.dropFirst()))
+      precondition(conditions.count == 5 + 2 * 32)
+      weightsCache.attach(cacheKey, from: fixed.parameters)
+      var result: [DynamicGraph.AnyTensor] = [
+        graph.variable(targetRotary.toGPU(0))
+      ]
+      result += conditions.prefix(5)
+      for condition in conditions.dropFirst(5) {
+        let kv = condition.as(of: FloatType.self)
+        if batchSize == 1 {
+          result.append(kv)
+          continue
+        }
+        var expanded = graph.variable(
+          .GPU(0), .NHWC(totalBatch, prefixLength, 32, 128), of: FloatType.self)
+        for branch in 0..<branches {
+          for sample in 0..<batchSize {
+            let batch = branch * batchSize + sample
+            expanded[batch..<(batch + 1), 0..<prefixLength, 0..<32, 0..<128] =
+              kv[branch..<(branch + 1), 0..<prefixLength, 0..<32, 0..<128]
+          }
+        }
+        result.append(expanded)
+      }
+      return (result, nil)
     case .qwenImage:
       let c0 = textEncoding[0]
       let qwen25Length = c0.shape[1]

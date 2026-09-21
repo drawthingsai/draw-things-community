@@ -419,6 +419,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (HiDream I1)"
     case .hiDreamO1:
       return " (HiDream O1)"
+    case .qwenImage2_1:
+      return " (Qwen Image 2.1)"
     case .qwenImage:
       return " (Qwen Image)"
     case .wan22_5b:

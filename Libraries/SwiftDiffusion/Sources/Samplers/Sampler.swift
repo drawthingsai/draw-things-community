@@ -22,6 +22,7 @@ public enum ModelVersion: String, Codable {
   case hiDreamI1 = "hidream_i1"
   case hiDreamO1 = "hidream_o1"
   case qwenImage = "qwen_image"
+  case qwenImage2_1 = "qwen_image_2.1"
   case wan22_5b = "wan_v2.2_5b"
   case zImage = "z_image"
   case ernieImage = "ernie_image"
@@ -533,9 +534,8 @@ public struct CfgZeroStarConfiguration {
 func isBatchEnabled(_ version: ModelVersion) -> Bool {
   switch version {
   case .auraflow, .flux1, .hiDreamI1, .hiDreamO1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
-    .sdxlRefiner, .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .qwenImage, .zImage,
-    .ernieImage,
-    .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2:
+    .sdxlRefiner, .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .qwenImage, .qwenImage2_1,
+    .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2:
     return true
   case .hunyuanVideo, .svdI2v, .wan21_14b, .wan21_1_3b, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
     .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3:

@@ -20,11 +20,11 @@ public struct TeaCacheConfiguration {
     case .minimaxH3:
       // The retained model contains only blocks 1–49 and the output heads.
       return threshold > 0 ? ":[teacache]" : ""
-    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
-      .wurstchenStageC, .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large,
-      .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
-      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
+      .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+      .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       return ""
     }
   }
@@ -79,11 +79,11 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       if let inferModel {
         body(inferModel, store)
       }
-    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v,
-      .wurstchenStageC, .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large,
-      .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b,
-      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
+    case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
+      .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+      .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       break
     }
   }
@@ -134,8 +134,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       return false
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-      .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+      .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
       .longcatVideoAvatar1_5:
       guard inferModel == nil else { fatalError() }
     case .hunyuanVideo:
@@ -213,10 +213,9 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       reducedModel.compile(
         inputs: [placeholder, inputs[3]] + Array(inputs.suffix(4)) + [placeholder])
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage, .wan22_5b, .zImage,
-      .ernieImage,
-      .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-      .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage, .qwenImage2_1, .wan22_5b,
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+      .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5:
       fatalError()
     case .hunyuanVideo:
       if let inferModel = inferModel {
@@ -284,10 +283,9 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
       inputs = [restInputs[0]] + Array(restInputs.suffix(4)) + [lastResidual]
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-      .hiDreamI1, .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b,
-      .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
-      .longcatVideoAvatar1_5:
+      .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
+      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
+      .seedvr2_7b, .longcatVideoAvatar1_5:
       inputs = [lastResidual, restInputs[restInputs.count - 2], restInputs[restInputs.count - 1]]
     case .flux1:
       let shift: DynamicGraph.AnyTensor = restInputs[

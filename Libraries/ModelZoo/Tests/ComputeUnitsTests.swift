@@ -137,7 +137,7 @@ final class ComputeUnitsTests: XCTestCase {
       return 2.84465488969
     case .hiDreamO1:
       return 2.84465488969
-    case .qwenImage:
+    case .qwenImage, .qwenImage2_1:
       return 2.84465488969
     case .zImage:
       return 1.176470588
@@ -187,10 +187,9 @@ final class ComputeUnitsTests: XCTestCase {
     var root = Double(Int(configuration.startWidth) * 64 * Int(configuration.startHeight) * 64)
     switch version {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
-      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large,
-      .flux1, .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .cosmos2_5_2b, .hiDreamI1, .hiDreamO1, .seedvr2_3b, .seedvr2_7b, .ideogram4,
-      .krea2:
+      .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .qwenImage2_1,
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1, .hiDreamO1,
+      .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels
       numFrames = 1
     case .svdI2v:
@@ -256,7 +255,7 @@ final class ComputeUnitsTests: XCTestCase {
       return 512
     case .hunyuanVideo:
       return 256
-    case .qwenImage, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
+    case .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
       return 512
     case .krea2:
       return 256
@@ -499,6 +498,26 @@ final class ComputeUnitsTests: XCTestCase {
         let fixedEstimate = Double(fixedCount) * Self.instructionCalibrationScale
         XCTAssertEqual(estimate, Int((mainEstimate + fixedEstimate).rounded(.up)))
       }
+    }
+  }
+
+  func testQwenImage2_1PrefixWorkIsSharedAcrossImageBatch() throws {
+    let modelName = "test-qwen-image-2.1-fixed"
+    let overrideMapping = mapping(modelName: modelName, version: .qwenImage2_1)
+    for steps: UInt32 in [1, 40] {
+      let config = configuration(modelName: modelName, width: 8, height: 8, steps: steps)
+      let single = try XCTUnwrap(
+        ComputeUnits.from(
+          config, hasImage: true, shuffleCount: 0,
+          overrideMapping: overrideMapping))
+      let batchConfig = configuration(
+        modelName: modelName, width: 8, height: 8, steps: steps, batchSize: 2)
+      let batch = try XCTUnwrap(
+        ComputeUnits.from(
+          batchConfig, hasImage: true, shuffleCount: 0,
+          overrideMapping: overrideMapping))
+      XCTAssertGreaterThan(batch, single)
+      XCTAssertLessThan(batch, 2 * single)
     }
   }
 

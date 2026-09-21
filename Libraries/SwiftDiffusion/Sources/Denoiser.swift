@@ -21,10 +21,15 @@ public enum Denoiser {
       public var sigmaMin: Double
       public var sigmaMax: Double
       public var conditionScale: Double
-      public init(sigmaMin: Double = 0, sigmaMax: Double = 1, conditionScale: Double = 1000) {
+      public var shiftTerminal: Double?
+      public init(
+        sigmaMin: Double = 0, sigmaMax: Double = 1, conditionScale: Double = 1000,
+        shiftTerminal: Double? = nil
+      ) {
         self.sigmaMin = sigmaMin
         self.sigmaMax = sigmaMax
         self.conditionScale = conditionScale
+        self.shiftTerminal = shiftTerminal
       }
     }
     public struct EDM: Codable {
@@ -451,7 +456,10 @@ extension Denoiser {
           case .linspace:
             // This schedule is the same for Euler A.
             timestep =
-              Double(steps - 1 - i) / Double(steps - 1) * RFParameterization.conditionScale
+              (RFParameterization.shiftTerminal != nil
+                ? Double(steps - i) / Double(steps)
+                : Double(steps - 1 - i) / Double(steps - 1))
+              * RFParameterization.conditionScale
           case .leading:
             // This is for DDIM the same as original stable diffusion paper.
             timestep = Double(steps - 1 - i) / Double(steps) * RFParameterization.conditionScale + 1
@@ -464,6 +472,12 @@ extension Denoiser {
             sigma = shift * sigma / (1 + (shift - 1) * sigma)
           }
           fixedStepAlphasCumprod.append(1.0 - sigma)
+        }
+        if let terminal = RFParameterization.shiftTerminal, let last = fixedStepAlphasCumprod.last,
+          last > 0
+        {
+          let scale = last / (1 - terminal)
+          fixedStepAlphasCumprod = fixedStepAlphasCumprod.map { $0 / scale }
         }
         fixedStepAlphasCumprod.append(1.0)
         return fixedStepAlphasCumprod
