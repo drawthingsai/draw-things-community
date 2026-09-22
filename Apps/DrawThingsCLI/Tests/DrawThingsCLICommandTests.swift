@@ -37,6 +37,11 @@ struct DrawThingsCLICommandTests {
       free(session)
     }
     try expectEqual(ios_registerCommand("draw-things-cli", draw_things_main), 1)
+    for command in ["draw-things-cli", "/usr/bin/draw-things-cli"] {
+      try expectEqual(
+        command.withCString { ios_commandIsExclusiveOrThreadSafe($0) },
+        IOS_COMMAND_ISOLATION_EXCLUSIVE_DRAW_THINGS)
+    }
     var resolutionCount = 0
     var unloadCount = 0
     var downloadStarts = 0
