@@ -14,6 +14,21 @@ swift_library(
 )
 
 swift_test(
+    name = "QwenImage2_1LoRATests",
+    srcs = ["Tests/QwenImage2_1LoRATests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":ModelOp",
+        "//Libraries/ModelZoo",
+        "//Libraries/SwiftDiffusion",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
     name = "MiniMaxH3LoRATests",
     srcs = ["Tests/MiniMaxH3LoRATests.swift"],
     tags = [

@@ -166,8 +166,16 @@ public enum LoRAImporter {
         usesFlashAttention: .scale1, outputResidual: false, inputResidual: false)
       (unetFixed, unetFixedMapper) = HiDreamFixed(
         timesteps: 1, layers: (16, 32), outputTimesteps: false)
-    case .hiDreamO1, .qwenImage2_1:
+    case .hiDreamO1:
       fatalError()
+    case .qwenImage2_1:
+      (unetMapper, unet) = QwenImage2_1(
+        FloatType.self, batchSize: 1, height: 64, width: 64, prefixLength: 132,
+        channels: 4096, layers: 32, usesFlashAttention: .scaleMerged)
+      (unetFixedMapper, unetFixed) = QwenImage2_1Fixed(
+        FloatType.self, batchSize: 1, textLength: 128, referenceLength: 4, timesteps: 1,
+        channels: 4096, layers: 32, segments: [(128, false), (4, true)],
+        usesFlashAttention: .scaleMerged)
     case .qwenImage:
       (unetMapper, unet) = QwenImage(
         batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
@@ -314,8 +322,11 @@ public enum LoRAImporter {
       case .hiDreamI1:
         inputDim = 16
         conditionalLength = 4096
-      case .hiDreamO1, .qwenImage2_1:
+      case .hiDreamO1:
         fatalError()
+      case .qwenImage2_1:
+        inputDim = 64
+        conditionalLength = 4096
       case .qwenImage:
         inputDim = 16
         conditionalLength = 3854
@@ -454,8 +465,18 @@ public enum LoRAImporter {
             graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self)  // Llama encoder hidden states.
           }
         tEmb = nil
-      case .hiDreamO1, .qwenImage2_1:
+      case .hiDreamO1:
         fatalError()
+      case .qwenImage2_1:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(2, 256), of: FloatType.self),
+          graph.variable(.CPU, .NHWC(1, 132, 1, 128), of: FloatType.self),
+          graph.variable(.CPU, .WC(4, 64), of: FloatType.self),
+        ]
+        tEmb = nil
       case .qwenImage:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = false
@@ -843,8 +864,15 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .hiDreamO1, .qwenImage2_1:
+      case .hiDreamO1:
         fatalError()
+      case .qwenImage2_1:
+        cArr =
+          [graph.variable(.CPU, .NHWC(1, 64 * 64, 1, 128), of: FloatType.self)]
+          + (0..<5).map { _ in graph.variable(.CPU, .WC(1, 4096), of: FloatType.self) }
+          + (0..<64).map { _ in
+            graph.variable(.CPU, .NHWC(1, 132, 32, 128), of: FloatType.self)
+          }
       case .qwenImage:
         cArr =
           [
@@ -1417,6 +1445,14 @@ public enum LoRAImporter {
       }
       if isMiniMaxH3 {
         return forceVersionOr(.minimaxH3)
+      }
+      let isQwenImage2_1 = stateDict.contains { key, descriptor in
+        descriptor.shape.last == 4096 && key.hasSuffix(".lora_down.weight")
+          && (key.contains("transformer_blocks_31_attn_to_")
+            || key.contains("transformer_blocks_31_img_mlp_"))
+      }
+      if isQwenImage2_1 {
+        return forceVersionOr(.qwenImage2_1)
       }
       if isErnieImage {
         return forceVersionOr(.ernieImage)

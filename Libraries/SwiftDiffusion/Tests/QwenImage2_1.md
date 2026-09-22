@@ -106,3 +106,35 @@ To include VAE parity in the checkpoint test, add:
 ```sh
 --test_env=QWEN_IMAGE_2_1_VAE_CHECKPOINT=/path/to/qwen_image_2.1_vae_f16.ckpt
 ```
+
+## LoRA import and inference
+
+`LoRAQwenImage2_1` and `LoRAQwenImage2_1Fixed` retain the original builders' parameter names and attention paths. Both use the same transformer-layer indices for attention and MLP projections. The fixed encoder applies adapters before computing the prefix K/V and timestep tables. It supports merged weights and separate LoRA execution using the same selection and loading policy as Flux2.
+
+The importer recognizes 4096-wide layer-31 Qwen 2.1 attention / MLP adapters and uses the existing PEFT, Diffusers, and flattened-name normalization. Partial adapters that lack the identification layers can use `--version qwen_image_2.1`. Packed `modulation.1` adapters split into four projections with the existing alpha/rank scaling; shared fixed/main projections retain one checkpoint key.
+
+Published adapters used for validation on 2026-09-21:
+
+- [Anime consistency](https://huggingface.co/WarmBloodAban/Qwen-Image-2.1-LoRAs/tree/90abd1e7f590fc8ba052e0d2e6de9dc01730e260): `Qwen2.1_Anime_consistency.safetensors`, rank 32, 448 BF16 tensors covering all 32 layers' attention and MLP projections. SHA-256: `0c171eb802ea8051b511f2d93c1743eeadd030316255aa98fa65d40809366752`.
+- [Stop-motion consistency](https://huggingface.co/ProCreations/stopmotion-consistency-v1-lora/tree/700ec417de23c1ca75a1dc96ffb4cc3999632b16): `stopmotion-consistency-v1.safetensors`, rank 16, 256 FP32 tensors covering all 32 layers' attention projections. SHA-256: `d68479ed2c246bc7ebea8a62019b10da903772d30854385302b2d66de99df51a`.
+
+Both use `.lora_A.default.weight` / `.lora_B.default.weight` and import without a forced version. No verified Qwen Image 2.1 Turbo / Lightning adapter was found during this search; older Qwen Image / 2512 distilled adapters are not compatible with this architecture.
+
+```sh
+bazel test //Libraries/ModelOp:QwenImage2_1LoRATests \
+  --test_env=QWEN_IMAGE_2_1_CHECKPOINT=/path/to/qwen_image_2.1_f16.ckpt \
+  --test_env=QWEN_IMAGE_2_1_LORA=/path/to/Qwen2.1_Anime_consistency.safetensors \
+  --test_output=all
+```
+
+The synthetic import test verifies shared input/output and timestep projections, non-unit alpha/rank scaling, and packed modulation splitting. The checkpoint test checks that every published adapter projection is imported, compares merged versus separate execution for first/last prefix keys and the final denoiser output, checks finite outputs, and confirms that the adapter changes the base result.
+
+With the anime adapter at weight 0.75, all 224 projection pairs imported. Merged versus separate FP16 inference had relative RMS errors of 0.058% for the first prefix keys, 1.179% for the final prefix keys, and 0.287% for the denoiser output, within the test's 2% budget. Both tests passed, as did the LoRAConverter, optimized CLI, and full arm64 iOS app builds.
+
+The normal CLI also completed a 40-step, seed-42, 512x512 reference edit with the anime adapter at weight 0.6. The red apple became green while retaining its leaf, outline, and transparency; the RGBA output's alpha spans 0–255. A preceding attempt at weight 0.75 to turn the apple into an anime character mostly retained the original apple, so that run establishes execution rather than style-transfer quality. These are integration checks, not a quality benchmark for this experimental character-consistency adapter.
+
+For an imported adapter outside `custom_lora.json`, pass its version with the CLI override:
+
+```sh
+--config-json '{"loras":[{"file":"qwen_image_2.1_anime_consistency_lora_f16.ckpt","weight":0.6,"version":"qwen_image_2.1"}]}'
+```

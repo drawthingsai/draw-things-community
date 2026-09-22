@@ -1653,14 +1653,34 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 4, startHeight) : startHeight
       tiledAudioHeight = 0
       tileScaleFactor = 4
-      unet = .modelBuilder(
-        ModelBuilder { inputs in
-          QwenImage2_1(
-            FloatType.self, batchSize: inputs[0].shape[0],
-            height: inputs[0].shape[1], width: inputs[0].shape[2], prefixLength: inputs[7].shape[1],
-            channels: 4096, layers: 32, usesFlashAttention: valueOr(useFlashAttention, .scaleMerged)
-          ).1
-        })
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        unet = .modelBuilder(
+          ModelBuilder { inputs in
+            LoRAQwenImage2_1(
+              FloatType.self, batchSize: inputs[0].shape[0],
+              height: inputs[0].shape[1], width: inputs[0].shape[2],
+              prefixLength: inputs[7].shape[1],
+              channels: 4096, layers: 32,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
+              LoRAConfiguration: configuration
+            ).1
+          })
+      } else {
+        unet = .modelBuilder(
+          ModelBuilder { inputs in
+            QwenImage2_1(
+              FloatType.self, batchSize: inputs[0].shape[0],
+              height: inputs[0].shape[1], width: inputs[0].shape[2],
+              prefixLength: inputs[7].shape[1],
+              channels: 4096, layers: 32,
+              usesFlashAttention: valueOr(useFlashAttention, .scaleMerged)
+            ).1
+          })
+      }
     case .qwenImage:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
