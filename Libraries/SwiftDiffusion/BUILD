@@ -193,6 +193,7 @@ swift_test(
     deps = [
         ":Mappings",
         ":SwiftDiffusion",
+        "//Libraries/WeightsCache",
         "@s4nnc//nnc",
     ],
 )

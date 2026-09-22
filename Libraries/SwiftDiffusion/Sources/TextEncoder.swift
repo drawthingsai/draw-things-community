@@ -2128,11 +2128,15 @@ extension TextEncoder {
     tokenLengthUncond: inout Int, tokenLengthCond: inout Int
   ) -> ([DynamicGraph.Tensor<FloatType>], [Model]) {
     let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity < .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     let originalLength = tokens[0].shape[0] / 2
-    let tokenIDs = tokens[0].rawValue.toCPU()
+    var tokens = tokens
+    var tokenLength = originalLength
     // Drop exactly the system message, including the newline following im_end.
-    let drop = (0..<originalLength).first { tokenIDs[originalLength + $0] == 151_645 }! + 2
-    let starts = (0..<tokenLengthCond).filter { tokenIDs[originalLength + $0] == 151_655 }
+    let drop = (0..<originalLength).first { tokens[0][originalLength + $0] == 151_645 }! + 2
+    let starts = (0..<tokenLengthCond).filter { tokens[0][originalLength + $0] == 151_655 }
     precondition(starts.count == images.count)
     let configuration = Qwen3_5VisionConfiguration(
       hiddenSize: 1152, intermediateSize: 4304, outputHiddenSize: 4096, layers: 27)
@@ -2156,7 +2160,7 @@ extension TextEncoder {
       patches.append(graph.variable(patch.toGPU(0)))
     }
     var features = [DynamicGraph.Tensor<FloatType>]()
-    let codec: DynamicGraph.Store.Codec = [.jit, .q8p, .q6p, .ezm7, .i8x, .externalData]
+    let codec: DynamicGraph.Store.Codec = [.jit, .q8p, .q6p, .ezm7, .i8x, externalData]
     if !grids.isEmpty {
       let rotary = graph.variable(
         Qwen3_5VisionRotaryEmbedding(
@@ -2171,6 +2175,7 @@ extension TextEncoder {
         Float.self, gridThw: grids, configuration: configuration,
         deepStackLayers: [8, 16, 24], attentionDataType: .Float16)
       vision.maxConcurrency = .limit(1)
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
       graph.openStore(
         filePaths[0], flags: .readOnly,
         externalStore: TensorData.externalStore(filePath: filePaths[0])
@@ -2181,118 +2186,166 @@ extension TextEncoder {
             weight: positionWeight, gridThw: grids, configuration: configuration, of: Float.self
           ).toGPU(0))
         vision.compile(inputs: patch, positions, rotary, offsets)
-        // The converted Qwen3-VL checkpoint uses the same short names as H3's vision tower.
-        var names = [String: String]()
-        for parameter in 0..<2 {
-          names["__vision_model__[t-model.visual.patch_embed.proj-0-\(parameter)]"] =
-            "__vision_model__[t-conv_in-0-\(parameter)]"
-          for layer in 0..<27 {
+        if !weightsCache.detach("\(filePaths[0]):[vision_model]", to: vision.parameters) {
+          // The converted Qwen3-VL checkpoint uses the same short names as H3's vision tower.
+          var names = [String: String]()
+          for parameter in 0..<2 {
+            names["__vision_model__[t-model.visual.patch_embed.proj-0-\(parameter)]"] =
+              "__vision_model__[t-conv_in-0-\(parameter)]"
+            for layer in 0..<27 {
+              for (source, target) in [
+                ("attn.q_proj", "q_proj"), ("attn.k_proj", "k_proj"),
+                ("attn.v_proj", "v_proj"), ("attn.proj", "out_proj"),
+                ("norm1", "norm1"), ("norm2", "norm2"),
+                ("mlp.linear_fc1", "mlp_fc1"), ("mlp.linear_fc2", "mlp_fc2"),
+              ] {
+                names["__vision_model__[t-model.visual.blocks.\(layer).\(source)-0-\(parameter)]"] =
+                  "__vision_model__[t-\(target)-\(layer)-\(parameter)]"
+              }
+            }
             for (source, target) in [
-              ("attn.q_proj", "q_proj"), ("attn.k_proj", "k_proj"),
-              ("attn.v_proj", "v_proj"), ("attn.proj", "out_proj"),
-              ("norm1", "norm1"), ("norm2", "norm2"),
-              ("mlp.linear_fc1", "mlp_fc1"), ("mlp.linear_fc2", "mlp_fc2"),
+              ("norm", "norm_out"), ("linear_fc1", "merger_mlp_0"),
+              ("linear_fc2", "merger_mlp_1"),
             ] {
-              names["__vision_model__[t-model.visual.blocks.\(layer).\(source)-0-\(parameter)]"] =
-                "__vision_model__[t-\(target)-\(layer)-\(parameter)]"
+              names["__vision_model__[t-model.visual.merger.\(source)-0-\(parameter)]"] =
+                "__vision_model__[t-\(target)-0-\(parameter)]"
+            }
+            for layer in 0..<3 {
+              for (source, target) in [
+                ("norm", "norm"), ("linear_fc1", "mlp_0"), ("linear_fc2", "mlp_1"),
+              ] {
+                names[
+                  "__vision_model__[t-model.visual.deepstack_merger_list.\(layer).\(source)-0-\(parameter)]"
+                ] =
+                  "__vision_model__[t-deepstack_\(layer)_\(target)-0-\(parameter)]"
+              }
             }
           }
-          for (source, target) in [
-            ("norm", "norm_out"), ("linear_fc1", "merger_mlp_0"),
-            ("linear_fc2", "merger_mlp_1"),
-          ] {
-            names["__vision_model__[t-model.visual.merger.\(source)-0-\(parameter)]"] =
-              "__vision_model__[t-\(target)-0-\(parameter)]"
+          store.read("vision_model", model: vision, codec: codec) { name, _, _, _ in
+            return .continue(names[name] ?? name)
           }
-          for layer in 0..<3 {
-            for (source, target) in [
-              ("norm", "norm"), ("linear_fc1", "mlp_0"), ("linear_fc2", "mlp_1"),
-            ] {
-              names[
-                "__vision_model__[t-model.visual.deepstack_merger_list.\(layer).\(source)-0-\(parameter)]"
-              ] =
-                "__vision_model__[t-deepstack_\(layer)_\(target)-0-\(parameter)]"
-            }
-          }
-        }
-        store.read("vision_model", model: vision, codec: codec) { name, _, _, _ in
-          return .continue(names[name] ?? name)
         }
         features = vision(inputs: patch, positions, rotary, offsets).map {
           DynamicGraph.Tensor<FloatType>(from: $0)
         }
+        weightsCache.attach("\(filePaths[0]):[vision_model]", from: vision.parameters)
       }
     }
     let expansion = grids.reduce(0) { $0 + $1.h * $1.w / 4 - 1 }
-    let lengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
-    let length = lengths.max()! + expansion
-    let batchSize = lengths.count
-    let model = Qwen3(
+    let length =
+      (isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond) + expansion
+    let textModel = Qwen3(
       FloatType.self, vocabularySize: 151936, width: 4096, tokenLength: length,
       layers: 36, MLP: 12288, heads: 32, outputHiddenStates: [35],
       noFinalNormalizedOutput: true, batchSize: 1, usesFlashAttention: usesFlashAttention,
       injectEmbeddings: !grids.isEmpty, deepStackLayers: grids.isEmpty ? 0 : 3)
-    model.maxConcurrency = .limit(1)
+    textModel.maxConcurrency = .limit(1)
     var spans = [(start: Int, height: Int, width: Int)]()
     var offset = 0
     for (start, grid) in zip(starts, grids) {
       spans.append((start + offset, grid.h / 2, grid.w / 2))
       offset += grid.h * grid.w / 4 - 1
     }
-    var context = graph.variable(.GPU(0), .HWC(batchSize, length - drop, 4096), of: FloatType.self)
-    for (batch, validLength) in lengths.enumerated() {
-      let source = (isCfgEnabled ? batch : 1) * originalLength
-      var ids = [Int32]()
+    if !grids.isEmpty {
+      var token = Tensor<Int32>(
+        Array(repeating: 151_643, count: length * 2), kind: .CPU, format: .NHWC,
+        shape: [length * 2])
+      if isCfgEnabled {
+        var offset = 0
+        var imageIndex = 0
+        for i in 0..<tokenLengthUncond {
+          let id = tokens[0][i]
+          if id == 151_655 {
+            let count = grids[imageIndex].h * grids[imageIndex].w / 4
+            for j in 0..<count {
+              token[offset + j] = id
+            }
+            offset += count
+            imageIndex += 1
+          } else {
+            token[offset] = id
+            offset += 1
+          }
+        }
+      }
+      var offset = length
       var imageIndex = 0
-      for i in 0..<validLength {
-        let id = tokenIDs[source + i]
+      for i in 0..<tokenLengthCond {
+        let id = tokens[0][originalLength + i]
         if id == 151_655 {
-          ids += Array(repeating: id, count: grids[imageIndex].h * grids[imageIndex].w / 4)
+          let count = grids[imageIndex].h * grids[imageIndex].w / 4
+          for j in 0..<count {
+            token[offset + j] = id
+          }
+          offset += count
           imageIndex += 1
         } else {
-          ids.append(id)
+          token[offset] = id
+          offset += 1
         }
       }
-      ids += Array(repeating: 151_643, count: length - ids.count)
-      let input = graph.variable(
-        Tensor<Int32>(ids, kind: .CPU, format: .NHWC, shape: [length]).toGPU(0))
-      let rotary = graph.variable(
-        QwenVLRotaryEmbedding(sequenceLength: length, images: spans, of: FloatType.self).toGPU(0))
-      var mask = Tensor<FloatType>(
-        Array(repeating: 0, count: length * length), .CPU, .NHWC(1, 1, length, length))
-      for row in 0..<length {
-        for col in (row + 1)..<length { mask[0, 0, row, col] = -FloatType.greatestFiniteMagnitude }
-      }
-      var inputs: [DynamicGraph.AnyTensor] = [input, rotary, graph.variable(mask.toGPU(0))]
-      if !grids.isEmpty {
-        var tokenMask = Tensor<FloatType>(Array(repeating: 1, count: length), .CPU, .WC(length, 1))
-        for span in spans {
-          for row in span.start..<(span.start + span.height * span.width) { tokenMask[row, 0] = 0 }
-        }
-        inputs.append(graph.variable(tokenMask.toGPU(0)))
-        for feature in features {
-          var injected = graph.variable(.GPU(0), .WC(length, 4096), of: FloatType.self)
-          injected.full(0)
-          var start = 0
-          for span in spans {
-            let count = span.height * span.width
-            injected[span.start..<(span.start + count), 0..<4096] =
-              feature[start..<(start + count), 0..<4096]
-            start += count
-          }
-          inputs.append(injected)
-        }
-      }
-      if batch == 0 {
-        model.compile(inputs: inputs)
-        graph.openStore(filePaths[0], flags: .readOnly) {
-          $0.read("text_model", model: model, codec: codec)
-        }
-      }
-      let output = model(inputs: input, Array(inputs.dropFirst()))[0].as(of: FloatType.self)
-      context[batch..<(batch + 1), 0..<(length - drop), 0..<4096] = output[drop..<length, 0..<4096]
-        .copied().reshaped(.HWC(1, length - drop, 4096))
+      tokens[0] = graph.variable(token)
+      tokenLength = length
     }
+    let tokensTensorGPUCond = tokens[0][tokenLength..<(tokenLength + length)].toGPU(0)
+    let rotaryTensorGPU = graph.variable(
+      QwenVLRotaryEmbedding(sequenceLength: length, images: spans, of: FloatType.self).toGPU(0))
+    var causalAttentionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: length * length), .CPU, .NHWC(1, 1, length, length))
+    for i in 0..<(length - 1) {
+      for j in (i + 1)..<length {
+        causalAttentionMask[0, 0, i, j] = -FloatType.greatestFiniteMagnitude
+      }
+    }
+    let causalAttentionMaskGPU = graph.variable(causalAttentionMask.toGPU(0))
+    var injectedEmbeddings = [DynamicGraph.Tensor<FloatType>]()
+    if !grids.isEmpty {
+      var tokenMask = Tensor<FloatType>(Array(repeating: 1, count: length), .CPU, .WC(length, 1))
+      for span in spans {
+        for row in span.start..<(span.start + span.height * span.width) { tokenMask[row, 0] = 0 }
+      }
+      injectedEmbeddings.append(graph.variable(tokenMask.toGPU(0)))
+      for feature in features {
+        var injected = graph.variable(.GPU(0), .WC(length, 4096), of: FloatType.self)
+        injected.full(0)
+        var start = 0
+        for span in spans {
+          let count = span.height * span.width
+          injected[span.start..<(span.start + count), 0..<4096] =
+            feature[start..<(start + count), 0..<4096]
+          start += count
+        }
+        injectedEmbeddings.append(injected)
+      }
+    }
+    textModel.compile(
+      inputs: [tokensTensorGPUCond, rotaryTensorGPU, causalAttentionMaskGPU] + injectedEmbeddings)
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read("text_model", model: textModel, codec: codec)
+      }
+    }
+    let cCond = textModel(
+      inputs: tokensTensorGPUCond, [rotaryTensorGPU, causalAttentionMaskGPU] + injectedEmbeddings
+    )[0].as(of: FloatType.self)[drop..<length, 0..<4096].copied().reshaped(
+      .HWC(1, length - drop, 4096))
+    let context: DynamicGraph.Tensor<FloatType>
+    if isCfgEnabled {
+      let tokensTensorGPUUncond = tokens[0][0..<length].toGPU(0)
+      let cUncond = textModel(
+        inputs: tokensTensorGPUUncond,
+        [rotaryTensorGPU, causalAttentionMaskGPU] + injectedEmbeddings
+      )[0].as(of: FloatType.self)[drop..<length, 0..<4096].copied().reshaped(
+        .HWC(1, length - drop, 4096))
+      context = Functional.concat(axis: 0, cUncond, cCond)
+    } else {
+      context = cCond
+    }
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
     tokenLengthUncond += expansion - drop
     tokenLengthCond += expansion - drop
     var imageMask = Tensor<FloatType>(
@@ -2302,10 +2355,10 @@ extension TextEncoder {
         imageMask[0, row, 0] = 1
       }
     }
-    return ([context, graph.variable(imageMask.toGPU(0))], [model])
+    return ([context, graph.variable(imageMask.toGPU(0))], [textModel])
   }
 
-  private func encodeQwen(
+  private func encodeQwenImage(
     images: [DynamicGraph.Tensor<FloatType>],
     tokens: [DynamicGraph.Tensor<Int32>], positions: [DynamicGraph.Tensor<Int32>],
     mask: [DynamicGraph.Tensor<FloatType>], injectedEmbeddings: [DynamicGraph.Tensor<FloatType>],
@@ -4268,7 +4321,7 @@ extension TextEncoder {
         images: images, tokens: tokens,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond)
     case .qwenImage:
-      return encodeQwen(
+      return encodeQwenImage(
         images: images,
         tokens: tokens, positions: positions, mask: mask, injectedEmbeddings: injectedEmbeddings,
         tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,

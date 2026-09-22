@@ -1,10 +1,155 @@
 import Foundation
 import NNC
+import WeightsCache
 import XCTest
 
 @testable import Diffusion
 
 final class QwenImage2_1Tests: XCTestCase {
+  func testVAEPerformance() throws {
+    guard let path = ProcessInfo.processInfo.environment["QWEN_IMAGE_2_1_VAE_BENCHMARK"] else {
+      throw XCTSkip("Set QWEN_IMAGE_2_1_VAE_BENCHMARK to benchmark the converted VAE checkpoint")
+    }
+    let graph = DynamicGraph()
+    graph.withNoGrad {
+      for size in [512, 1024, 2048] {
+        for decode in [false, true] {
+          for flash in [false, true] {
+            let input = graph.variable(
+              .GPU(0),
+              decode ? .NHWC(1, size / 16, size / 16, 64) : .NHWC(1, size, size, 4),
+              of: Float16.self)
+            input.full(0.25)
+            print("VAE_BENCH_START size=\(size) decode=\(decode) flash=\(flash)")
+            fflush(stdout)
+            let buildStart = Date.timeIntervalSinceReferenceDate
+            let model =
+              decode
+              ? QwenImage2_1Decoder(
+                channels: [1152, 1152, 576, 288, 144], height: size / 16, width: size / 16,
+                usesFlashAttention: flash)
+              : QwenImage2_1Encoder(
+                channels: [96, 192, 384, 768, 768], height: size, width: size,
+                usesFlashAttention: flash)
+            model.maxConcurrency = .limit(1)
+            model.compile(inputs: input)
+            let buildTime = Date.timeIntervalSinceReferenceDate - buildStart
+            let loadStart = Date.timeIntervalSinceReferenceDate
+            graph.openStore(
+              path, flags: .readOnly, externalStore: TensorData.externalStore(filePath: path)
+            ) {
+              try! $0.read(
+                decode ? "decoder" : "encoder", model: model, strict: true,
+                codec: [.jit, .externalData(.mmap)])
+            }
+            let loadTime = Date.timeIntervalSinceReferenceDate - loadStart
+            var times = [Double]()
+            var output: Tensor<Float16>?
+            for _ in 0..<4 {
+              let start = Date.timeIntervalSinceReferenceDate
+              output = model(inputs: input)[0].as(of: Float16.self).rawValue.toCPU()
+              times.append(Date.timeIntervalSinceReferenceDate - start)
+            }
+            var nonfinite = 0
+            output!.withUnsafeBytes { bytes in
+              for value in bytes.bindMemory(to: Float16.self) {
+                if !value.isFinite { nonfinite += 1 }
+              }
+            }
+            print(
+              "VAE_BENCH size=\(size) decode=\(decode) flash=\(flash) build=\(buildTime) load=\(loadTime) first=\(times[0]) warm=\(Array(times.dropFirst())) nonfinite=\(nonfinite)"
+            )
+            fflush(stdout)
+            XCTAssertEqual(nonfinite, 0)
+          }
+        }
+      }
+    }
+  }
+
+  func testTextEncoderWeightsCacheAndCFG() throws {
+    guard let path = ProcessInfo.processInfo.environment["QWEN_IMAGE_2_1_TEXT_CHECKPOINT"] else {
+      throw XCTSkip("Set QWEN_IMAGE_2_1_TEXT_CHECKPOINT to the converted Qwen3-VL checkpoint")
+    }
+    let graph = DynamicGraph()
+    graph.withNoGrad {
+      let cache = WeightsCache(maxTotalCacheSize: 32 * 1024 * 1024 * 1024, memorySubsystem: .UMA)
+      let noCache = WeightsCache(maxTotalCacheSize: 0, memorySubsystem: .UMA)
+      for hasImage in [false, true] {
+        let prefix: [Int32] =
+          [151_644, 8_948, 198, 8_948, 151_645, 198, 151_644, 872, 198]
+          + (hasImage ? [151_652, 151_655, 151_653] : [])
+        let uncond = prefix + [1_000, 151_645, 198]
+        let cond = prefix + [2_000, 3_000, 4_000, 151_645, 198]
+        let tokenLength = cond.count
+        let tokens = graph.variable(
+          Tensor<Int32>(
+            uncond + Array(repeating: 151_643, count: tokenLength - uncond.count) + cond,
+            kind: .CPU, format: .NHWC, shape: [2 * tokenLength]))
+        let image = graph.variable(.GPU(0), .NHWC(1, 32, 32, 3), of: Float16.self)
+        image.full(0.25)
+        func encode(_ weightsCache: WeightsCache, cfg: Bool) -> [Tensor<Float16>] {
+          let encoder = TextEncoder<Float16>(
+            filePaths: [path], version: .qwenImage2_1, textEncoderVersion: nil,
+            isCfgEnabled: cfg, usesFlashAttention: true, injectEmbeddings: false,
+            externalOnDemand: false,
+            deviceProperties: .init(
+              isFreadPreferred: true, memoryCapacity: .high, isNHWCPreferred: true,
+              cacheUri: URL(fileURLWithPath: NSTemporaryDirectory()),
+              isPartialOffloadPreferred: false),
+            weightsCache: weightsCache)
+          var tokenLengthUncond = uncond.count
+          var tokenLengthCond = cond.count
+          let result = encoder.encode(
+            tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond,
+            tokens: [tokens], positions: [], mask: [], injectedEmbeddings: [],
+            images: hasImage ? [image] : [], lengthsOfUncond: [uncond.count],
+            lengthsOfCond: [cond.count], injectedTextEmbeddings: [], modifier: .kontext,
+            textModels: [])
+          let expansion = hasImage ? 1023 : 0
+          XCTAssertEqual(tokenLengthUncond, uncond.count + expansion - 6)
+          XCTAssertEqual(tokenLengthCond, cond.count + expansion - 6)
+          XCTAssertEqual(Array(result.0[0].shape), [cfg ? 2 : 1, tokenLengthCond, 4096])
+          return result.0.map { $0.rawValue.toCPU() }
+        }
+        let reference = encode(noCache, cfg: true)
+        for cfg in [true, true, false] {
+          let actual = encode(cache, cfg: cfg)
+          XCTAssertNotNil(cache[path])
+          if hasImage {
+            XCTAssertNotNil(cache["\(path):[vision_model]"])
+          }
+          for index in 0..<actual.count {
+            let expected: Tensor<Float16>
+            if index == 0 && !cfg {
+              expected = reference[0][1..<2, 0..<reference[0].shape[1], 0..<4096].copied()
+            } else {
+              expected = reference[index]
+            }
+            XCTAssertEqual(Array(actual[index].shape), Array(expected.shape))
+            var squaredError: Double = 0
+            var squaredSignal: Double = 0
+            var nonfinite = 0
+            actual[index].withUnsafeBytes { actualBytes in
+              expected.withUnsafeBytes { expectedBytes in
+                for (a, b) in zip(
+                  actualBytes.bindMemory(to: Float16.self),
+                  expectedBytes.bindMemory(to: Float16.self))
+                {
+                  if !a.isFinite || !b.isFinite { nonfinite += 1 }
+                  squaredError += pow(Double(a) - Double(b), 2)
+                  squaredSignal += pow(Double(b), 2)
+                }
+              }
+            }
+            XCTAssertEqual(nonfinite, 0)
+            XCTAssertLessThan(sqrt(squaredError / max(squaredSignal, 1e-12)), 1e-4)
+          }
+        }
+      }
+    }
+  }
+
   func testDecoderFloat16Range() throws {
     guard let path = ProcessInfo.processInfo.environment["QWEN_IMAGE_2_1_VAE_CHECKPOINT"] else {
       throw XCTSkip("Set QWEN_IMAGE_2_1_VAE_CHECKPOINT to the converted f16 VAE checkpoint")

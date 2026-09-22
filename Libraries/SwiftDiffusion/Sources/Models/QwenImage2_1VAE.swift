@@ -86,20 +86,21 @@ private func NHWCUpsampleShortcut(
   inChannels: Int, outChannels: Int, height: Int, width: Int, temporal: Int
 ) -> Model {
   let x = Input()
-  let repeats = outChannels * temporal * 4 / inChannels
-  let row = x.reshaped([height * width, inChannels, 1])
-  var out = row
-  if repeats > 1 {
-    let concat = Concat(axis: 2)
-    concat.flags = [.disableOpt]
-    out = concat(Array(repeating: row, count: repeats))
+  let out: Model.IO
+  if inChannels == outChannels {
+    out = Upsample(.nearest, widthScale: 2, heightScale: 2)(x)
+  } else if temporal == 2 {
+    // The retained temporal slice contains the odd input channels.
+    let selected = x.reshaped([height * width, outChannels, 2]).reshaped(
+      [height * width, outChannels, 1], offset: [0, 0, 1], strides: [inChannels, 2, 1]
+    ).contiguous().reshaped([1, height, width, outChannels])
+    out = Upsample(.nearest, widthScale: 2, heightScale: 2)(selected)
+  } else {
+    // Each channel pair supplies the top and bottom rows of a spatial 2x2 block.
+    let rows = x.reshaped([height, width, outChannels, 2]).permuted(0, 3, 1, 2)
+      .contiguous().reshaped([1, height * 2, width, outChannels])
+    out = Upsample(.nearest, widthScale: 2, heightScale: 1)(rows)
   }
-  // For a single image, only the last duplicated temporal frame is retained.
-  out = out.reshaped([height * width, outChannels, temporal, 4]).reshaped(
-    [height * width, outChannels, 1, 4], offset: [0, 0, temporal - 1, 0],
-    strides: [outChannels * temporal * 4, temporal * 4, 4, 1]
-  ).contiguous().reshaped([height, width, outChannels, 2, 2]).permuted(0, 3, 1, 4, 2)
-    .contiguous().reshaped([1, height * 2, width * 2, outChannels])
   return Model([x], [out])
 }
 
@@ -204,9 +205,12 @@ public func QwenImage2_1Decoder(
       // The final upsampler and residual stage can exceed FP16 range.
       // Return to input precision after the final normalization.
       if i == channels.count - 2 {
-        out = out.to(.Float32)
+        out =
+          conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out).to(.Float32))
+          + shortcut.to(.Float32)
+      } else {
+        out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut
       }
-      out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut.to(of: out)
       h *= 2
       w *= 2
     }
