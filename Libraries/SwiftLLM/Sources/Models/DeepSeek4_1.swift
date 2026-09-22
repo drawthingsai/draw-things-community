@@ -199,15 +199,10 @@ public func DeepSeek4_1Engram<FloatType: TensorNumeric>(
   let hc = configuration.hcCount
   let embedding = embeddings.reshaped([tokenLength, configuration.engram.embeddingSize])
     .to(FloatType.dataType)
-  let kv = Dense(count: (hc + 1) * hidden, noBias: true, name: "\(prefix).wkv")(
-    embedding
-  ).to(.Float32)
-  let keys = kv.reshaped([tokenLength, hc * hidden], strides: [(hc + 1) * hidden, 1])
-    .contiguous().reshaped([tokenLength, hc, hidden])
-  let value = kv.reshaped(
-    [tokenLength, hidden], offset: [0, hc * hidden],
-    strides: [(hc + 1) * hidden, 1]
-  ).contiguous().reshaped([tokenLength, 1, hidden])
+  let keys = Dense(count: hc * hidden, noBias: true, name: "\(prefix).wk")(embedding)
+    .to(.Float32).reshaped([tokenLength, hc, hidden])
+  let value = Dense(count: hidden, noBias: true, name: "\(prefix).wv")(embedding)
+    .to(.Float32).reshaped([tokenLength, 1, hidden])
   let qWeight = Parameter<Float>(.GPU(0), .WC(hc, hidden), name: "\(prefix).q_weight")
   let kWeight = Parameter<Float>(.GPU(0), .WC(hc, hidden), name: "\(prefix).k_weight")
   let q = RMSNorm(epsilon: configuration.normEpsilon, axis: [2], elementwiseAffine: false)(residual)
@@ -222,12 +217,17 @@ public func DeepSeek4_1Engram<FloatType: TensorNumeric>(
 /// combination matrix, and the residual collapsed with the *incoming* pre-mix.
 public func DeepSeek4_1HCMix(
   prefix: String, residual: Model.IO, incomingPre: Model.IO, tokenLength: Int,
+  mixTokenLength: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> (Model.IO, Model.IO, Model.IO, Model.IO) {
-  precondition(tokenLength > 0)
+  precondition(tokenLength >= 0)
   let hc = configuration.hcCount
   let hidden = configuration.hiddenSize
-  let flat = residual.reshaped([tokenLength, hc * hidden])
+  let mixTokenLength = mixTokenLength ?? tokenLength
+  precondition((0...tokenLength).contains(mixTokenLength))
+  let flat = residual.reshaped(
+    mixTokenLength > 0 ? [mixTokenLength, hc * hidden] : [0],
+    offset: [tokenLength - mixTokenLength, 0], strides: [hc * hidden, 1])
   let inverseNorm = ((flat .* flat).reduced(.mean, axis: [1]) + configuration.normEpsilon)
     .squareRoot().reciprocal()
   // Project before applying the scalar inverse norm, as in the source model.
@@ -371,7 +371,7 @@ public func DeepSeek4_1IndexerSelection(
   tokenLength: Int, keyLength: Int, cachedTokenLength: Int, layerIndex: Int,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model.IO {
-  precondition(tokenLength > 0 && keyLength >= 0 && cachedTokenLength >= 0)
+  precondition(tokenLength >= 0 && keyLength >= 0 && cachedTokenLength >= 0)
   precondition(configuration.indexSourceLayers.contains(layerIndex))
   let ratio = configuration.compressionRatios[layerIndex]
   precondition(ratio > 0 && keyLength == (cachedTokenLength + tokenLength) / ratio)
@@ -409,7 +409,7 @@ public func DeepSeek4_1SWAttention<FloatType: TensorNumeric>(
   cachedRawTokenLength: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model {
-  precondition(tokenLength > 0 && cachedTokenLength >= 0)
+  precondition(tokenLength >= 0 && cachedTokenLength >= 0)
   precondition(configuration.compressionRatios[layerIndex] == 0)
   let prefix = "layers.\(layerIndex).attn"
   let dim = configuration.attentionHeadDim
@@ -422,7 +422,7 @@ public func DeepSeek4_1SWAttention<FloatType: TensorNumeric>(
     prefix: prefix, x: x, rotary: rotary, tokenLength: tokenLength, configuration: configuration)
   let rawWrite = raw.moved(
     to: rawCache.reshaped(
-      [1, tokenLength, 1, dim], offset: [0, cachedRaw, 0, 0],
+      tokenLength > 0 ? [1, tokenLength, 1, dim] : [0], offset: [0, cachedRaw, 0, 0],
       strides: [rawRows * dim, dim, dim, 1]), flags: [.disableOpt])
   let sinks = Parameter<FloatType>(
     .GPU(0), .NHWC(1, 1, configuration.attentionHeads, 1), name: "\(prefix).attn_sink")
@@ -444,10 +444,10 @@ public func DeepSeek4_1SWAttention<FloatType: TensorNumeric>(
 /// Outputs: hidden, indices, and candidates on the candidate-source layer.
 public func DeepSeek4_1CompressedSparseAttention<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, layerIndex: Int,
-  cachedRawTokenLength: Int? = nil,
+  cachedRawTokenLength: Int? = nil, boundedReplayTokens: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model {
-  precondition(tokenLength > 0 && cachedTokenLength >= 0)
+  precondition(tokenLength >= 0 && cachedTokenLength >= 0)
   precondition(configuration.indexSourceLayers.contains(layerIndex))
   let prefix = "layers.\(layerIndex).attn"
   let dim = configuration.attentionHeadDim
@@ -456,7 +456,10 @@ public func DeepSeek4_1CompressedSparseAttention<FloatType: TensorNumeric>(
   let ratio = configuration.compressionRatios[layerIndex]
   precondition(ratio == 1 || ratio == 2)
   let cachedRaw = cachedRawTokenLength ?? min(configuration.rawWindow, cachedTokenLength)
-  let rawRows = cachedRaw + tokenLength
+  let queryTokenLength = boundedReplayTokens ?? tokenLength
+  precondition((0...tokenLength).contains(queryTokenLength))
+  let queryOffset = cachedTokenLength + tokenLength - queryTokenLength
+  let rawRows = cachedRaw + queryTokenLength
   let globalRows = (cachedTokenLength + tokenLength) / ratio
   let x = Input()
   let rotary = Input()
@@ -464,11 +467,27 @@ public func DeepSeek4_1CompressedSparseAttention<FloatType: TensorNumeric>(
   let globalCache = Input()
   let indexCache = Input()
   var inputs = [x, rotary, rawCache, globalCache, indexCache]
+  let queryInput: Model.IO
+  let queryRotary: Model.IO
+  if layerIndex == configuration.candidateSourceLayer {
+    queryInput = x.reshaped(
+      queryTokenLength > 0 ? [queryTokenLength, hidden] : [0],
+      offset: [tokenLength - queryTokenLength, 0], strides: [hidden, 1]
+    )
+    queryRotary = rotary.reshaped(
+      queryTokenLength > 0 ? [queryTokenLength, dim] : [0],
+      offset: [tokenLength - queryTokenLength, 0], strides: [dim, 1]
+    )
+  } else {
+    queryInput = x
+    queryRotary = rotary
+  }
   let (query, raw, rank) = DeepSeek4_1AttentionProjection(
-    prefix: prefix, x: x, rotary: rotary, tokenLength: tokenLength, configuration: configuration)
+    prefix: prefix, x: queryInput, rotary: queryRotary, tokenLength: queryTokenLength,
+    configuration: configuration)
   let rawWrite = raw.moved(
     to: rawCache.reshaped(
-      [1, tokenLength, 1, dim], offset: [0, cachedRaw, 0, 0],
+      queryTokenLength > 0 ? [1, queryTokenLength, 1, dim] : [0], offset: [0, cachedRaw, 0, 0],
       strides: [rawRows * dim, dim, dim, 1]), flags: [.disableOpt])
   var cacheWrites = [rawWrite]
   var indexWrite: Model.IO?
@@ -515,16 +534,25 @@ public func DeepSeek4_1CompressedSparseAttention<FloatType: TensorNumeric>(
   }
   let indexerRotary = Input()
   inputs.append(indexerRotary)
+  let indexQueryRotary: Model.IO
+  if layerIndex == configuration.candidateSourceLayer {
+    indexQueryRotary = indexerRotary.reshaped(
+      queryTokenLength > 0 ? [queryTokenLength, indexDim] : [0],
+      offset: [tokenLength - queryTokenLength, 0], strides: [indexDim, 1]
+    )
+  } else {
+    indexQueryRotary = indexerRotary
+  }
   let (indexQuery, weights) = DeepSeek4_1IndexerQuery(
-    prefix: "\(prefix).indexer", x: x, rank: rank, rotary: indexerRotary,
-    tokenLength: tokenLength, configuration: configuration)
+    prefix: "\(prefix).indexer", x: queryInput, rank: rank, rotary: indexQueryRotary,
+    tokenLength: queryTokenLength, configuration: configuration)
   let candidates = layerIndex > configuration.candidateSourceLayer ? Input() : nil
   if let candidates {
     inputs.append(candidates)
   }
   let selected = DeepSeek4_1IndexerSelection(
     query: indexQuery, keys: indexCache, weights: weights, candidates: candidates,
-    tokenLength: tokenLength, keyLength: globalRows, cachedTokenLength: cachedTokenLength,
+    tokenLength: queryTokenLength, keyLength: globalRows, cachedTokenLength: queryOffset,
     layerIndex: layerIndex, configuration: configuration)
   if let indexWrite { selected.add(dependencies: [indexWrite]) }
   let global = globalCache.reshaped(globalRows > 0 ? [1, globalRows, 1, dim] : [0])
@@ -536,7 +564,7 @@ public func DeepSeek4_1CompressedSparseAttention<FloatType: TensorNumeric>(
       query, rawCache, rawCache, global, global, selected[0], sinks)
   heads.add(dependencies: cacheWrites)
   let output = DeepSeek4_1AttentionOutput(
-    dataType, prefix: prefix, heads: heads, rotary: rotary, tokenLength: tokenLength,
+    dataType, prefix: prefix, heads: heads, rotary: queryRotary, tokenLength: queryTokenLength,
     configuration: configuration)
   var outputs = [output, selected[0]]
   if layerIndex == configuration.candidateSourceLayer {
@@ -553,7 +581,7 @@ public func DeepSeek4_1SharedAttention<FloatType: TensorNumeric>(
   cachedRawTokenLength: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model {
-  precondition(tokenLength > 0 && cachedTokenLength >= 0)
+  precondition(tokenLength >= 0 && cachedTokenLength >= 0)
   precondition(!configuration.indexSourceLayers.contains(layerIndex))
   precondition(!configuration.kvSourceLayers.contains(layerIndex))
   let prefix = "layers.\(layerIndex).attn"
@@ -572,7 +600,7 @@ public func DeepSeek4_1SharedAttention<FloatType: TensorNumeric>(
     prefix: prefix, x: x, rotary: rotary, tokenLength: tokenLength, configuration: configuration)
   let rawWrite = raw.moved(
     to: rawCache.reshaped(
-      [1, tokenLength, 1, dim], offset: [0, cachedRaw, 0, 0],
+      tokenLength > 0 ? [1, tokenLength, 1, dim] : [0], offset: [0, cachedRaw, 0, 0],
       strides: [rawRows * dim, dim, dim, 1]), flags: [.disableOpt])
   let global = globalCache.reshaped(globalRows > 0 ? [1, globalRows, 1, dim] : [0])
   let sinks = Parameter<FloatType>(
@@ -606,7 +634,7 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, tokenLength: Int, layerIndex: Int,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model {
-  precondition(tokenLength > 0 && layerIndex >= 0 && layerIndex < configuration.layers)
+  precondition(tokenLength >= 0 && layerIndex >= 0 && layerIndex < configuration.layers)
   let x = Input()
   let logits = Dense(
     count: configuration.expertCount, noBias: true, name: "\(prefix).gate")(
@@ -712,6 +740,7 @@ public func DeepSeek4_1Embedding<FloatType: TensorNumeric>(
 public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, layerIndex: Int,
   cachedRawTokenLength: Int? = nil, outputTokenLength: Int? = nil,
+  boundedReplayTokens: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model {
   let prefix = "layers.\(layerIndex)"
@@ -728,9 +757,24 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
   } else {
     beforeAttention = residual
   }
+  let attentionTokenLength = boundedReplayTokens ?? tokenLength
+  precondition((0...tokenLength).contains(attentionTokenLength))
+  let attentionResidual: Model.IO
+  if layerIndex == configuration.candidateSourceLayer {
+    let hc = configuration.hcCount
+    let hidden = configuration.hiddenSize
+    attentionResidual = beforeAttention.reshaped(
+      attentionTokenLength > 0 ? [attentionTokenLength, hc, hidden] : [0],
+      offset: [tokenLength - attentionTokenLength, 0, 0], strides: [hc * hidden, hidden, 1]
+    )
+  } else {
+    attentionResidual = beforeAttention
+  }
+  // The decoder's global KV/index projections consume every encoder output.
+  // Only its local residual mixing, attention, and FFN use the replay suffix.
   let (attnPre, attnPost, attnCombination, attnCollapsed) = DeepSeek4_1HCMix(
     prefix: "\(prefix).hc_attn", residual: beforeAttention, incomingPre: incomingPre,
-    tokenLength: tokenLength, configuration: configuration)
+    tokenLength: tokenLength, mixTokenLength: attentionTokenLength, configuration: configuration)
   let normalizedAttention = RMSNorm(
     epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).attn_norm")(
       attnCollapsed
@@ -772,7 +816,7 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
     let result = DeepSeek4_1CompressedSparseAttention(
       dataType, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
       layerIndex: layerIndex, cachedRawTokenLength: cachedRawTokenLength,
-      configuration: configuration)(args)
+      boundedReplayTokens: boundedReplayTokens, configuration: configuration)(args)
     attention = result[0]
     indices = result[1]
     if layerIndex == configuration.candidateSourceLayer { candidates = result[2] }
@@ -787,21 +831,23 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
         normalizedAttention, rotary, rawKeyValue, globalKeyValue, indices)
   }
   let afterAttention = HyperConnection(count: configuration.hcCount, operation: .expand)(
-    attention, beforeAttention, attnPost, attnCombination)[0]
-  let ffnTokenLength = outputTokenLength ?? tokenLength
-  precondition(ffnTokenLength > 0 && ffnTokenLength <= tokenLength)
+    attention, attentionResidual, attnPost, attnCombination)[0]
+  let ffnTokenLength = outputTokenLength ?? attentionTokenLength
+  precondition(ffnTokenLength >= 0 && ffnTokenLength <= attentionTokenLength)
   let ffnResidual: Model.IO
   let incomingFFNPre: Model.IO
   if outputTokenLength != nil {
     let hc = configuration.hcCount
     let hidden = configuration.hiddenSize
     ffnResidual = afterAttention.reshaped(
-      [ffnTokenLength, hc, hidden], offset: [tokenLength - ffnTokenLength, 0, 0],
+      ffnTokenLength > 0 ? [ffnTokenLength, hc, hidden] : [0],
+      offset: [attentionTokenLength - ffnTokenLength, 0, 0],
       strides: [hc * hidden, hidden, 1]
-    ).contiguous()
+    )
     incomingFFNPre = attnPre.reshaped(
-      [ffnTokenLength, hc], offset: [tokenLength - ffnTokenLength, 0], strides: [hc, 1]
-    ).contiguous()
+      ffnTokenLength > 0 ? [ffnTokenLength, hc] : [0],
+      offset: [attentionTokenLength - ffnTokenLength, 0], strides: [hc, 1]
+    )
   } else {
     ffnResidual = afterAttention
     incomingFFNPre = attnPre
@@ -840,35 +886,30 @@ public func DeepSeek4_1OutputHead<FloatType: TensorNumeric>(
   return head(norm(collapsed).to(FloatType.dataType))
 }
 
-/// Input rows at each layer, followed by the final output row count. Once the
-/// last KV source has published the complete chunk, decoder FFNs only retain
-/// the suffix needed by the remaining sliding windows. Attention still sees
-/// the preceding window rows, so the retained outputs and final raw KV are valid.
+/// Attention rows at each layer, followed by the output row count.
+/// boundedReplay maps to "SWA Bounded Replay" in the paper: only the trailing
+/// boundedReplayTokens traverse the decoder. Zero skips decoder work while
+/// still publishing this chunk's encoder-derived global KV and index keys.
 public func DeepSeek4_1CausalLMTokenLengths(
-  tokenLength: Int, boundedReplay: Bool = false,
+  tokenLength: Int, boundedReplayTokens: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> [Int] {
   precondition(tokenLength > 0 && configuration.layers > 0)
-  if boundedReplay {
+  let replayTokens = boundedReplayTokens ?? tokenLength
+  precondition((0...tokenLength).contains(replayTokens))
+  if boundedReplayTokens != nil {
     precondition(configuration.kvSourceLayers.last == configuration.candidateSourceLayer)
-    precondition(
-      configuration.engram.layers.allSatisfy { $0 <= configuration.candidateSourceLayer })
+    precondition(configuration.engram.layers.allSatisfy { $0 < configuration.candidateSourceLayer })
     precondition(
       configuration.compressionRatios[configuration.candidateSourceLayer...].allSatisfy { $0 == 1 })
   }
-  var lengths = [tokenLength]
-  for layer in 0..<configuration.layers {
-    let rows =
-      boundedReplay && layer >= configuration.candidateSourceLayer
-      ? min(tokenLength, 1 + (configuration.layers - 1 - layer) * (configuration.rawWindow - 1))
-      : tokenLength
-    lengths.append(layer == configuration.layers - 1 ? 1 : rows)
-  }
-  return lengths
+  return (0..<configuration.layers).map {
+    $0 < configuration.candidateSourceLayer ? tokenLength : replayTokens
+  } + [min(1, replayTokens)]
 }
 
 private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
-  _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, boundedReplay: Bool,
+  _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, boundedReplayTokens: Int?,
   cachedRawTokenLengths: [Int],
   configuration: DeepSeek4_1ModelConfiguration
 ) -> (inputs: [Input], hidden: Model.IO, pre: Model.IO) {
@@ -903,12 +944,13 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
   var indices: Model.IO?
   var candidates: Model.IO?
   let lengths = DeepSeek4_1CausalLMTokenLengths(
-    tokenLength: tokenLength, boundedReplay: boundedReplay, configuration: configuration)
+    tokenLength: tokenLength, boundedReplayTokens: boundedReplayTokens, configuration: configuration
+  )
   for layer in 0..<configuration.layers {
-    let layerTokenLength = lengths[layer]
-    // After trimming, the first window-1 attention outputs are discarded by
-    // the FFN slice. Retained outputs only read valid current-chunk raw rows;
-    // the caller's raw-cache prefix length stays independent of query position.
+    // The first decoder layer projects global KV/index keys from the complete
+    // encoder chunk before slicing queries, raw KV, and the residual to replay.
+    let layerTokenLength =
+      layer == configuration.candidateSourceLayer ? tokenLength : lengths[layer]
     let layerCachedTokenLength = cachedTokenLength + tokenLength - layerTokenLength
     let ratio = configuration.compressionRatios[layer]
     let engramEmbeddings = configuration.engram.layers.contains(layer) ? Input() : nil
@@ -932,11 +974,12 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
     var args = [hidden, pre]
     if let engramEmbeddings { args.append(engramEmbeddings) }
     var rotary: Model.IO = (ratio > 0 ? compressedRotary : rawRotary)!
-    if boundedReplay && layer > configuration.candidateSourceLayer {
+    if layer > configuration.candidateSourceLayer {
       let dim = configuration.attentionHeadDim
       rotary = rotary.reshaped(
-        [layerTokenLength, dim], offset: [tokenLength - layerTokenLength, 0], strides: [dim, 1]
-      ).contiguous()
+        layerTokenLength > 0 ? [layerTokenLength, dim] : [0],
+        offset: [tokenLength - layerTokenLength, 0], strides: [dim, 1]
+      )
     }
     args.append(contentsOf: [rotary, rawKeyValue])
     if ratio > 0 {
@@ -949,11 +992,12 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
           ])
         }
         var queryRotary: Model.IO = indexerRotary!
-        if boundedReplay && layer > configuration.candidateSourceLayer {
+        if layer > configuration.candidateSourceLayer {
           let dim = configuration.indexerHeadDim
           queryRotary = queryRotary.reshaped(
-            [layerTokenLength, dim], offset: [tokenLength - layerTokenLength, 0], strides: [dim, 1]
-          ).contiguous()
+            layerTokenLength > 0 ? [layerTokenLength, dim] : [0],
+            offset: [tokenLength - layerTokenLength, 0], strides: [dim, 1]
+          )
         }
         args.append(queryRotary)
         if layer > configuration.candidateSourceLayer { args.append(candidates!) }
@@ -964,32 +1008,14 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
     let outputs = DeepSeek4_1Layer(
       dataType, tokenLength: layerTokenLength, cachedTokenLength: layerCachedTokenLength,
       layerIndex: layer, cachedRawTokenLength: cachedRawTokenLengths[layer],
-      outputTokenLength: (boundedReplay && layer >= configuration.candidateSourceLayer)
-        || layer == configuration.layers - 1 ? lengths[layer + 1] : nil,
+      outputTokenLength: layer == configuration.layers - 1 ? lengths.last! : nil,
+      boundedReplayTokens: layer == configuration.candidateSourceLayer ? lengths[layer] : nil,
       configuration: configuration)(args)
     hidden = outputs[0]
     pre = outputs[1]
     if configuration.indexSourceLayers.contains(layer) {
       indices = outputs[2]
       if layer == configuration.candidateSourceLayer { candidates = outputs[3] }
-    }
-    if boundedReplay && layer >= configuration.candidateSourceLayer
-      && layer < configuration.layers - 1
-    {
-      let rows = lengths[layer + 1]
-      if !configuration.indexSourceLayers.contains(layer + 1), let selection = indices {
-        let width = max(
-          1, min(configuration.indexerTopK, (cachedTokenLength + tokenLength) / ratio))
-        indices = selection.reshaped(
-          [rows, width], offset: [layerTokenLength - rows, 0], strides: [width, 1]
-        ).contiguous()
-      }
-      if layer < configuration.indexSourceLayers.last!, let pool = candidates {
-        let width = configuration.candidateTopKBlocks
-        candidates = pool.reshaped(
-          [rows, width], offset: [layerTokenLength - rows, 0], strides: [width, 1]
-        ).contiguous()
-      }
     }
   }
   return (inputs, hidden, pre)
@@ -1006,18 +1032,19 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
 /// binding a growing cache prefix. Input order depends only on the architecture.
 public func DeepSeek4_1CausalLM<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
-  cachedRawTokenLengths: [Int]? = nil, boundedReplay: Bool = false,
+  cachedRawTokenLengths: [Int]? = nil, boundedReplayTokens: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model {
   let prefix = DeepSeek4_1Prefix(
     dataType, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-    boundedReplay: boundedReplay,
+    boundedReplayTokens: boundedReplayTokens,
     cachedRawTokenLengths: cachedRawTokenLengths
       ?? Array(
         repeating: min(cachedTokenLength, configuration.rawWindow), count: configuration.layers),
     configuration: configuration)
   let output = DeepSeek4_1OutputHead(
-    x: prefix.hidden, incomingPre: prefix.pre, tokenLength: 1,
+    x: prefix.hidden, incomingPre: prefix.pre,
+    tokenLength: min(1, boundedReplayTokens ?? tokenLength),
     configuration: configuration, of: dataType)
   return Model(prefix.inputs, [output])
 }
