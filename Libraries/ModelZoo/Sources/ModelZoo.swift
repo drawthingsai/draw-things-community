@@ -1223,17 +1223,6 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 Alibaba"
     ),
     Specification(
-      name: "Qwen Image 2.1", file: "qwen_image_2.1_f16.ckpt", prefix: "",
-      version: .qwenImage2_1, defaultScale: 16, textEncoder: "qwen_3_vl_8b_instruct_f16.ckpt",
-      autoencoder: "qwen_image_2.1_vae_f16.ckpt", modifier: .kontext,
-      objective: .u(conditionScale: 1000),
-      noiseDiscretization: .rf(
-        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1000, shiftTerminal: 0.02)),
-      note:
-        "Qwen Image 2.1 supports text-to-image, reference-image editing, and transparency. Use 40 steps and guidance 1.",
-      huggingFaceLink: "Qwen/Qwen-Image-2.1"
-    ),
-    Specification(
       name: "Qwen Image 2512", file: "qwen_image_2512_q8p.ckpt", prefix: "",
       version: .qwenImage, defaultScale: 16, textEncoder: "qwen_2.5_vl_7b_q8p.ckpt",
       autoencoder: "qwen_image_vae_f16.ckpt", objective: .u(conditionScale: 1000),
