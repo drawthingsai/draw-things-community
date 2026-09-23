@@ -48,6 +48,9 @@ public struct DeviceCapability {
     case _32GiB = 32
     case _40GiB = 40
     case _48GiB = 48
+    case _56GiB = 56
+    case _64GiB = 64
+    case _72GiB = 72
     case none = 0
   }
 
@@ -56,8 +59,15 @@ public struct DeviceCapability {
     let gibibyte = UInt64(1_024 * 1_024 * 1_024)
     let reservedMemory = 32 * gibibyte
     let availableMemory = physicalMemory > reservedMemory ? physicalMemory - reservedMemory : 0
-    if availableMemory >= 90 * gibibyte {
+    // Allow for the 149.44 GiB V4.1 checkpoint before disabling streaming.
+    if availableMemory >= 150 * gibibyte {
       return .none
+    } else if availableMemory >= 72 * gibibyte {
+      return ._72GiB
+    } else if availableMemory >= 64 * gibibyte {
+      return ._64GiB
+    } else if availableMemory >= 56 * gibibyte {
+      return ._56GiB
     } else if availableMemory >= 48 * gibibyte {
       return ._48GiB
     } else if availableMemory >= 40 * gibibyte {
