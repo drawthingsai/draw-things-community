@@ -155,6 +155,9 @@ public final class JSGenerationConfiguration: Codable {
   public var startFrameGuidance: Float32
   public var shift: Float32
   public var shiftForAudio: Float32?
+  public var usesSolAttention: Bool?
+  public var solAttentionStart: Int32?
+  public var solAttentionTau: Float?
   public var stage2Steps: UInt32
   public var stage2Guidance: Float32
   public var stage2Shift: Float32
@@ -242,6 +245,9 @@ public final class JSGenerationConfiguration: Codable {
     startFrameGuidance = configuration.startFrameCfg
     shift = configuration.shift
     shiftForAudio = configuration.shiftForAudio
+    usesSolAttention = configuration.usesSolAttention
+    solAttentionStart = configuration.solAttentionStart
+    solAttentionTau = configuration.solAttentionTau
     stage2Guidance = configuration.stage2Cfg
     stage2Shift = configuration.stage2Shift
     stage2Steps = configuration.stage2Steps
@@ -374,7 +380,10 @@ public final class JSGenerationConfiguration: Codable {
       compressionArtifactsQuality: compressionArtifactsQuality,
       colorCalibration: colorCalibrationSetting,
       expandPromptToJson: expandPromptToJson,
-      shiftForAudio: shiftForAudio
+      shiftForAudio: shiftForAudio,
+      usesSolAttention: usesSolAttention,
+      solAttentionStart: solAttentionStart,
+      solAttentionTau: solAttentionTau
     )
   }
 }

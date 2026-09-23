@@ -1,11 +1,248 @@
 import BinaryResources
-import Diffusion
 import Foundation
 import NNC
 import Tokenizer
 import XCTest
 
+@testable import Diffusion
+
 final class MiniMaxH3Tests: XCTestCase {
+  #if os(macOS)
+    func testSolAttentionDenseLayersAndProtectedTokens() throws {
+      guard DeviceKind.GPUs.count > 0 else { throw XCTSkip("Metal GPU required") }
+      let savedFlags = DynamicGraph.flags
+      let savedWatermark = DynamicGraph.queueWatermark
+      defer {
+        DynamicGraph.flags = savedFlags
+        DynamicGraph.queueWatermark = savedWatermark
+      }
+      DynamicGraph.queueWatermark = 1
+      DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      for disableNA in [false, true] {
+        if disableNA {
+          DynamicGraph.flags.insert(.disableMFANeuralAccelerators)
+        } else {
+          DynamicGraph.flags.remove(.disableMFANeuralAccelerators)
+        }
+        let graph = DynamicGraph()
+        try graph.withNoGrad {
+          // Include full protected VL blocks, image/audio references, a boundary-crossing
+          // block and a tail. Only the final 512 generated-video tokens may be summarized.
+          let protectedLength = 137 + 6 + 6 + 10
+          let sequenceLength = protectedLength + 512
+          let state = graph.variable(
+            Tensor<Float>(
+              (0..<(sequenceLength * 8)).map { sin(Float($0) * 0.37) * 0.4 },
+              .CPU, .HWC(1, sequenceLength, 8)
+            ).toGPU(0))
+          let rotary = graph.variable(
+            Tensor<Float16>(
+              from: MiniMaxH3RotaryEmbedding(
+                textLength: 137, audioLength: 10, videoFrames: 2, videoHeight: 32,
+                videoWidth: 32, referenceImages: [(4, 6, 137)],
+                referenceAudios: [(6, 137)], visionTokenRanges: [9..<137])
+            ).toGPU(0))
+          let modulation = graph.variable(.GPU(0), .HWC(1, 1, 8), of: Float16.self)
+          modulation.full(0.1)
+          // Check all five dense layers and the surrounding Sol layers using global indices.
+          for layer in [0, 1, 2, 32, 33, 34, 35, 36, 49] {
+            let usesDenseAttention = [0, 1, 33, 34, 35].contains(layer)
+            var inputs: [DynamicGraph.AnyTensor]
+            if layer == 0 {
+              let video = graph.variable(.GPU(0), .NHWC(2, 32, 32, 24), of: Float16.self)
+              let audio = graph.variable(.GPU(0), .HWC(1, 10, 32), of: Float16.self)
+              let reference = graph.variable(.GPU(0), .HWC(1, 6, 8), of: Float16.self)
+              video.full(0.1)
+              audio.full(0.1)
+              reference.full(0.1)
+              inputs = [
+                video, audio, state[0..<1, 0..<137, 0..<8].copied(), rotary, reference, reference,
+              ]
+            } else {
+              inputs = [state, rotary]
+            }
+            inputs += Array(repeating: modulation, count: layer == 0 ? 30 : 30 + 4)
+            func build(
+              sol: (eligibleForApproximation: Range<Int>, tau: Float)?, lora: Bool
+            ) -> (ModelWeightMapper, Model) {
+              if lora {
+                return LoRAMiniMaxH3(
+                  hiddenSize: 8, layers: 1, startLayer: layer, textLength: 137, audioLength: 10,
+                  videoFrames: 2, videoHeight: 32, videoWidth: 32,
+                  usesFlashAttention: .quantized, usesSolAttention: sol,
+                  referenceImageSizes: [(4, 6)], referenceAudioLengths: [6], visionLength: 128,
+                  outputResidual: true,
+                  LoRAConfiguration: LoRANetworkConfiguration(
+                    rank: 0, scale: 1, highPrecision: false))
+              }
+              return MiniMaxH3(
+                hiddenSize: 8, layers: 1, startLayer: layer, textLength: 137, audioLength: 10,
+                videoFrames: 2, videoHeight: 32, videoWidth: 32,
+                usesFlashAttention: .quantized, usesSolAttention: sol,
+                referenceImageSizes: [(4, 6)], referenceAudioLengths: [6], visionLength: 128,
+                outputResidual: true)
+            }
+            let (denseMapper, dense) = build(sol: nil, lora: false)
+            let expected = dense(inputs: inputs[0], Array(inputs.dropFirst())).map {
+              DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+            }
+            let path = directory.appendingPathComponent("dense.ckpt").path
+            graph.openStore(path) { $0.write("dit", model: dense) }
+            var solOutputs = [Tensor<Float>]()
+            for lora in [false, true] {
+              let (mapper, model) = build(sol: (protectedLength..<sequenceLength, 0.5), lora: lora)
+              model.compile(inputs: inputs)
+              for format in [ModelWeightFormat.diffusers, .generativeModels] {
+                let base = denseMapper(format)
+                let candidate = mapper(format)
+                XCTAssertEqual(Set(candidate.keys), Set(base.keys))
+                for (key, names) in base {
+                  XCTAssertEqual(candidate[key].map { Array($0) }, Array(names), key)
+                }
+              }
+              try graph.openStore(path, flags: .readOnly) {
+                try $0.read("dit", model: model, strict: true)
+              }
+              let actual = model(inputs: inputs[0], Array(inputs.dropFirst())).map {
+                DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+              }
+              let allExact = build(sol: (0..<0, 0.5), lora: lora).1
+              allExact.compile(inputs: inputs)
+              try graph.openStore(path, flags: .readOnly) {
+                try $0.read("dit", model: allExact, strict: true)
+              }
+              let exactOutputs = allExact(inputs: inputs[0], Array(inputs.dropFirst())).map {
+                DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+              }
+              // Empty-range Sol retains the operator while disabling every summary route.
+              // Its kernel can round differently from SDPA, so compare the FP32 residual.
+              let exactResidual = exactOutputs.last!.reshaped(.C(sequenceLength * 8))
+              let denseResidual = expected.last!.reshaped(.C(sequenceLength * 8))
+              var exactError = 0.0
+              var denseEnergy = 0.0
+              for i in 0..<(sequenceLength * 8) {
+                XCTAssertTrue(exactResidual[i].isFinite)
+                exactError += pow(Double(exactResidual[i]) - Double(denseResidual[i]), 2)
+                denseEnergy += pow(Double(denseResidual[i]), 2)
+              }
+              let exactRelativeError = sqrt(exactError / max(denseEnergy, 1e-30))
+              print(
+                "H3 all-exact Sol nonNA=\(disableNA) layer=\(layer) LoRA=\(lora) relativeL2=\(exactRelativeError)"
+              )
+              XCTAssertLessThan(exactRelativeError, 0.005)
+              // Change only eligibility without changing input shapes or reloading weights.
+              var tau: Float = 0.5
+              let dynamic = ModelBuilderOrModel.modelBuilder(
+                ModelBuilder { eligible, _ in
+                  build(sol: (eligible ? protectedLength..<sequenceLength : 0..<0, tau), lora: lora)
+                    .1
+                })
+              dynamic.compile(false, inputs: inputs)
+              try graph.openStore(path, flags: .readOnly) {
+                try $0.read("dit", model: dynamic.unwrapped, strict: true)
+              }
+              for sol in [false, true, true, false] {
+                let outputs = dynamic(sol, inputs: inputs[0], Array(inputs.dropFirst())).map {
+                  DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+                }
+                let reference = sol ? actual : exactOutputs
+                XCTAssertEqual(outputs.count, reference.count)
+                for output in outputs.indices {
+                  XCTAssertEqual(outputs[output].shape, reference[output].shape)
+                  let count = outputs[output].shape.reduce(1, *)
+                  let a = outputs[output].reshaped(.C(count))
+                  let b = reference[output].reshaped(.C(count))
+                  var differences = 0
+                  var maxError: Float = 0
+                  for i in 0..<count where a[i] != b[i] {
+                    differences += 1
+                    maxError = max(maxError, abs(a[i] - b[i]))
+                  }
+                  XCTAssertEqual(
+                    differences, 0,
+                    "nonNA=\(disableNA) layer=\(layer) LoRA=\(lora) eligible=\(sol) output=\(output) maxError=\(maxError)"
+                  )
+                }
+              }
+              if layer == 2 {
+                // A non-default tau must reach the kernel and update through explicit compilation.
+                tau = 1.3
+                let alternate = build(sol: (protectedLength..<sequenceLength, tau), lora: lora).1
+                alternate.compile(inputs: inputs)
+                try graph.openStore(path, flags: .readOnly) {
+                  try $0.read("dit", model: alternate, strict: true)
+                }
+                let reference = alternate(inputs: inputs[0], Array(inputs.dropFirst())).map {
+                  DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+                }
+                dynamic.compile(true, inputs: inputs)
+                let outputs = dynamic(true, inputs: inputs[0], Array(inputs.dropFirst())).map {
+                  DynamicGraph.Tensor<Float>(from: $0).toCPU().rawValue
+                }
+                var tauDifferences = 0
+                for output in outputs.indices {
+                  let count = outputs[output].shape.reduce(1, *)
+                  let a = outputs[output].reshaped(.C(count))
+                  let b = reference[output].reshaped(.C(count))
+                  let previous = actual[output].reshaped(.C(count))
+                  var differences = 0
+                  for i in 0..<count {
+                    if a[i] != b[i] { differences += 1 }
+                    if b[i] != previous[i] { tauDifferences += 1 }
+                  }
+                  XCTAssertEqual(differences, 0)
+                }
+                XCTAssertGreaterThan(tauDifferences, 0)
+              }
+              XCTAssertEqual(actual.count, layer == 0 ? 2 : 3)
+              for output in actual.indices {
+                XCTAssertEqual(actual[output].shape, expected[output].shape)
+                let count = actual[output].shape.reduce(1, *)
+                let a = actual[output].reshaped(.C(count))
+                let e = expected[output].reshaped(.C(count))
+                for i in 0..<count {
+                  XCTAssertTrue(a[i].isFinite)
+                  if usesDenseAttention { XCTAssertEqual(a[i], e[i]) }
+                  if lora {
+                    XCTAssertEqual(a[i], solOutputs[output].reshaped(.C(count))[i])
+                  }
+                }
+              }
+              // A single block cannot propagate approximated video-query results into
+              // protected queries. Check its FP32 residual, before another block can mix them.
+              let a = actual.last!.reshaped(.C(sequenceLength * 8))
+              let e = expected.last!.reshaped(.C(sequenceLength * 8))
+              var error = 0.0
+              var energy = 0.0
+              for i in 0..<(protectedLength * 8) {
+                error += pow(Double(a[i]) - Double(e[i]), 2)
+                energy += pow(Double(e[i]), 2)
+              }
+              let relativeError = sqrt(error / max(energy, 1e-30))
+              print(
+                "H3 Sol nonNA=\(disableNA) layer=\(layer) LoRA=\(lora) protected relativeL2=\(relativeError)"
+              )
+              XCTAssertLessThan(relativeError, 0.005)
+              if !usesDenseAttention {
+                var videoDifference: Float = 0
+                for i in (protectedLength * 8)..<(sequenceLength * 8) {
+                  videoDifference = max(videoDifference, abs(a[i] - e[i]))
+                }
+                // Ensure opting in really selected Sol, not another dense graph.
+                XCTAssertGreaterThan(videoDifference, 0)
+              }
+              if !lora { solOutputs = actual }
+            }
+          }
+        }
+      }
+    }
+  #endif
+
   func testLoRAMergedAndSeparateExecution() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

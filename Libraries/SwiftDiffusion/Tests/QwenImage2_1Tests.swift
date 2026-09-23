@@ -329,6 +329,7 @@ final class QwenImage2_1Tests: XCTestCase {
           ),
           version: .qwenImage2_1, modifier: .none,
           qkNorm: false, dualAttentionLayers: [], upcastAttention: false, usesFlashAttention: .sdpa,
+          usesSolAttention: false, solAttentionStart: 0, solAttentionTau: 0,
           injectControlsAndAdapters: .init(
             injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
             injectIPAdapterLengths: [], injectControlModels: []),

@@ -6,6 +6,47 @@ import XCTest
 @testable import Diffusion
 
 final class TeaCacheTests: XCTestCase {
+  func testModelBuilderBooleanRebuildPreservesWeights() {
+    let graph = DynamicGraph()
+    graph.withNoGrad {
+      var builds = [Bool]()
+      let model = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder { parameter, _ in
+          builds.append(parameter)
+          let input = Input()
+          let projected = Dense(count: 2, name: "projection")(input)
+          return Model([input], [(parameter ? 3 : 2) * projected])
+        })
+      let input = graph.variable(Tensor<Float>([1, 2], .CPU, .WC(1, 2)))
+      model.compile(false, inputs: [input])
+      let identity = model.unwrapped as AnyObject
+      let baseline = model(inputs: input)[0].as(of: Float.self).rawValue
+      let expected = [baseline[0, 0], baseline[0, 1]]
+      XCTAssertEqual(builds, [false])
+      XCTAssertGreaterThan(abs(expected[0]) + abs(expected[1]), 0)
+      for (parameter, buildCount) in [(true, 2), (true, 2), (false, 3), (false, 3)] {
+        let result = model(parameter, inputs: input)[0].as(of: Float.self).rawValue
+        XCTAssertTrue(identity === model.unwrapped as AnyObject)
+        XCTAssertEqual(builds.count, buildCount)
+        for i in 0..<2 {
+          XCTAssertEqual(result[0, i], expected[i] * (parameter ? 1.5 : 1), accuracy: 1e-6)
+        }
+      }
+      // Explicit compilation and shape-driven rebuilds must carry the same Boolean too.
+      model.compile(true, inputs: [input])
+      _ = model(true, inputs: input)
+      XCTAssertEqual(builds, [false, true, false, true])
+      let longer = graph.variable(Tensor<Float>([1, 2, 1, 2], .CPU, .WC(2, 2)))
+      let result = model(true, inputs: longer)[0].as(of: Float.self).rawValue
+      XCTAssertEqual(builds, [false, true, false, true, true])
+      for row in 0..<2 {
+        for i in 0..<2 {
+          XCTAssertEqual(result[row, i], expected[i] * 1.5, accuracy: 1e-6)
+        }
+      }
+    }
+  }
+
   func testLoadModelsSkipsSharedWeights() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -440,7 +481,7 @@ final class TeaCacheTests: XCTestCase {
             -> ModelBuilderOrModel
           {
             .modelBuilder(
-              ModelBuilder { inputs in
+              ModelBuilder { _, inputs in
                 let textLength =
                   startLayer > 0
                   ? inputs[0].shape[1] - references - audioReferences * 6 - 5 : inputs[2].shape[1]
@@ -526,6 +567,8 @@ final class TeaCacheTests: XCTestCase {
             XCTAssertEqual(loadedModels, 1)
           }
           for (marker, length) in [5, 3].enumerated() {
+            let context =
+              "LoRA=\(useLoRA), references=\(references), audioReferences=\(audioReferences), textLength=\(length)"
             let inputs = inputs(textLength: length)
             let audioStart = length - visionLength + references + audioReferences * 6
             let videoStart = length + references + audioReferences * 6 + 4
@@ -561,7 +604,7 @@ final class TeaCacheTests: XCTestCase {
               )
               .rawValue.toCPU().reshaped(.C(1))[0]
               XCTAssertTrue(error.isFinite)
-              XCTAssertLessThan(error, 0.002)
+              XCTAssertLessThan(error, 0.002, "Full/split output \(i): \(context)")
             }
             let cached = run(2)
             XCTAssertEqual(cached.count, 2)
@@ -592,7 +635,7 @@ final class TeaCacheTests: XCTestCase {
                 .max, axis: Array(0..<expected.shape.count)
               ).toCPU().rawValue.reshaped(.C(1))[0]
               XCTAssertTrue(error.isFinite)
-              XCTAssertLessThan(error, 0.002)
+              XCTAssertLessThan(error, 0.002, "Changed-head output \(i): \(context)")
             }
             let refreshed = run(2)
             XCTAssertEqual(refreshed.count, 3)  // Enforce maxSkipSteps = 2 even at the same index.

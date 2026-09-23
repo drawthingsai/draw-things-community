@@ -103,6 +103,7 @@ public final class ModelPreloader {
   private var unetVersion: ModelVersion? = nil
   private var unetUpcastAttention: Bool? = nil
   private var unetUsesFlashAttention: UseFlashAttention? = nil
+  private var unetUsesSolAttention = false
   private var unetExternalOnDemand: Bool? = nil
   private var unetInjectControls: Bool? = nil
   private var unetInjectT2IAdapters: Bool? = nil
@@ -640,6 +641,7 @@ extension ModelPreloader {
           version: modelVersion, modifier: .none, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+          usesSolAttention: false, solAttentionStart: 0, solAttentionTau: 0,
           injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>(
             injectControls: false, injectT2IAdapters: false, injectAttentionKV: false,
             injectIPAdapterLengths: [], injectControlModels: []), lora: lora,
@@ -666,6 +668,7 @@ extension ModelPreloader {
         unetVersion = modelVersion
         unetUpcastAttention = upcastAttention
         unetUsesFlashAttention = usesFlashAttention
+        unetUsesSolAttention = false
         unetTokenLengthUncond = 77
         unetTokenLengthCond = 77
         unetModifier = modelModifier
@@ -1360,6 +1363,7 @@ extension ModelPreloader {
     guard unet.isLoaded, unetFilePath == sampler.filePath, unetModifier == sampler.modifier,
       unetVersion == sampler.version, unetUpcastAttention == sampler.upcastAttention,
       unetUsesFlashAttention == sampler.usesFlashAttention,
+      unetUsesSolAttention == sampler.usesSolAttention,
       unetExternalOnDemand == sampler.externalOnDemand, unetScale == scale,
       unetInjectControls == sampler.injectControls,
       unetInjectT2IAdapters == sampler.injectT2IAdapters,
@@ -1393,6 +1397,7 @@ extension ModelPreloader {
       unetVersion = sampler.version
       unetUpcastAttention = sampler.upcastAttention
       unetUsesFlashAttention = sampler.usesFlashAttention
+      unetUsesSolAttention = sampler.usesSolAttention
       unetExternalOnDemand = sampler.externalOnDemand
       unetInjectControls = sampler.injectControls
       unetInjectT2IAdapters = sampler.injectT2IAdapters

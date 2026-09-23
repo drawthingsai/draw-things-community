@@ -129,6 +129,7 @@ public final class Parameters {
     decodingTileHeightParameter, decodingTileOverlapParameter, diffusionTileWidthParameter,
     diffusionTileHeightParameter, diffusionTileOverlapParameter,
     upscalerScaleFactorParameter, teaCacheStartParameter, teaCacheEndParameter,
+    solAttentionStartParameter,
     teaCacheMaxSkipStepsParameter, causalInferenceParameter,
     causalInferencePadParameter, cfgZeroInitStepsParameter: IntParameter
   public let guidanceScaleParameter, strengthParameter, imageGuidanceScaleParameter,
@@ -138,7 +139,8 @@ public final class Parameters {
     startFrameGuidanceParameter, sharpnessParameter, shiftParameter, shiftForAudioParameter,
     stage2CfgParameter,
     stage2ShiftParameter, stochasticSamplingGammaParameter, guidanceEmbedParameter,
-    teaCacheThresholdParameter, compressionArtifactsQualityParameter: DoubleParameter
+    teaCacheThresholdParameter, solAttentionTauParameter,
+    compressionArtifactsQualityParameter: DoubleParameter
   let seedModeParameter: EnumParameter<SeedMode>
   let samplerParameter: EnumParameter<SamplerType>
   let compressionArtifactsParameter: EnumParameter<CompressionMethod>
@@ -148,7 +150,7 @@ public final class Parameters {
     preserveOriginalAfterInpaintParameter, tiledDiffusionParameter,
     t5TextEncoderParameter, separateClipLParameter, separateOpenClipGParameter,
     speedUpWithGuidanceEmbedParameter, resolutionDependentShiftParameter,
-    teaCacheParameter, separateT5Parameter, cfgZeroStarParameter,
+    teaCacheParameter, usesSolAttentionParameter, separateT5Parameter, cfgZeroStarParameter,
     expandPromptToJsonParameter: BoolParameter
   let lorasParameter: JSONParameter<[JSLoRA]>
   let controlsParameter: JSONParameter<[JSControl]>
@@ -454,6 +456,17 @@ public final class Parameters {
       titleKey: "tea_cache_max_skip_steps", explanationKey: nil,
       defaultValue: Int(defaultConfiguration.teaCacheMaxSkipSteps),
       range: 1...1000, commandLineFlag: "tea-cache-max-skip-steps")
+    usesSolAttentionParameter = BoolParameter(
+      titleKey: "sol_attention", explanationKey: "sol_attention_detail",
+      commandLineFlag: "uses-sol-attention", defaultValue: defaultConfiguration.usesSolAttention)
+    solAttentionStartParameter = IntParameter(
+      titleKey: "start_step", explanationKey: nil,
+      defaultValue: Int(defaultConfiguration.solAttentionStart),
+      range: 0...1000, commandLineFlag: "sol-attention-start")
+    solAttentionTauParameter = DoubleParameter(
+      titleKey: "tau", explanationKey: "sol_attention_detail",
+      defaultValue: Double(defaultConfiguration.solAttentionTau),
+      range: 0...4, commandLineFlag: "sol-attention-tau")
     teaCacheParameter = BoolParameter(
       titleKey: "tea_cache", explanationKey: "tea_cache_detail",
       commandLineFlag: "tea-cache",
@@ -577,6 +590,9 @@ public final class Parameters {
       teaCacheThresholdParameter,
       teaCacheMaxSkipStepsParameter,
       teaCacheParameter,
+      usesSolAttentionParameter,
+      solAttentionStartParameter,
+      solAttentionTauParameter,
       separateT5Parameter,
       t5TextParameter,
       causalInferenceParameter,

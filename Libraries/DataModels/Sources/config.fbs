@@ -183,6 +183,9 @@ table GenerationConfiguration {
   color_calibration: ColorCalibration = Disabled;
   expand_prompt_to_json: bool = false;
   shift_for_audio: float = 3.0;
+  uses_sol_attention: bool = false;
+  sol_attention_start: int = 2;
+  sol_attention_tau: float = 0.5;
 }
 
 root_type GenerationConfiguration;

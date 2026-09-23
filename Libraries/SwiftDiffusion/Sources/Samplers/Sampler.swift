@@ -251,6 +251,7 @@ public protocol Sampler<FloatType, UNet> {
   var audioShiftRatio: Float { get }
   var upcastAttention: Bool { get }
   var usesFlashAttention: UseFlashAttention { get }
+  var usesSolAttention: Bool { get }
   var externalOnDemand: Bool { get }
   var injectControls: Bool { get }
   var injectT2IAdapters: Bool { get }

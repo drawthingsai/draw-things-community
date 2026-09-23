@@ -920,4 +920,37 @@ extension GenerationConfiguration {
   public static let shiftForAudio: FieldExpr<Float32, GenerationConfiguration> = FieldExpr(
     name: "f180", primaryKey: false, hasIndex: false, tableReader: _tr__f180,
     objectReader: _or__f180)
+
+  private static func _tr__f182(_ table: ByteBuffer) -> Bool? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return tr0.usesSolAttention
+  }
+  private static func _or__f182(_ or0: GenerationConfiguration) -> Bool? {
+    return or0.usesSolAttention
+  }
+  public static let usesSolAttention: FieldExpr<Bool, GenerationConfiguration> = FieldExpr(
+    name: "f182", primaryKey: false, hasIndex: false, tableReader: _tr__f182,
+    objectReader: _or__f182)
+
+  private static func _tr__f184(_ table: ByteBuffer) -> Int32? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return tr0.solAttentionStart
+  }
+  private static func _or__f184(_ or0: GenerationConfiguration) -> Int32? {
+    return or0.solAttentionStart
+  }
+  public static let solAttentionStart: FieldExpr<Int32, GenerationConfiguration> = FieldExpr(
+    name: "f184", primaryKey: false, hasIndex: false, tableReader: _tr__f184,
+    objectReader: _or__f184)
+
+  private static func _tr__f186(_ table: ByteBuffer) -> Float32? {
+    let tr0 = zzz_DflatGen_GenerationConfiguration.getRootAsGenerationConfiguration(bb: table)
+    return tr0.solAttentionTau
+  }
+  private static func _or__f186(_ or0: GenerationConfiguration) -> Float32? {
+    return or0.solAttentionTau
+  }
+  public static let solAttentionTau: FieldExpr<Float32, GenerationConfiguration> = FieldExpr(
+    name: "f186", primaryKey: false, hasIndex: false, tableReader: _tr__f186,
+    objectReader: _or__f186)
 }

@@ -183,6 +183,34 @@ final class ImageHistoryManagerTests: XCTestCase {
     XCTAssertEqual(nodes.first?.colorCalibration.rawValue, DataModels.ColorCalibration.lab.rawValue)
   }
 
+  func testSolAttentionRoundTripsThroughHistory() {
+    let manager = onMain {
+      ImageHistoryManager(
+        project: workspace, filePath: temporaryDirectory.appendingPathComponent("store.ckpt").path)
+    }
+    var configuration = GenerationConfigurationBuilder(from: makeConfiguration())
+    configuration.usesSolAttention = true
+    configuration.solAttentionStart = 3
+    configuration.solAttentionTau = 0.75
+    onMain {
+      manager.pushHistory([
+        makeHistory(configuration: configuration.build(), tensorId: 46, isGenerated: true)
+      ])
+    }
+    waitForCondition { [self] in
+      self.onMain { manager.configuration?.usesSolAttention == true }
+    }
+    waitForCondition { [self] in
+      self.onMain { manager.allImageHistories(false).first?.usesSolAttention == true }
+    }
+    XCTAssertEqual(onMain { manager.configuration?.usesSolAttention }, true)
+    XCTAssertEqual(onMain { manager.configuration?.solAttentionStart }, 3)
+    XCTAssertEqual(onMain { manager.configuration?.solAttentionTau }, 0.75)
+    XCTAssertEqual(onMain { manager.allImageHistories(false).first?.usesSolAttention }, true)
+    XCTAssertEqual(onMain { manager.allImageHistories(false).first?.solAttentionStart }, 3)
+    XCTAssertEqual(onMain { manager.allImageHistories(false).first?.solAttentionTau }, 0.75)
+  }
+
   func testExpandPromptToJsonRoundTripsThroughHistory() {
     let manager = onMain {
       ImageHistoryManager(

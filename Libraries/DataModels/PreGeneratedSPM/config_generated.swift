@@ -492,6 +492,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     case colorCalibration = 176
     case expandPromptToJson = 178
     case shiftForAudio = 180
+    case usesSolAttention = 182
+    case solAttentionStart = 184
+    case solAttentionTau = 186
     var v: Int32 { Int32(self.rawValue) }
     var p: VOffset { self.rawValue }
   }
@@ -892,8 +895,20 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     let o = _accessor.offset(VTOFFSET.shiftForAudio.v)
     return o == 0 ? 3.0 : _accessor.readBuffer(of: Float32.self, at: o)
   }
+  public var usesSolAttention: Bool {
+    let o = _accessor.offset(VTOFFSET.usesSolAttention.v)
+    return o == 0 ? false : 0 != _accessor.readBuffer(of: Byte.self, at: o)
+  }
+  public var solAttentionStart: Int32 {
+    let o = _accessor.offset(VTOFFSET.solAttentionStart.v)
+    return o == 0 ? 2 : _accessor.readBuffer(of: Int32.self, at: o)
+  }
+  public var solAttentionTau: Float32 {
+    let o = _accessor.offset(VTOFFSET.solAttentionTau.v)
+    return o == 0 ? 0.5 : _accessor.readBuffer(of: Float32.self, at: o)
+  }
   public static func startGenerationConfiguration(_ fbb: inout FlatBufferBuilder) -> UOffset {
-    fbb.startTable(with: 89)
+    fbb.startTable(with: 92)
   }
   public static func add(id: Int64, _ fbb: inout FlatBufferBuilder) {
     fbb.add(element: id, def: 0, at: VTOFFSET.id.p)
@@ -1190,6 +1205,17 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
   public static func add(shiftForAudio: Float32, _ fbb: inout FlatBufferBuilder) {
     fbb.add(element: shiftForAudio, def: 3.0, at: VTOFFSET.shiftForAudio.p)
   }
+  public static func add(usesSolAttention: Bool, _ fbb: inout FlatBufferBuilder) {
+    fbb.add(
+      element: usesSolAttention, def: false,
+      at: VTOFFSET.usesSolAttention.p)
+  }
+  public static func add(solAttentionStart: Int32, _ fbb: inout FlatBufferBuilder) {
+    fbb.add(element: solAttentionStart, def: 2, at: VTOFFSET.solAttentionStart.p)
+  }
+  public static func add(solAttentionTau: Float32, _ fbb: inout FlatBufferBuilder) {
+    fbb.add(element: solAttentionTau, def: 0.5, at: VTOFFSET.solAttentionTau.p)
+  }
   public static func endGenerationConfiguration(_ fbb: inout FlatBufferBuilder, start: UOffset)
     -> Offset
   {
@@ -1284,7 +1310,10 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     compressionArtifactsQuality: Float32 = 43.1,
     colorCalibration: zzz_DflatGen_ColorCalibration = .disabled,
     expandPromptToJson: Bool = false,
-    shiftForAudio: Float32 = 3.0
+    shiftForAudio: Float32 = 3.0,
+    usesSolAttention: Bool = false,
+    solAttentionStart: Int32 = 2,
+    solAttentionTau: Float32 = 0.5
   ) -> Offset {
     let __start = zzz_DflatGen_GenerationConfiguration.startGenerationConfiguration(&fbb)
     zzz_DflatGen_GenerationConfiguration.add(id: id, &fbb)
@@ -1381,6 +1410,9 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
     zzz_DflatGen_GenerationConfiguration.add(colorCalibration: colorCalibration, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(expandPromptToJson: expandPromptToJson, &fbb)
     zzz_DflatGen_GenerationConfiguration.add(shiftForAudio: shiftForAudio, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(usesSolAttention: usesSolAttention, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(solAttentionStart: solAttentionStart, &fbb)
+    zzz_DflatGen_GenerationConfiguration.add(solAttentionTau: solAttentionTau, &fbb)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(&fbb, start: __start)
   }
 
@@ -1611,6 +1643,15 @@ public struct zzz_DflatGen_GenerationConfiguration: FlatBufferObject, Verifiable
       type: Bool.self)
     try _v.visit(
       field: VTOFFSET.shiftForAudio.p, fieldName: "shiftForAudio", required: false,
+      type: Float32.self)
+    try _v.visit(
+      field: VTOFFSET.usesSolAttention.p, fieldName: "usesSolAttention", required: false,
+      type: Bool.self)
+    try _v.visit(
+      field: VTOFFSET.solAttentionStart.p, fieldName: "solAttentionStart", required: false,
+      type: Int32.self)
+    try _v.visit(
+      field: VTOFFSET.solAttentionTau.p, fieldName: "solAttentionTau", required: false,
       type: Float32.self)
     _v.finish()
   }

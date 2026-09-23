@@ -38,6 +38,8 @@ extension UNetFromCoreML {
     modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool,
     usesFlashAttention: UseFlashAttention,
+    usesSolAttention: Bool,
+    solAttentionStart: Int, solAttentionTau: Float,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],

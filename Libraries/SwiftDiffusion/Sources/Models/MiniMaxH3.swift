@@ -167,6 +167,7 @@ private func H3Attention(
   prefix: (String, String), hiddenSize: Int, sequenceLength: Int, isRoPEEnabled: Bool,
   scaleFactor: Int,
   usesFlashAttention: FlashAttentionLevel, segments: [Int] = [], startIndex: Int = 0,
+  usesSolAttention: (eligibleForApproximation: Range<Int>, tau: Float)? = nil,
   name: String = ""
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -203,7 +204,13 @@ private func H3Attention(
     scale: 1,
     flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
   let attentionOutput: Model.IO
-  if segments.isEmpty {
+  if let usesSolAttention {
+    precondition(segments.isEmpty)
+    attentionOutput = SolAttention(
+      scale: 1, tau: usesSolAttention.tau,
+      approximationRange: usesSolAttention.eligibleForApproximation, blockSize: 64,
+      queryBlockSize: 64, localBlockRadius: 1)(q, k, v)
+  } else if segments.isEmpty {
     attentionOutput = attention(q, k, v)
   } else {
     precondition(segments.reduce(0, +) == sequenceLength)
@@ -305,7 +312,8 @@ private func H3SwiGLU(
 private func H3TransformerBlock(
   prefix: (String, String), hiddenSize: Int, textLength: Int, audioLength: Int, videoLength: Int,
   conditionLength: Int, referenceAudioLength: Int,
-  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int
+  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int,
+  usesSolAttention: (eligibleForApproximation: Range<Int>, tau: Float)?
 ) -> (ModelWeightMapper, Model) {
   let sequenceLength =
     textLength + conditionLength + referenceAudioLength + audioLength + videoLength
@@ -332,7 +340,8 @@ private func H3TransformerBlock(
   let (attentionMapper, attention) = H3Attention(
     prefix: ("\(prefix.0).attn", "\(prefix.1).attn"), hiddenSize: hiddenSize,
     sequenceLength: sequenceLength, isRoPEEnabled: true, scaleFactor: 8,
-    usesFlashAttention: usesFlashAttention, startIndex: startIndex)
+    usesFlashAttention: usesFlashAttention, startIndex: startIndex,
+    usesSolAttention: usesSolAttention)
   let normed1 = norm1(x).to(.Float16)
   let attentionInputs = spans.map { span in
     let modality = span.modality
@@ -700,10 +709,14 @@ public func MiniMaxH3Fixed(
   return (mapper, Model([text, timestepFrequencies] + referenceImages + referenceAudios, outputs))
 }
 
+/// Sol is opt-in. Global transformer layers
+/// 0, 1, 33, 34 and 35 remain dense; only generated-video interactions may be approximated.
+/// A nil configuration uses SDPA; an empty eligible range uses all-exact Sol attention.
 public func MiniMaxH3(
   hiddenSize: Int, layers: Int, startLayer: Int = 0, textLength: Int, audioLength: Int,
   videoFrames: Int,
   videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel,
+  usesSolAttention: (eligibleForApproximation: Range<Int>, tau: Float)? = nil,
   referenceImageSizes: [(height: Int, width: Int)] = [], referenceAudioLengths: [Int] = [],
   visionLength: Int = 0,
   outputResidual: Bool = false, inputResidual: Bool = false
@@ -726,6 +739,12 @@ public func MiniMaxH3(
   let conditionLength = referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
   let sequenceLength =
     textLength + conditionLength + referenceAudioLength + audioLength + videoLength
+
+  if let usesSolAttention, !usesSolAttention.eligibleForApproximation.isEmpty {
+    precondition(
+      usesSolAttention.eligibleForApproximation.lowerBound >= sequenceLength - videoLength)
+    precondition(usesSolAttention.eligibleForApproximation.upperBound <= sequenceLength)
+  }
 
   var out: Model.IO
   var inputs: [Model.IO]
@@ -818,7 +837,8 @@ public func MiniMaxH3(
       videoLength: visionLength + videoLength, conditionLength: conditionLength,
       referenceAudioLength: referenceAudioLength,
       usesFlashAttention: usesFlashAttention,
-      scaleFactor: scaleFactor, startIndex: startLayer)
+      scaleFactor: scaleFactor, startIndex: startLayer,
+      usesSolAttention: [0, 1, 33, 34, 35].contains(layer) ? nil : usesSolAttention)
     mappers.append(mapper)
     let conditionOffset = (layer - startLayer) * perLayerConditions
     out =
@@ -914,6 +934,7 @@ private func LoRAH3Attention(
   configuration: LoRANetworkConfiguration, sequenceLength: Int,
   isRoPEEnabled: Bool, scaleFactor: Int,
   usesFlashAttention: FlashAttentionLevel, segments: [Int] = [], startIndex: Int = 0,
+  usesSolAttention: (eligibleForApproximation: Range<Int>, tau: Float)? = nil,
   name: String = ""
 ) -> (ModelWeightMapper, Model) {
   let x = Input()
@@ -950,7 +971,13 @@ private func LoRAH3Attention(
     scale: 1,
     flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
   let attentionOutput: Model.IO
-  if segments.isEmpty {
+  if let usesSolAttention {
+    precondition(segments.isEmpty)
+    attentionOutput = SolAttention(
+      scale: 1, tau: usesSolAttention.tau,
+      approximationRange: usesSolAttention.eligibleForApproximation, blockSize: 64,
+      queryBlockSize: 64, localBlockRadius: 1)(q, k, v)
+  } else if segments.isEmpty {
     attentionOutput = attention(q, k, v)
   } else {
     precondition(segments.reduce(0, +) == sequenceLength)
@@ -1055,7 +1082,8 @@ private func LoRAH3TransformerBlock(
   configuration: LoRANetworkConfiguration, textLength: Int,
   audioLength: Int, videoLength: Int,
   conditionLength: Int, referenceAudioLength: Int,
-  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int
+  usesFlashAttention: FlashAttentionLevel, scaleFactor: Int?, startIndex: Int,
+  usesSolAttention: (eligibleForApproximation: Range<Int>, tau: Float)?
 ) -> (ModelWeightMapper, Model) {
   let sequenceLength =
     textLength + conditionLength + referenceAudioLength + audioLength + videoLength
@@ -1083,7 +1111,8 @@ private func LoRAH3TransformerBlock(
     prefix: ("\(prefix.0).attn", "\(prefix.1).attn"), hiddenSize: hiddenSize,
     layerIndex: layerIndex, configuration: configuration,
     sequenceLength: sequenceLength, isRoPEEnabled: true, scaleFactor: 8,
-    usesFlashAttention: usesFlashAttention, startIndex: startIndex)
+    usesFlashAttention: usesFlashAttention, startIndex: startIndex,
+    usesSolAttention: usesSolAttention)
   let normed1 = norm1(x).to(.Float16)
   let attentionInputs = spans.map { span in
     let modality = span.modality
@@ -1474,10 +1503,12 @@ public func LoRAMiniMaxH3Fixed(
   return (mapper, Model([text, timestepFrequencies] + referenceImages + referenceAudios, outputs))
 }
 
+/// Uses the same opt-in Sol policy and dense-layer selection as `MiniMaxH3`.
 public func LoRAMiniMaxH3(
   hiddenSize: Int, layers: Int, startLayer: Int = 0, textLength: Int, audioLength: Int,
   videoFrames: Int,
   videoHeight: Int, videoWidth: Int, usesFlashAttention: FlashAttentionLevel,
+  usesSolAttention: (eligibleForApproximation: Range<Int>, tau: Float)? = nil,
   referenceImageSizes: [(height: Int, width: Int)] = [], referenceAudioLengths: [Int] = [],
   visionLength: Int = 0,
   outputResidual: Bool = false, inputResidual: Bool = false,
@@ -1503,6 +1534,12 @@ public func LoRAMiniMaxH3(
   let conditionLength = referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
   let sequenceLength =
     textLength + conditionLength + referenceAudioLength + audioLength + videoLength
+
+  if let usesSolAttention, !usesSolAttention.eligibleForApproximation.isEmpty {
+    precondition(
+      usesSolAttention.eligibleForApproximation.lowerBound >= sequenceLength - videoLength)
+    precondition(usesSolAttention.eligibleForApproximation.upperBound <= sequenceLength)
+  }
 
   var out: Model.IO
   var inputs: [Model.IO]
@@ -1597,7 +1634,8 @@ public func LoRAMiniMaxH3(
       videoLength: visionLength + videoLength, conditionLength: conditionLength,
       referenceAudioLength: referenceAudioLength,
       usesFlashAttention: usesFlashAttention,
-      scaleFactor: scaleFactor, startIndex: startLayer)
+      scaleFactor: scaleFactor, startIndex: startLayer,
+      usesSolAttention: [0, 1, 33, 34, 35].contains(layerIndex) ? nil : usesSolAttention)
     mappers.append(mapper)
     let conditionOffset = (layerIndex - startLayer) * perLayerConditions
     out =

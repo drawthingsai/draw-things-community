@@ -19,6 +19,9 @@ where UNet.FloatType == FloatType {
   public let activationFfnProjUpScaling: [Int: Int]
   public let activationFfnScaling: [Int: Int]
   public let usesFlashAttention: UseFlashAttention
+  public let usesSolAttention: Bool
+  public let solAttentionStart: Int
+  public let solAttentionTau: Float
   public let upcastAttention: Bool
   public let externalOnDemand: Bool
   public let injectControls: Bool
@@ -45,6 +48,8 @@ where UNet.FloatType == FloatType {
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int],
     usesFlashAttention: UseFlashAttention,
+    usesSolAttention: Bool = false,
+    solAttentionStart: Int = 2, solAttentionTau: Float = 0.5,
     upcastAttention: Bool, externalOnDemand: Bool, injectControls: Bool,
     injectT2IAdapters: Bool, injectAttentionKV: Bool, injectIPAdapterLengths: [Int],
     lora: [LoRAConfiguration],
@@ -66,6 +71,9 @@ where UNet.FloatType == FloatType {
     self.activationFfnProjUpScaling = activationFfnProjUpScaling
     self.activationFfnScaling = activationFfnScaling
     self.usesFlashAttention = usesFlashAttention
+    self.usesSolAttention = usesSolAttention
+    self.solAttentionStart = solAttentionStart
+    self.solAttentionTau = solAttentionTau
     self.upcastAttention = upcastAttention
     self.externalOnDemand = externalOnDemand
     self.injectControls = injectControls
@@ -325,6 +333,8 @@ extension LCMSampler: Sampler {
           modifier: modifier, qkNorm: qkNorm,
           dualAttentionLayers: dualAttentionLayers,
           upcastAttention: upcastAttention, usesFlashAttention: usesFlashAttention,
+          usesSolAttention: usesSolAttention,
+          solAttentionStart: solAttentionStart, solAttentionTau: solAttentionTau,
           injectControlsAndAdapters: injectControlsAndAdapters, lora: lora,
           isQuantizedModel: isQuantizedModel, canRunLoRASeparately: canRunLoRASeparately,
           inputs: xIn, t,
@@ -516,7 +526,8 @@ extension LCMSampler: Sampler {
             version: refiner.version, modifier: modifier, qkNorm: refiner.qkNorm,
             dualAttentionLayers: refiner.dualAttentionLayers,
             upcastAttention: refiner.upcastAttention,
-            usesFlashAttention: usesFlashAttention,
+            usesFlashAttention: usesFlashAttention, usesSolAttention: usesSolAttention,
+            solAttentionStart: solAttentionStart, solAttentionTau: solAttentionTau,
             injectControlsAndAdapters: injectControlsAndAdapters,
             lora: lora, isQuantizedModel: refiner.isQuantizedModel,
             canRunLoRASeparately: canRunLoRASeparately,

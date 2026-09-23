@@ -294,6 +294,9 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     guard lhs.colorCalibration == rhs.colorCalibration else { return false }
     guard lhs.expandPromptToJson == rhs.expandPromptToJson else { return false }
     guard lhs.shiftForAudio == rhs.shiftForAudio else { return false }
+    guard lhs.usesSolAttention == rhs.usesSolAttention else { return false }
+    guard lhs.solAttentionStart == rhs.solAttentionStart else { return false }
+    guard lhs.solAttentionTau == rhs.solAttentionTau else { return false }
     return true
   }
   public var _rowid: Int64 = -1
@@ -385,6 +388,9 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
   public let colorCalibration: ColorCalibration
   public let expandPromptToJson: Bool
   public let shiftForAudio: Float32
+  public let usesSolAttention: Bool
+  public let solAttentionStart: Int32
+  public let solAttentionTau: Float32
   public init(
     id: Int64, startWidth: UInt16? = 0, startHeight: UInt16? = 0, seed: UInt32? = 0,
     steps: UInt32? = 0, guidanceScale: Float32? = 0.0, strength: Float32? = 0.0,
@@ -418,7 +424,8 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     causalInference: Int32? = 3, causalInferencePad: Int32? = 0, cfgZeroStar: Bool? = false,
     cfgZeroInitSteps: Int32? = 0, compressionArtifacts: CompressionMethod? = .disabled,
     compressionArtifactsQuality: Float32? = 43.1, colorCalibration: ColorCalibration? = .disabled,
-    expandPromptToJson: Bool? = false, shiftForAudio: Float32? = 3.0
+    expandPromptToJson: Bool? = false, shiftForAudio: Float32? = 3.0,
+    usesSolAttention: Bool? = false, solAttentionStart: Int32? = 2, solAttentionTau: Float32? = 0.5
   ) {
     self.id = id
     self.startWidth = startWidth ?? 0
@@ -507,6 +514,9 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     self.colorCalibration = colorCalibration ?? .disabled
     self.expandPromptToJson = expandPromptToJson ?? false
     self.shiftForAudio = shiftForAudio ?? 3.0
+    self.usesSolAttention = usesSolAttention ?? false
+    self.solAttentionStart = solAttentionStart ?? 2
+    self.solAttentionTau = solAttentionTau ?? 0.5
   }
   public init(_ obj: zzz_DflatGen_GenerationConfiguration) {
     self.id = obj.id
@@ -607,6 +617,9 @@ public final class GenerationConfiguration: Dflat.Atom, SQLiteDflat.SQLiteAtom,
     self.colorCalibration = ColorCalibration(rawValue: obj.colorCalibration.rawValue) ?? .disabled
     self.expandPromptToJson = obj.expandPromptToJson
     self.shiftForAudio = obj.shiftForAudio
+    self.usesSolAttention = obj.usesSolAttention
+    self.solAttentionStart = obj.solAttentionStart
+    self.solAttentionTau = obj.solAttentionTau
   }
   public static func from(data: Data) -> Self {
     return data.withUnsafeBytes { buffer in
@@ -767,6 +780,9 @@ public struct GenerationConfigurationBuilder {
   public var colorCalibration: ColorCalibration
   public var expandPromptToJson: Bool
   public var shiftForAudio: Float32
+  public var usesSolAttention: Bool
+  public var solAttentionStart: Int32
+  public var solAttentionTau: Float32
   public init(from object: GenerationConfiguration) {
     id = object.id
     startWidth = object.startWidth
@@ -855,6 +871,9 @@ public struct GenerationConfigurationBuilder {
     colorCalibration = object.colorCalibration
     expandPromptToJson = object.expandPromptToJson
     shiftForAudio = object.shiftForAudio
+    usesSolAttention = object.usesSolAttention
+    solAttentionStart = object.solAttentionStart
+    solAttentionTau = object.solAttentionTau
   }
   public func build() -> GenerationConfiguration {
     GenerationConfiguration(
@@ -892,7 +911,9 @@ public struct GenerationConfigurationBuilder {
       causalInferencePad: causalInferencePad, cfgZeroStar: cfgZeroStar,
       cfgZeroInitSteps: cfgZeroInitSteps, compressionArtifacts: compressionArtifacts,
       compressionArtifactsQuality: compressionArtifactsQuality, colorCalibration: colorCalibration,
-      expandPromptToJson: expandPromptToJson, shiftForAudio: shiftForAudio)
+      expandPromptToJson: expandPromptToJson, shiftForAudio: shiftForAudio,
+      usesSolAttention: usesSolAttention, solAttentionStart: solAttentionStart,
+      solAttentionTau: solAttentionTau)
   }
 }
 

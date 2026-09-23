@@ -193,7 +193,10 @@ public struct Invocation {
       compressionArtifactsQuality: parameters.compressionArtifactsQualityParameter.float32Value(),
       colorCalibration: parameters.colorCalibrationParameter.value,
       expandPromptToJson: parameters.expandPromptToJsonParameter.value,
-      shiftForAudio: parameters.shiftForAudioParameter.float32Value()
+      shiftForAudio: parameters.shiftForAudioParameter.float32Value(),
+      usesSolAttention: parameters.usesSolAttentionParameter.value,
+      solAttentionStart: parameters.solAttentionStartParameter.int32Value(),
+      solAttentionTau: parameters.solAttentionTauParameter.float32Value()
     )
     self.prompt = try unwrapOrThrow(
       parameters.promptParameter.value, errorMessage: "Missing prompt")
@@ -267,6 +270,9 @@ extension Invocation: CustomDebugStringConvertible {
       ("teaCacheEnd", configuration.teaCacheEnd),
       ("teaCacheThreshold", configuration.teaCacheThreshold),
       ("teaCache", configuration.teaCache as Any),
+      ("usesSolAttention", configuration.usesSolAttention as Any),
+      ("solAttentionStart", configuration.solAttentionStart),
+      ("solAttentionTau", configuration.solAttentionTau),
       ("separateT5", configuration.separateT5),
       ("t5Text", configuration.t5Text as Any),
       ("compressionArtifacts", configuration.compressionArtifacts),

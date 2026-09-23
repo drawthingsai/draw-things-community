@@ -2042,6 +2042,13 @@ public enum ImageConverter {
           description +=
             ", Tiled Diffusion Enabled: \(configuration.diffusionTileWidth * 64)x\(configuration.diffusionTileHeight * 64) [\(configuration.diffusionTileOverlap * 64)]"
         }
+        if modelVersion == .minimaxH3 && configuration.usesSolAttention {
+          json["uses_sol_attention"] = true
+          json["sol_attention_start"] = configuration.solAttentionStart
+          json["sol_attention_tau"] = configuration.solAttentionTau
+          description +=
+            ", Sol Attention Enabled: \(configuration.solAttentionStart), \(configuration.solAttentionTau.formatted(.number.precision(.fractionLength(2))))"
+        }
         if hasTeaCache && configuration.teaCache && configuration.teaCacheThreshold > 0 {
           json["tea_cache"] = configuration.teaCache
           json["tea_cache_start"] = configuration.teaCacheStart
@@ -2397,6 +2404,18 @@ public enum ImageConverter {
 
         if let zeroNegativePrompt = commentsJsonDictionary["zero_negative_prompt"] as? Bool {
           configurationBuilder.zeroNegativePrompt = zeroNegativePrompt
+        }
+
+        if let usesSolAttention = commentsJsonDictionary["uses_sol_attention"] as? Bool {
+          configurationBuilder.usesSolAttention = usesSolAttention
+        }
+        if let solAttentionStart = commentsJsonDictionary["sol_attention_start"] as? Int32 {
+          configurationBuilder.solAttentionStart = max(0, solAttentionStart)
+        }
+        if let solAttentionTau = commentsJsonDictionary["sol_attention_tau"] as? Float,
+          solAttentionTau.isFinite
+        {
+          configurationBuilder.solAttentionTau = min(max(solAttentionTau, 0), 4)
         }
 
         if let shiftForAudio = commentsJsonDictionary["shift_for_audio"] as? Float,

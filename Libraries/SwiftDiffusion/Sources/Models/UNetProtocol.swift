@@ -69,6 +69,8 @@ public protocol UNetProtocol {
     modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool,
     usesFlashAttention: UseFlashAttention,
+    usesSolAttention: Bool,
+    solAttentionStart: Int, solAttentionTau: Float,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
@@ -535,7 +537,7 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
 }
 
 enum ModelBuilderOrModel {
-  case modelBuilder(ModelBuilder<Void>)
+  case modelBuilder(ModelBuilder<Bool>)
   case model(Model)
   public var unwrapped: AnyModel {
     switch self {
@@ -571,31 +573,35 @@ enum ModelBuilderOrModel {
       modelBuilder.cancel()
     }
   }
-  public func compile(inputs: [DynamicGraph_Any], isEager: Bool = false) {
+  public func compile(_ parameter: Bool = false, inputs: [DynamicGraph_Any], isEager: Bool = false)
+  {
     switch self {
     case .model(let model):
       model.compile(inputs: inputs, isEager: isEager)
     case .modelBuilder(let modelBuilder):
-      modelBuilder.compile(inputs: inputs, isEager: isEager)
+      modelBuilder.compile(parameter, inputs: inputs, isEager: isEager)
     }
   }
-  public func compile(inputs: DynamicGraph_Any..., isEager: Bool = false) {
-    compile(inputs: inputs, isEager: isEager)
+  public func compile(_ parameter: Bool = false, inputs: DynamicGraph_Any..., isEager: Bool = false)
+  {
+    compile(parameter, inputs: inputs, isEager: isEager)
   }
   public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
-    inputs firstInput: T, _ restInputs: [DynamicGraph_Any], streamContext: StreamContext? = nil
+    _ parameter: Bool = false, inputs firstInput: T, _ restInputs: [DynamicGraph_Any],
+    streamContext: StreamContext? = nil
   ) -> [T.AnyTensor] {
     switch self {
     case .model(let model):
       return model(inputs: firstInput, restInputs, streamContext: streamContext)
     case .modelBuilder(let modelBuilder):
-      return modelBuilder(inputs: firstInput, restInputs, streamContext: streamContext)
+      return modelBuilder(parameter, inputs: firstInput, restInputs, streamContext: streamContext)
     }
   }
   public func callAsFunction<T: DynamicGraph.AnyTensorGroup>(
-    inputs firstInput: T, _ restInputs: DynamicGraph_Any..., streamContext: StreamContext? = nil
+    _ parameter: Bool = false, inputs firstInput: T, _ restInputs: DynamicGraph_Any...,
+    streamContext: StreamContext? = nil
   ) -> [T.AnyTensor] {
-    return self(inputs: firstInput, restInputs, streamContext: streamContext)
+    return self(parameter, inputs: firstInput, restInputs, streamContext: streamContext)
   }
 }
 
@@ -603,6 +609,8 @@ public struct UNetFromNNC<FloatType: TensorNumeric & BinaryFloatingPoint>: UNetP
   var teaCache: TeaCache<FloatType>? = nil
   var unet: ModelBuilderOrModel? = nil
   var unconditionalUNet: ModelBuilderOrModel? = nil
+  private var usesSolAttention = false
+  private var solAttentionStart = 2
   var previewer: Model? = nil
   var unetWeightMapper: ModelWeightMapper? = nil
   var timeEmbed: Model? = nil
@@ -668,6 +676,8 @@ extension UNetFromNNC {
     version: ModelVersion, modifier: SamplerModifier,
     qkNorm: Bool, dualAttentionLayers: [Int], upcastAttention: Bool,
     usesFlashAttention useFlashAttention: UseFlashAttention,
+    usesSolAttention: Bool,
+    solAttentionStart: Int, solAttentionTau: Float,
     injectControlsAndAdapters: InjectControlsAndAdapters<FloatType>, lora: [LoRAConfiguration],
     isQuantizedModel: Bool, canRunLoRASeparately: Bool, inputs xT: DynamicGraph.Tensor<FloatType>,
     _ timestep: DynamicGraph.Tensor<FloatType>?, _ c: [DynamicGraph.AnyTensor],
@@ -762,17 +772,36 @@ extension UNetFromNNC {
       let referenceAudioLengths = c[
         (2 + referenceImageCount)..<(2 + referenceImageCount + referenceAudioCount)
       ].map { $0.shape[1] }
+      #if os(macOS) || os(iOS) || os(tvOS)
+        self.usesSolAttention =
+          usesSolAttention && useFlashAttention != .none
+          && !DynamicGraph.flags.contains(.disableMFA)
+          && !DynamicGraph.flags.contains(.disableMFAAttention)
+      #else
+        self.usesSolAttention = false
+      #endif
+      let usesSolAttention = self.usesSolAttention
+      self.solAttentionStart = max(0, solAttentionStart)
       unet = .modelBuilder(
-        ModelBuilder {
-          let videoFrames = isTeaCacheEnabled ? videoLatentFrames : $0[0].shape[0]
-          let videoHeight = isTeaCacheEnabled ? tiledHeight : $0[0].shape[1]
-          let videoWidth = isTeaCacheEnabled ? tiledWidth : $0[0].shape[2]
+        ModelBuilder { eligibleForApproximation, inputs in
+          let videoFrames = isTeaCacheEnabled ? videoLatentFrames : inputs[0].shape[0]
+          let videoHeight = isTeaCacheEnabled ? tiledHeight : inputs[0].shape[1]
+          let videoWidth = isTeaCacheEnabled ? tiledWidth : inputs[0].shape[2]
           let textLength =
             isTeaCacheEnabled
-            ? $0[0].shape[1] - audioLength - videoFrames * videoHeight / 2 * (videoWidth / 2)
+            ? inputs[0].shape[1] - audioLength - videoFrames * videoHeight / 2 * (videoWidth / 2)
               - referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
               - referenceAudioLengths.reduce(0, +)
-            : $0[2].shape[1]
+            : inputs[2].shape[1]
+          let sequenceLength = inputs[isTeaCacheEnabled ? 1 : 3].shape[1]
+          let videoLength = videoFrames * videoHeight / 2 * (videoWidth / 2)
+          let solAttention: (eligibleForApproximation: Range<Int>, tau: Float)? =
+            usesSolAttention
+            ? (
+              eligibleForApproximation ? (sequenceLength - videoLength)..<sequenceLength : 0..<0,
+              solAttentionTau
+            )
+            : nil
           if usesLoRA {
             return LoRAMiniMaxH3(
               hiddenSize: 5_376, layers: isTeaCacheEnabled ? 49 : 50,
@@ -780,6 +809,7 @@ extension UNetFromNNC {
               textLength: textLength, audioLength: audioLength,
               videoFrames: videoFrames, videoHeight: videoHeight, videoWidth: videoWidth,
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              usesSolAttention: solAttention,
               referenceImageSizes: referenceImageSizes,
               referenceAudioLengths: referenceAudioLengths,
               visionLength: visionLength, outputResidual: isTeaCacheEnabled,
@@ -792,15 +822,17 @@ extension UNetFromNNC {
             textLength: textLength, audioLength: audioLength,
             videoFrames: videoFrames, videoHeight: videoHeight, videoWidth: videoWidth,
             usesFlashAttention: valueOr(useFlashAttention, .scale1),
+            usesSolAttention: solAttention,
             referenceImageSizes: referenceImageSizes, referenceAudioLengths: referenceAudioLengths,
             visionLength: visionLength, outputResidual: isTeaCacheEnabled
           ).1
         })
       if isTeaCacheEnabled {
         let reducedModel = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             let textLength =
-              $0[0].shape[1] - audioLength - videoLatentFrames * tiledHeight / 2 * (tiledWidth / 2)
+              inputs[0].shape[1] - audioLength - videoLatentFrames * tiledHeight / 2
+              * (tiledWidth / 2)
               - referenceImageSizes.reduce(0) { $0 + $1.height / 2 * ($1.width / 2) }
               - referenceAudioLengths.reduce(0, +)
             if usesLoRA {
@@ -825,12 +857,12 @@ extension UNetFromNNC {
             ).1
           })
         let inferModel = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let videoShape = $0[0].shape
+          ModelBuilder { _, inputs in
+            let videoShape = inputs[0].shape
             if usesLoRA {
               return LoRAMiniMaxH3(
                 hiddenSize: 5_376, layers: 1,
-                textLength: $0[2].shape[1], audioLength: audioLength,
+                textLength: inputs[2].shape[1], audioLength: audioLength,
                 videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
                 usesFlashAttention: valueOr(useFlashAttention, .scale1),
                 referenceImageSizes: referenceImageSizes,
@@ -840,7 +872,7 @@ extension UNetFromNNC {
             }
             return MiniMaxH3(
               hiddenSize: 5_376, layers: 1,
-              textLength: $0[2].shape[1], audioLength: audioLength,
+              textLength: inputs[2].shape[1], audioLength: audioLength,
               videoFrames: videoShape[0], videoHeight: videoShape[1], videoWidth: videoShape[2],
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
               referenceImageSizes: referenceImageSizes,
@@ -871,29 +903,29 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textShape = $0[1].shape
+          ModelBuilder { _, inputs in
+            let textShape = inputs[1].shape
             return LoRAIdeogram4(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1),
               LoRAConfiguration: configuration
             ).1
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textShape = $0[1].shape
+          ModelBuilder { _, inputs in
+            let textShape = inputs[1].shape
             return Ideogram4(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).1
           })
       }
       if c.count > Ideogram4ConditionCount {
         unconditionalUNet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             return Ideogram4(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth, textLength: 0,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth, textLength: 0,
               usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).1
           })
@@ -1386,10 +1418,10 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             return LoRAHunyuan(
-              time: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-              textLength: $0[3].shape[1],
+              time: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: inputs[3].shape[1],
               channels: 3072, layers: (20, 40),
               usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               outputResidual: isTeaCacheEnabled, inputResidual: false,
@@ -1417,10 +1449,10 @@ extension UNetFromNNC {
         }
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             return Hunyuan(
-              time: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-              textLength: $0[3].shape[1],
+              time: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
+              textLength: inputs[3].shape[1],
               channels: 3072, layers: (20, 40),
               usesFlashAttention: valueOr(useFlashAttention, .scaleMerged),
               outputResidual: isTeaCacheEnabled, inputResidual: false
@@ -1659,7 +1691,7 @@ extension UNetFromNNC {
       if didRunLoRASeparately {
         configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         unet = .modelBuilder(
-          ModelBuilder { inputs in
+          ModelBuilder { _, inputs in
             LoRAQwenImage2_1(
               FloatType.self, batchSize: inputs[0].shape[0],
               height: inputs[0].shape[1], width: inputs[0].shape[2],
@@ -1671,7 +1703,7 @@ extension UNetFromNNC {
           })
       } else {
         unet = .modelBuilder(
-          ModelBuilder { inputs in
+          ModelBuilder { _, inputs in
             QwenImage2_1(
               FloatType.self, batchSize: inputs[0].shape[0],
               height: inputs[0].shape[1], width: inputs[0].shape[2],
@@ -1698,16 +1730,16 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             let referenceSequenceLength: Int
-            let textLength = $0[$0.count - 719].shape[1]
+            let textLength = inputs[inputs.count - 719].shape[1]
             if referenceImageCount > 0 {
-              referenceSequenceLength = $0[2].shape[1]
+              referenceSequenceLength = inputs[2].shape[1]
             } else {
               referenceSequenceLength = 0
             }
             return LoRAQwenImage(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
               usesFlashAttention: valueOr(useFlashAttention, isBF16 ? .scaleMerged : .scale1),
@@ -1722,16 +1754,16 @@ extension UNetFromNNC {
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             let referenceSequenceLength: Int
-            let textLength = $0[$0.count - 719].shape[1]
+            let textLength = inputs[inputs.count - 719].shape[1]
             if referenceImageCount > 0 {
-              referenceSequenceLength = $0[2].shape[1]
+              referenceSequenceLength = inputs[2].shape[1]
             } else {
               referenceSequenceLength = 0
             }
             return QwenImage(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, referenceSequenceLength: referenceSequenceLength,
               channels: 3_072, layers: 60,
               usesFlashAttention: valueOr(useFlashAttention, isBF16 ? .scaleMerged : .scale1),
@@ -1759,10 +1791,10 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textLength = $0[$0.count - 130].shape[1]
+          ModelBuilder { _, inputs in
+            let textLength = inputs[inputs.count - 130].shape[1]
             return LoRAZImage(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength,
               channels: 3_840, layers: 30, activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
@@ -1775,10 +1807,10 @@ extension UNetFromNNC {
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textLength = $0[$0.count - 130].shape[1]
+          ModelBuilder { _, inputs in
+            let textLength = inputs[inputs.count - 130].shape[1]
             return ZImage(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength,
               channels: 3_840, layers: 30, activationQkScaling: activationQkScaling,
               activationProjScaling: activationProjScaling,
@@ -1804,10 +1836,10 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textLength = $0[3].shape[1]
+          ModelBuilder { _, inputs in
+            let textLength = inputs[3].shape[1]
             return LoRAErnieImage(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, layers: 36, channels: 4_096,
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
               LoRAConfiguration: configuration
@@ -1815,10 +1847,10 @@ extension UNetFromNNC {
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textLength = $0[3].shape[1]
+          ModelBuilder { _, inputs in
+            let textLength = inputs[3].shape[1]
             return ErnieImage(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, layers: 36, channels: 4_096,
               usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).1
@@ -1839,20 +1871,20 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textShape = $0[1].shape
+          ModelBuilder { _, inputs in
+            let textShape = inputs[1].shape
             return LoRAKrea2(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1),
               LoRAConfiguration: configuration
             ).1
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textShape = $0[1].shape
+          ModelBuilder { _, inputs in
+            let textShape = inputs[1].shape
             return Krea2(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textShape[1], usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).1
           })
@@ -1884,21 +1916,21 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             let referenceSequenceLength: Int
             let tokenLength: Int
             if modifier == .kontextKv && referenceImageCount > 0 {
-              referenceSequenceLength = $0[$0.count - 1].shape[1]
-              tokenLength = $0[2].shape[1]
+              referenceSequenceLength = inputs[inputs.count - 1].shape[1]
+              tokenLength = inputs[2].shape[1]
             } else if referenceImageCount > 0 {
-              referenceSequenceLength = $0[2].shape[1]
-              tokenLength = $0[3].shape[1]
+              referenceSequenceLength = inputs[2].shape[1]
+              tokenLength = inputs[3].shape[1]
             } else {
               referenceSequenceLength = 0
-              tokenLength = $0[2].shape[1]
+              tokenLength = inputs[2].shape[1]
             }
             return LoRAFlux2(
-              batchSize: $0[0].shape[0], tokenLength: tokenLength,
+              batchSize: inputs[0].shape[0], tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
@@ -1908,21 +1940,21 @@ extension UNetFromNNC {
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
+          ModelBuilder { _, inputs in
             let referenceSequenceLength: Int
             let tokenLength: Int
             if modifier == .kontextKv && referenceImageCount > 0 {
-              referenceSequenceLength = $0[$0.count - 1].shape[1]
-              tokenLength = $0[2].shape[1]
+              referenceSequenceLength = inputs[inputs.count - 1].shape[1]
+              tokenLength = inputs[2].shape[1]
             } else if referenceImageCount > 0 {
-              referenceSequenceLength = $0[2].shape[1]
-              tokenLength = $0[3].shape[1]
+              referenceSequenceLength = inputs[2].shape[1]
+              tokenLength = inputs[3].shape[1]
             } else {
               referenceSequenceLength = 0
-              tokenLength = $0[2].shape[1]
+              tokenLength = inputs[2].shape[1]
             }
             return Flux2(
-              batchSize: $0[0].shape[0], tokenLength: tokenLength,
+              batchSize: inputs[0].shape[0], tokenLength: tokenLength,
               referenceSequenceLength: referenceSequenceLength,
               height: tiledHeight, width: tiledWidth, channels: channels, layers: layers,
               usesFlashAttention: valueOr(useFlashAttention, .scale1),
@@ -1945,20 +1977,20 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textLength = $0[2 + CosmosFixedTimeConditionCount].shape[1]
+          ModelBuilder { _, inputs in
+            let textLength = inputs[2 + CosmosFixedTimeConditionCount].shape[1]
             return LoRACosmos(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, usesFlashAttention: valueOr(useFlashAttention, .scale1),
               LoRAConfiguration: configuration
             ).0
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let textLength = $0[2 + CosmosFixedTimeConditionCount].shape[1]
+          ModelBuilder { _, inputs in
+            let textLength = inputs[2 + CosmosFixedTimeConditionCount].shape[1]
             return Cosmos(
-              batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
+              batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
               textLength: textLength, usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).1
           })
@@ -1973,10 +2005,10 @@ extension UNetFromNNC {
       tileScaleFactor = 32
       didRunLoRASeparately = false
       unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
+        ModelBuilder { _, inputs in
           return HiDreamO1(
-            batchSize: $0[0].shape[0], height: tiledHeight, width: tiledWidth,
-            textLength: $0[3].shape[1], layers: 36, hiddenSize: 4_096,
+            batchSize: inputs[0].shape[0], height: tiledHeight, width: tiledWidth,
+            textLength: inputs[3].shape[1], layers: 36, hiddenSize: 4_096,
             intermediateSize: 12_288)
         })
     case .hiDreamI1:
@@ -2067,10 +2099,10 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let shape = $0[0].shape
-            let audioFrames = $0[1].shape[1]
-            let textLength = $0[5].shape[1]
+          ModelBuilder { _, inputs in
+            let shape = inputs[0].shape
+            let audioFrames = inputs[1].shape[1]
+            let textLength = inputs[5].shape[1]
             return LoRALTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
@@ -2083,10 +2115,10 @@ extension UNetFromNNC {
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let shape = $0[0].shape
-            let audioFrames = $0[1].shape[1]
-            let textLength = $0[5].shape[1]
+          ModelBuilder { _, inputs in
+            let shape = inputs[0].shape
+            let audioFrames = inputs[1].shape[1]
+            let textLength = inputs[5].shape[1]
             return LTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
@@ -2120,10 +2152,10 @@ extension UNetFromNNC {
         let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
         configuration.keys = keys
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let shape = $0[0].shape
-            let audioFrames = $0[1].shape[1]
-            let textLength = $0[$0.count - 2].shape[1]
+          ModelBuilder { _, inputs in
+            let shape = inputs[0].shape
+            let audioFrames = inputs[1].shape[1]
+            let textLength = inputs[inputs.count - 2].shape[1]
             return LoRALTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
@@ -2136,10 +2168,10 @@ extension UNetFromNNC {
           })
       } else {
         unet = ModelBuilderOrModel.modelBuilder(
-          ModelBuilder {
-            let shape = $0[0].shape
-            let audioFrames = $0[1].shape[1]
-            let textLength = $0[$0.count - 2].shape[1]
+          ModelBuilder { _, inputs in
+            let shape = inputs[0].shape
+            let audioFrames = inputs[1].shape[1]
+            let textLength = inputs[inputs.count - 2].shape[1]
             return LTX2(
               time: shape[0], h: shape[1], w: shape[2], textLength: textLength,
               audioFrames: audioFrames, channels: (4096, 2048), layers: 48,
@@ -2161,11 +2193,11 @@ extension UNetFromNNC {
       didRunLoRASeparately = false
       let configuration: SeedVR2DiTConfiguration = version == .seedvr2_7b ? ._7B : ._3B
       unet = ModelBuilderOrModel.modelBuilder(
-        ModelBuilder {
+        ModelBuilder { _, inputs in
           SeedVR2DiT(
             configuration: configuration, frames: 1, latentHeight: tiledHeight,
             latentWidth: tiledWidth,
-            textLength: $0[2].shape[0],
+            textLength: inputs[2].shape[0],
             usesFlashAttention: valueOr(useFlashAttention, .scaleMerged))
         })
     }
@@ -3665,6 +3697,7 @@ extension UNetFromNNC {
       precondition(
         restInputs.count == fixedConditionCount + 2 + referenceImageCount + referenceAudioCount)
       let graph = firstInput.graph
+      let eligibleForApproximation = usesSolAttention && step >= solAttentionStart
       // The RF schedule repeats alpha = 1 at the clean endpoint. The reference stops before this
       // zero-delta evaluation, and evaluating H3 at timestep zero can produce non-finite FP16 values.
       guard timestep.now > 0 else {
@@ -3750,6 +3783,9 @@ extension UNetFromNNC {
           ]
           let marker = index * (isCfgEnabled ? 2 : 1) + branch
           let tailInputs = [modelInputs[3]] + modelInputs.dropFirst(firstInputs.count)
+          if usesSolAttention && step == solAttentionStart {
+            unet.compile(true, inputs: [hiddenState] + tailInputs)
+          }
           let shouldUseCache = teaCache.shouldUseCacheForTimeEmbedding(
             signals, model: unet, step: step, marker: marker, of: Float.self)
           if shouldUseCache,
@@ -3757,11 +3793,14 @@ extension UNetFromNNC {
           {
             result = cached
           } else {
-            result = unet(inputs: hiddenState, tailInputs)
+            result = unet(eligibleForApproximation, inputs: hiddenState, tailInputs)
             teaCache.cache(outputs: result, marker: marker)
           }
         } else {
-          result = unet(inputs: video, Array(modelInputs.dropFirst()))
+          if usesSolAttention && step == solAttentionStart {
+            unet.compile(true, inputs: modelInputs)
+          }
+          result = unet(eligibleForApproximation, inputs: video, Array(modelInputs.dropFirst()))
         }
         let videoVelocity = DynamicGraph.Tensor<FloatType>(from: result[0])
         let audioVelocity = DynamicGraph.Tensor<FloatType>(from: result[1]) * audioScale

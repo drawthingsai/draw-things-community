@@ -258,6 +258,12 @@ extension GenerationConfiguration: FlatBuffersEncodable {
     zzz_DflatGen_GenerationConfiguration.add(
       expandPromptToJson: self.expandPromptToJson, &flatBufferBuilder)
     zzz_DflatGen_GenerationConfiguration.add(shiftForAudio: self.shiftForAudio, &flatBufferBuilder)
+    zzz_DflatGen_GenerationConfiguration.add(
+      usesSolAttention: self.usesSolAttention, &flatBufferBuilder)
+    zzz_DflatGen_GenerationConfiguration.add(
+      solAttentionStart: self.solAttentionStart, &flatBufferBuilder)
+    zzz_DflatGen_GenerationConfiguration.add(
+      solAttentionTau: self.solAttentionTau, &flatBufferBuilder)
     return zzz_DflatGen_GenerationConfiguration.endGenerationConfiguration(
       &flatBufferBuilder, start: start)
   }
@@ -372,6 +378,9 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
   public var colorCalibration: ColorCalibration
   public var expandPromptToJson: Bool
   public var shiftForAudio: Float32
+  public var usesSolAttention: Bool
+  public var solAttentionStart: Int32
+  public var solAttentionTau: Float32
   private init(type _type: ChangeRequestType) {
     _o = nil
     self._type = _type
@@ -463,6 +472,9 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     colorCalibration = .disabled
     expandPromptToJson = false
     shiftForAudio = 3.0
+    usesSolAttention = false
+    solAttentionStart = 2
+    solAttentionTau = 0.5
   }
   private init(type _type: ChangeRequestType, _ _o: GenerationConfiguration) {
     self._o = _o
@@ -555,6 +567,9 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
     colorCalibration = _o.colorCalibration
     expandPromptToJson = _o.expandPromptToJson
     shiftForAudio = _o.shiftForAudio
+    usesSolAttention = _o.usesSolAttention
+    solAttentionStart = _o.solAttentionStart
+    solAttentionTau = _o.solAttentionTau
   }
   public static func changeRequest(_ o: GenerationConfiguration)
     -> GenerationConfigurationChangeRequest?
@@ -636,7 +651,9 @@ public final class GenerationConfigurationChangeRequest: Dflat.ChangeRequest {
       causalInferencePad: causalInferencePad, cfgZeroStar: cfgZeroStar,
       cfgZeroInitSteps: cfgZeroInitSteps, compressionArtifacts: compressionArtifacts,
       compressionArtifactsQuality: compressionArtifactsQuality, colorCalibration: colorCalibration,
-      expandPromptToJson: expandPromptToJson, shiftForAudio: shiftForAudio)
+      expandPromptToJson: expandPromptToJson, shiftForAudio: shiftForAudio,
+      usesSolAttention: usesSolAttention, solAttentionStart: solAttentionStart,
+      solAttentionTau: solAttentionTau)
     atom._rowid = _rowid
     return atom
   }
