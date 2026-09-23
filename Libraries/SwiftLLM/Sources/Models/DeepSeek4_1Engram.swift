@@ -83,25 +83,6 @@ public struct DeepSeek4_1EngramConfiguration: Codable, Sendable {
   public static let deepSeekV4_1Flash = DeepSeek4_1EngramConfiguration()
 }
 
-public enum DeepSeek4_1EngramError: LocalizedError {
-  case invalidTableSize
-  case invalidTableValue(Int32)
-  case tableReadFailed(Int32)
-
-  public var errorDescription: String? {
-    switch self {
-    case .invalidTableSize:
-      return "The Engram file does not have the expected size."
-    case .invalidTableValue(let row):
-      return "Engram row \(row) contains an invalid value or exceeds the FP16 range."
-    case .tableReadFailed(let code):
-      return code == 0
-        ? "The Engram file ended during a row read."
-        : "Cannot read the Engram file (errno \(code))."
-    }
-  }
-}
-
 /// Hash text n-grams on CPU using the vocabulary-derived token map and fixed
 /// model constants. `previousTokens` holds up to the preceding three original token
 /// IDs; keep the returned history with the KV state for continuation/rollback.
@@ -192,17 +173,17 @@ private let FP8_E4M3: [Float] = [
 public struct DeepSeek4_1EngramReader<FloatType: TensorNumeric & BinaryFloatingPoint> {
   private let file: FileHandle
 
-  public init(filePath: String) throws {
-    let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: filePath))
-    guard try file.seekToEnd() == DeepSeek4_1EngramConfiguration.deepSeekV4_1Flash.fileSize
-    else {
-      try? file.close()
-      throw DeepSeek4_1EngramError.invalidTableSize
+  public init(filePath: String) {
+    guard let file = FileHandle(forReadingAtPath: filePath) else {
+      preconditionFailure("Cannot open Engram file: \(filePath)")
     }
+    precondition(
+      (try? file.seekToEnd()) == DeepSeek4_1EngramConfiguration.deepSeekV4_1Flash.fileSize,
+      "The Engram file does not have the expected size.")
     self.file = file
   }
 
-  public func read(layerIndex: Int, rows: [Int32]) throws -> Tensor<FloatType> {
+  public func read(layerIndex: Int, rows: [Int32]) -> Tensor<FloatType> {
     let configuration = DeepSeek4_1EngramConfiguration.deepSeekV4_1Flash
     precondition(configuration.layers.contains(layerIndex))
     let layer = configuration.layers.firstIndex(of: layerIndex)!
@@ -213,7 +194,7 @@ public struct DeepSeek4_1EngramReader<FloatType: TensorNumeric & BinaryFloatingP
     var packed = [UInt8](repeating: 0, count: rowBytes)
     var output = [FloatType](repeating: 0, count: rows.count * width)
     var decoded = [Int32: Int]()
-    try output.withUnsafeMutableBufferPointer { destination in
+    output.withUnsafeMutableBufferPointer { destination in
       for (index, row) in rows.enumerated() {
         precondition(row >= 0 && Int(row) < rowCount)
         if let previous = decoded[row] {
@@ -222,31 +203,27 @@ public struct DeepSeek4_1EngramReader<FloatType: TensorNumeric & BinaryFloatingP
           continue
         }
         let offset = tableOffset + UInt64(row) * UInt64(rowBytes)
-        try packed.withUnsafeMutableBytes { buffer in
+        packed.withUnsafeMutableBytes { buffer in
           var readCount = 0
           while readCount < rowBytes {
             let result = pread(
               file.fileDescriptor, buffer.baseAddress!.advanced(by: readCount),
               rowBytes - readCount, off_t(offset + UInt64(readCount)))
             if result < 0 && errno == EINTR { continue }
-            guard result > 0 else {
-              throw DeepSeek4_1EngramError.tableReadFailed(result < 0 ? errno : 0)
-            }
+            precondition(
+              result > 0, "Cannot read Engram row \(row) (errno \(result < 0 ? errno : 0)).")
             readCount += result
           }
         }
         for group in 0..<(width / 32) {
           let scaleByte = packed[width + group]
-          guard scaleByte != 255 else {
-            throw DeepSeek4_1EngramError.invalidTableValue(row)
-          }
+          precondition(scaleByte != 255, "Engram row \(row) contains an invalid scale.")
           let scale = Float(sign: .plus, exponent: Int(scaleByte) - 127, significand: 1)
           for column in (group * 32)..<((group + 1) * 32) {
             // Apply the E8M0 scale in FP32 before converting to the requested type.
             let value = FloatType(FP8_E4M3[Int(packed[column])] * scale)
-            guard value.isFinite else {
-              throw DeepSeek4_1EngramError.invalidTableValue(row)
-            }
+            precondition(
+              value.isFinite, "Engram row \(row) contains an invalid or overflowing value.")
             destination[index * width + column] = value
           }
         }

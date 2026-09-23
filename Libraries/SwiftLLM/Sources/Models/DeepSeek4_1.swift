@@ -307,11 +307,15 @@ public func DeepSeek4_1Compressor(
   let headDim = configuration.attentionHeadDim
   let rows = tokenLength / compressionRatio
   let projected = Dense(count: headDim, noBias: true, name: "\(prefix).wkv")(x)
-  projected.add(dependencies: dependencies)
+  if !dependencies.isEmpty {
+    projected.add(dependencies: dependencies)
+  }
   let pooled: Model.IO
   if compressionRatio == 2 {
     let scores = Dense(count: headDim, noBias: true, name: "\(prefix).wgate")(x)
-    scores.add(dependencies: dependencies)
+    if !dependencies.isEmpty {
+      scores.add(dependencies: dependencies)
+    }
     let weights = scores.reshaped([rows, compressionRatio, headDim]).transposed(1, 2).contiguous()
       .reshaped([rows * headDim, compressionRatio]).softmax()
       .reshaped([rows, headDim, compressionRatio])
@@ -622,7 +626,9 @@ private func DeepSeek4_1SharedFFN(
 ) -> Model.IO {
   let hidden = SwiGLU(
     count: configuration.sharedIntermediateSize, clamp: 10, name: "\(prefix).shared_experts")(x)
-  hidden.add(dependencies: dependencies)
+  if !dependencies.isEmpty {
+    hidden.add(dependencies: dependencies)
+  }
   return Dense(
     count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")(hidden)
 }
