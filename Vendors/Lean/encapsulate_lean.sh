@@ -29,7 +29,8 @@ sdk_version=$(xcrun --sdk "$sdk" --show-sdk-version)
 # As with PythonIOS, allocate common globals and bind dependency references
 # locally before stripping. Apply the export boundary to this object only, not
 # the app: other embedded runtimes must retain their own public interfaces.
-xcrun --sdk "$sdk" ld-classic -r -d -arch "$arch" \
+lean_ld_classic=${LEAN_LD_CLASSIC:-$(xcrun --sdk "$sdk" --find ld-classic)}
+"$lean_ld_classic" -r -d -arch "$arch" \
   -syslibroot "$sdk_root" \
   -platform_version "$platform" "$minimum_os" "$sdk_version" \
   -bitcode_process_mode strip -exported_symbols_list "$symbols" \

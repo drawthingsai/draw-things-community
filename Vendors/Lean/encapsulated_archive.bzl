@@ -39,6 +39,8 @@ def _lean_archive_impl(ctx):
         xcode_config = xcode_config,
         executable = "/bin/bash",
         arguments = [args],
+        # Limit this host-tool override to encapsulation actions.
+        env = {"LEAN_LD_CLASSIC": ctx.var.get("LEAN_LD_CLASSIC", "")},
         inputs = depset([ctx.file._script, ctx.file.symbols, ctx.file.roots], transitive = [archives]),
         outputs = [output],
         mnemonic = "EncapsulateLean",

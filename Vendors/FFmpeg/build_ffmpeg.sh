@@ -72,7 +72,8 @@ find libav* libsw* -name '*.a' >> "$work_dir/objects.txt"
 printf '%s\n' _FFmpegCommandRun _FFprobeCommandRun > "$work_dir/exports.txt"
 # Only the command ABI escapes: libav* and generic fftools symbols cannot bind
 # to another embedded runtime (or another FFmpeg consumer) in the application.
-xcrun --sdk "$sdk" ld-classic -r -d -arch "$arch" \
+ffmpeg_ld_classic=${FFMPEG_LD_CLASSIC:-$(xcrun --sdk "$sdk" --find ld-classic)}
+"$ffmpeg_ld_classic" -r -d -arch "$arch" \
   -syslibroot "$sdk_root" -platform_version "$platform" "$minimum_os" "$sdk_version" \
   -exported_symbols_list "$work_dir/exports.txt" \
   -filelist "$work_dir/objects.txt" -o "$work_dir/FFmpeg.o"

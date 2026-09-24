@@ -71,6 +71,10 @@ from making progress.
 
 ## Validation and upgrades
 
+With Xcode versions that omit `ld-classic`, pass
+`--action_env=FFMPEG_LD_CLASSIC=/path/to/ld-classic` to Bazel to use an installed
+linker for the relocatable symbol-isolation step.
+
 ```sh
 bazel test //Vendors/FFmpeg:FFmpegCommandTests //Vendors/FFmpeg:IOSSystemFFmpegTests --macos_minimum_os=13.5
 bazel test //Vendors/FFmpeg:FFmpegCommandTests --config=asan --macos_minimum_os=13.5
