@@ -12,11 +12,11 @@ let package = Package(
   ],
   dependencies: [
     .package(
-      url: "https://github.com/liuliu/ccv.git", revision: "f1272062fa6a85e8f70eb23652f20ae7a8c4c631"
+      url: "https://github.com/liuliu/ccv.git", revision: "66adf37c78936db0848a039aca64dad87b45d888"
     ),
     .package(
       url: "https://github.com/liuliu/s4nnc.git",
-      revision: "02c973e3ff01621df405a10b063bce3d12a6f25a"),
+      revision: "aa5fe82a3614d5c08d283eb7a07e78851660f6c9"),
     .package(
       url: "https://github.com/liuliu/dflat.git",
       revision: "73925e51e4f44add842177a229f9990cb13711ff"),
