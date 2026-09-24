@@ -202,14 +202,11 @@ public func QwenImage2_1Decoder(
         groups: 1, filters: channel, filterSize: [3, 3],
         hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
         format: .OIHW, name: "decoder_up_blocks_\(i)_upsampler_resample_1")
-      // The final upsampler and residual stage can exceed FP16 range.
+      // The final two upsamplers and residual stages can exceed FP16 range.
       // Return to input precision after the final normalization.
-      if i == channels.count - 2 {
-        out =
-          conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out).to(.Float32))
-          + shortcut.to(.Float32)
-      } else {
-        out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut
+      out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut
+      if i == channels.count - 4 {
+        out = out.to(.Float32)
       }
       h *= 2
       w *= 2
