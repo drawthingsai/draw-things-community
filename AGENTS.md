@@ -1,5 +1,7 @@
 # Session Learnings
 
+- Do not use app-name prefixes such as `LocalCode` for ordinary Swift source filenames, types, or related code abstractions. Preserve intentional CLI entry-point names (including `LocalCodeCLI.swift` and `LocalCodeMain.swift`), app/build/module names, and configuration filenames (schemes, entitlements, and provisioning profiles).
+
 ## Linear Main Branch History
 - Keep `main` strictly linear. Never create a merge commit on `main`; only fast-forward updates are allowed.
 - While on `main`, do not run an ordinary `git merge` or a merge-producing `git pull`. Use `git pull --rebase`, or fetch and then rebase / cherry-pick local commits onto the latest `origin/main`.
