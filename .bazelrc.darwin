@@ -13,6 +13,11 @@ build --features=swift.enable_batch_mode
 build --swiftcopt=-Xfrontend
 build --swiftcopt=-internalize-at-link
 
+# Rust's debug-info stripping can misalign proc-macro dylibs rejected by macOS 27.
+# Keep host build tools loadable until the pinned Rust toolchain includes the fix.
+# https://github.com/rust-lang/rust/issues/157750
+build --@rules_rust//rust/settings:extra_exec_rustc_flags=-Cstrip=none
+
 build --modify_execution_info=^(ObjcLink|BundleApp|ProcessAndSign)$=+no-cache
 
 # Instrument Swift, Objective-C, C, and C++ code and package the Apple ASan
