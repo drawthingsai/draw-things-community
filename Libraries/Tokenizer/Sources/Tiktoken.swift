@@ -65,9 +65,7 @@ public struct TiktokenTokenizer {
       specialTokensRegex = nil
     } else {
       if #available(iOS 16.0, macOS 13.0, *) {
-        specialTokensRegex = try? Regex(
-          "(\(specialTokens.keys.map({ NSRegularExpression.escapedPattern(for: $0) }).joined(separator: "|")))"
-        )
+        specialTokensRegex = try? Regex(Self.specialTokensPattern(Array(specialTokens.keys)))
       } else {
         specialTokensRegex = nil
       }
@@ -92,6 +90,17 @@ public struct TiktokenTokenizer {
     specialTokens.insert(endToken)
     self.specialTokens = Array(specialTokens)
     self.pretokenizer = pretokenizer
+  }
+
+  static func specialTokensPattern(_ tokens: [String]) -> String {
+    let alternatives = tokens.map { NSRegularExpression.escapedPattern(for: $0) }.joined(
+      separator: "|")
+    // Reject ordinary text before trying every special token. Keep the original alternative
+    // order (including overlapping spellings) and Swift Regex's Unicode matching semantics.
+    guard tokens.count > 1, !tokens.contains("") else { return "(\(alternatives))" }
+    let starts = Set(tokens.compactMap { $0.first.map(String.init) }).sorted()
+      .map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+    return "(?=(?:\(starts)))(\(alternatives))"
   }
 
   public func decode(_ tokens: [Int32], specialTokens: [Int32: String] = [:]) -> String {

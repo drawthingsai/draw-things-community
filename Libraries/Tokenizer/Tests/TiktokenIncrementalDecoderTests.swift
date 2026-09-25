@@ -5,6 +5,34 @@ import XCTest
 @testable import Tokenizer
 
 final class TiktokenIncrementalDecoderTests: XCTestCase {
+  func testSpecialTokenPrefilterPreservesRegexMatches() throws {
+    guard #available(iOS 16.0, macOS 13.0, *) else { return }
+    let tokenLists = [
+      ["a", "ab", "abc"], ["abc", "ab", "a"], ["ab", "a", "abc"],
+      ["<think>", "</think>", "<｜User｜>", "｜DSML｜"],
+      ["[", "]", "-", "\\", "^", "$", ".", "*", "+", "?", "(", ")", "|"],
+      ["é", "e\u{301}x", "👩🏽‍💻", "🇺🇸", "\r\n", "\n"],
+      [], ["<|endoftext|>"], ["", "a"], ["a", ""],
+      (0..<1300).map { "<｜place▁holder▁no▁\($0)｜>" },
+    ]
+    let texts = [
+      "", "ordinary words 123 中文 日本語 العربية हिन्दी",
+      "abc ab a abcd", "<think>x</think><｜User｜>｜DSML｜",
+      "[]-\\^$.*+?()|", "e\u{301} é e\u{301}x 👩🏽‍💻 🇺🇸\r\n\n",
+      "<think>\u{301}a\u{301}\u{0}\u{200b}",
+    ]
+    for tokens in tokenLists {
+      let original = try Regex(
+        "(\(tokens.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")))")
+      let updated = try Regex(TiktokenTokenizer.specialTokensPattern(tokens))
+      for text in texts + [tokens.joined(separator: " text\n")] {
+        XCTAssertEqual(
+          text.matches(of: original).map(\.range), text.matches(of: updated).map(\.range),
+          "Special-token match ranges changed for \(tokens.prefix(3))")
+      }
+    }
+  }
+
   private func makeTokenizer() -> TiktokenTokenizer {
     let vocabulary: [String: Int32] = [
       TiktokenTokenizer.bytesToUnicode(Data([0xf0, 0x9f])): 1,
