@@ -5,16 +5,19 @@ public struct LLMZoo: DownloadZoo {
   public struct Specification: Codable, Hashable {
     public let name: String
     public let file: String
+    public let engram: String?
     public let version: LLMVersion
     public let deprecated: Bool?
     public let huggingFaceLink: String?
 
     public init(
-      name: String, file: String, version: LLMVersion, deprecated: Bool? = nil,
+      name: String, file: String, engram: String? = nil, version: LLMVersion,
+      deprecated: Bool? = nil,
       huggingFaceLink: String? = nil
     ) {
       self.name = name
       self.file = file
+      self.engram = engram
       self.version = version
       self.deprecated = deprecated
       self.huggingFaceLink = huggingFaceLink
@@ -31,6 +34,10 @@ public struct LLMZoo: DownloadZoo {
     Specification(
       name: "Qwen 3.8 27B (8-bit S)", file: "qwen_3.8_27b_i8x.ckpt",
       version: .qwen_3_5_27b),
+    Specification(
+      name: "DeepSeek 4.1 Flash 0910 (2-bit S)", file: "deepseek_4.1_flash_0910_i2x.ckpt",
+      engram: "deepseek_4.1_flash_0910_i2x.engram",
+      version: .deepseek_4_1_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash"),
     Specification(
       name: "DeepSeek 4 Flash 0731 (2-bit S)", file: "deepseek_4_flash_0731_i2x.ckpt",
       version: .deepseek_4_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4-Flash-0731"),
@@ -87,6 +94,16 @@ public struct LLMZoo: DownloadZoo {
     return ModelZoo.isModelDownloaded(name, memorizedBy: memorizedBy)
   }
 
+  public static func isModelDownloaded(
+    _ specification: Specification, memorizedBy: Set<String> = []
+  ) -> Bool {
+    guard isModelDownloaded(specification.file, memorizedBy: memorizedBy) else { return false }
+    if let engram = specification.engram {
+      return isModelDownloaded(engram, memorizedBy: memorizedBy)
+    }
+    return true
+  }
+
   public static func humanReadableNameForModel(_ name: String) -> String {
     guard let specification = specificationForModel(name) else { return name }
     return specification.name
@@ -107,6 +124,9 @@ public struct LLMZoo: DownloadZoo {
       guard specification.file != file, LLMZoo.isModelDownloaded(specification.file)
       else { continue }
       files.insert(specification.file)
+      if let engram = specification.engram {
+        files.insert(engram)
+      }
     }
     return files
   }

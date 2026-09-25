@@ -2,6 +2,30 @@ import ModelZoo
 import XCTest
 
 final class ModelZooTests: XCTestCase {
+  func testLLMDownloadRequiresEngramWithoutChangingPerFileChecks() {
+    let file = "\(UUID().uuidString).ckpt"
+    let engram = "\(UUID().uuidString).engram"
+    let specification = LLMZoo.Specification(
+      name: "Engram model", file: file, engram: engram, version: .deepseek_4_1_flash)
+
+    XCTAssertFalse(LLMZoo.isModelDownloaded(specification))
+    XCTAssertFalse(LLMZoo.isModelDownloaded(specification, memorizedBy: [file]))
+    XCTAssertFalse(LLMZoo.isModelDownloaded(specification, memorizedBy: [engram]))
+    XCTAssertTrue(LLMZoo.isModelDownloaded(specification, memorizedBy: [file, engram]))
+    XCTAssertTrue(LLMZoo.isModelDownloaded(file, memorizedBy: [file]))
+  }
+
+  func testLLMSpecificationDecodesWithoutEngram() throws {
+    let json = """
+      {"name":"Existing model","file":"existing.ckpt","version":"deepseek_4_flash"}
+      """
+    let specification = try JSONDecoder().decode(
+      LLMZoo.Specification.self, from: Data(json.utf8))
+
+    XCTAssertNil(specification.engram)
+    XCTAssertTrue(LLMZoo.isModelDownloaded(specification, memorizedBy: [specification.file]))
+  }
+
   func testMiniMaxH3FirstBlockCacheUsesIdentityCoefficients() {
     let name = "test-minimax-h3-community-cache.ckpt"
     let previous = ModelZoo.overrideMapping[name]

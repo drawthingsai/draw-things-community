@@ -228,12 +228,10 @@ public func DeepSeek4_1HCMix(
   let flat = residual.reshaped(
     mixTokenLength > 0 ? [mixTokenLength, hc * hidden] : [0],
     offset: [tokenLength - mixTokenLength, 0], strides: [hc * hidden, 1])
-  let inverseNorm = ((flat .* flat).reduced(.mean, axis: [1]) + configuration.normEpsilon)
-    .squareRoot().reciprocal()
-  // Project before applying the scalar inverse norm, as in the source model.
-  let mix =
-    Dense(count: configuration.hcMixDim, noBias: true, flags: [.Float32], name: "\(prefix)_fn")(
-      flat) .* inverseNorm
+  let normalized = RMSNorm(
+    epsilon: configuration.normEpsilon, axis: [1], elementwiseAffine: false)(flat)
+  let mix = Dense(count: configuration.hcMixDim, noBias: true, name: "\(prefix)_fn")(
+    normalized)
   let scale = Parameter<Float>(.GPU(0), .C(3), name: "\(prefix)_scale")
   let base = Parameter<Float>(.GPU(0), .C(configuration.hcMixDim), name: "\(prefix)_base")
   let parts = HyperConnection(
@@ -639,7 +637,7 @@ private func DeepSeek4_1SharedFFN(
 public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, tokenLength: Int, layerIndex: Int,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
-) -> Model {
+) -> (model: Model, bias: Model.Parameters) {
   precondition(tokenLength >= 0 && layerIndex >= 0 && layerIndex < configuration.layers)
   let x = Input()
   let logits = Dense(
@@ -710,26 +708,27 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
     count: tokenLength, countPerOutput: configuration.routedExperts,
     routed, index: prepared[2]
   ).reshaped([tokenLength, configuration.hiddenSize])
-  return Model([x], [scattered + shared])
+  return (Model([x], [scattered + shared]), bias.parameters)
 }
 
-/// Expands each text embedding into the initial HC residual streams. The caller
+/// Expands text or image embeddings into the initial HC residual streams. The caller
 /// supplies the reference's initial one-hot pre-mix [1, 0, 0, 0].
 public func DeepSeek4_1Embedding<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> Model {
   let tokens = Input()
-  let embedding = Embedding(
+  let injected = Input()
+  let embed = Embedding(
     dataType, vocabularySize: configuration.vocabularySize,
-    embeddingSize: configuration.hiddenSize, name: "embed")(tokens)
-    .reshaped([tokenLength, configuration.hiddenSize], format: .NHWC)
-  let concat = Concat(axis: 1)
-  concat.flags = [.disableOpt]
+    embeddingSize: configuration.hiddenSize, name: "embed")
+  let embedding = Concat(axis: 0)(embed(tokens), injected)
+    .reshaped([1, tokenLength, 1, configuration.hiddenSize])
   return Model(
-    [tokens],
+    [tokens, injected],
     [
-      concat(Array(repeating: embedding, count: configuration.hcCount)).to(.Float32)
+      Upsample(.nearest, widthScale: Float(configuration.hcCount), heightScale: 1)(embedding)
+        .to(.Float32)
         .reshaped([tokenLength, configuration.hcCount, configuration.hiddenSize])
     ])
 }
@@ -748,7 +747,7 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
   cachedRawTokenLength: Int? = nil, outputTokenLength: Int? = nil,
   boundedReplayTokens: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
-) -> Model {
+) -> (model: Model, bias: Model.Parameters) {
   let prefix = "layers.\(layerIndex)"
   let residual = Input()
   let incomingPre = Input()
@@ -865,15 +864,16 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
     epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).ffn_norm")(
       ffnCollapsed
     )
-  let ffn = DeepSeek4_1MoE(
+  let moe = DeepSeek4_1MoE(
     dataType, prefix: "\(prefix).ffn", tokenLength: ffnTokenLength, layerIndex: layerIndex,
-    configuration: configuration)(normalizedFFN)
+    configuration: configuration)
+  let ffn = moe.model(normalizedFFN)
   let expanded = HyperConnection(count: configuration.hcCount, operation: .expand)(
     ffn, ffnResidual, ffnPost, ffnCombination)[0]
   var outputs = [expanded, ffnPre]
   if let indices { outputs.append(indices) }
   if let candidates { outputs.append(candidates) }
-  return Model(inputs, outputs)
+  return (Model(inputs, outputs), moe.bias)
 }
 
 /// Collapses the final residual with the last FFN's returned pre-mix. V4.1 has
@@ -918,14 +918,18 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, boundedReplayTokens: Int?,
   cachedRawTokenLengths: [Int],
   configuration: DeepSeek4_1ModelConfiguration
-) -> (inputs: [Input], hidden: Model.IO, pre: Model.IO) {
+) -> (
+  inputs: [Input], hidden: Model.IO, pre: Model.IO,
+  biases: [(key: String, bias: Model.Parameters)]
+) {
   precondition(tokenLength > 0 && cachedTokenLength >= 0)
   precondition(configuration.layers > 0)
   precondition(cachedRawTokenLengths.count == configuration.layers)
   precondition(cachedRawTokenLengths.allSatisfy { $0 >= 0 })
   let tokens = Input()
+  let injected = Input()
   let incomingPre = Input()
-  var inputs = [tokens, incomingPre]
+  var inputs = [tokens, injected, incomingPre]
   let ratios = configuration.compressionRatios.prefix(configuration.layers)
   let rawRotary = ratios.contains(0) ? Input() : nil
   if let rawRotary { inputs.append(rawRotary) }
@@ -943,12 +947,14 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
     inputs.append(contentsOf: [rotary, indexerRotary])
   }
   var hidden = DeepSeek4_1Embedding(
-    dataType, tokenLength: tokenLength, configuration: configuration)(tokens)
+    dataType, tokenLength: tokenLength,
+    configuration: configuration)(tokens, injected)
   var pre: Model.IO = incomingPre
   var globalKeyValue: Input?
   var indexKeyValue: Input?
   var indices: Model.IO?
   var candidates: Model.IO?
+  var biases = [(key: String, bias: Model.Parameters)]()
   let lengths = DeepSeek4_1CausalLMTokenLengths(
     tokenLength: tokenLength, boundedReplayTokens: boundedReplayTokens, configuration: configuration
   )
@@ -1011,12 +1017,14 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
         args.append(indices!)
       }
     }
-    let outputs = DeepSeek4_1Layer(
+    let (decoderLayer, bias) = DeepSeek4_1Layer(
       dataType, tokenLength: layerTokenLength, cachedTokenLength: layerCachedTokenLength,
       layerIndex: layer, cachedRawTokenLength: cachedRawTokenLengths[layer],
       outputTokenLength: layer == configuration.layers - 1 ? lengths.last! : nil,
       boundedReplayTokens: layer == configuration.candidateSourceLayer ? lengths[layer] : nil,
-      configuration: configuration)(args)
+      configuration: configuration)
+    biases.append(("layers.\(layer).ffn.gate.bias_vl", bias))
+    let outputs = decoderLayer(args)
     hidden = outputs[0]
     pre = outputs[1]
     if configuration.indexSourceLayers.contains(layer) {
@@ -1024,11 +1032,12 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
       if layer == configuration.candidateSourceLayer { candidates = outputs[3] }
     }
   }
-  return (inputs, hidden, pre)
+  return (inputs, hidden, pre, biases)
 }
 
 /// Complete text model, returning FP16/FP32 logits for the last query token.
-/// Inputs: tokens, initial FP32 pre-mix [T, hc] with rows [1, 0, ...], raw rotary
+/// Inputs: text token IDs, image embeddings (one input is empty), initial FP32
+/// pre-mix [T, hc] with rows [1, 0, ...], raw rotary
 /// (if used), compressed and indexer rotary (if used), then compressor/indexer
 /// rotary pairs in ascending compression-ratio order. Each layer appends its
 /// optional Engram embeddings and raw KV; KV-source layers also append global
@@ -1040,7 +1049,7 @@ public func DeepSeek4_1CausalLM<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
   cachedRawTokenLengths: [Int]? = nil, boundedReplayTokens: Int? = nil,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
-) -> Model {
+) -> (model: Model, biases: [(key: String, bias: Model.Parameters)]) {
   let prefix = DeepSeek4_1Prefix(
     dataType, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
     boundedReplayTokens: boundedReplayTokens,
@@ -1052,5 +1061,5 @@ public func DeepSeek4_1CausalLM<FloatType: TensorNumeric>(
     x: prefix.hidden, incomingPre: prefix.pre,
     tokenLength: min(1, boundedReplayTokens ?? tokenLength),
     configuration: configuration, of: dataType)
-  return Model(prefix.inputs, [output])
+  return (Model(prefix.inputs, [output]), prefix.biases)
 }
