@@ -20,6 +20,9 @@ build --@rules_rust//rust/settings:extra_exec_rustc_flags=-Cstrip=none
 
 build --modify_execution_info=^(ObjcLink|BundleApp|ProcessAndSign)$=+no-cache
 
+# The combined Python/Rust/C++/Objective-C runtimes exceed the compact table limit.
+build --linkopt=-Wl,-no_compact_unwind
+
 # Instrument Swift, Objective-C, C, and C++ code and package the Apple ASan
 # runtime. Use this explicitly with `--config=asan`; sanitizer builds are not
 # suitable for release artifacts.
