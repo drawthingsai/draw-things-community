@@ -1,4 +1,5 @@
 import ArgumentParser
+import CLICloudAuth
 import Diffusion
 import Downloader
 import Foundation
@@ -9,9 +10,32 @@ import XCTest
 
 @testable import DrawThingsCLILib
 
+private final class TestToolAccountProvider: ToolAccountProvider {
+  let resolve: (Bool, @escaping (Result<String?, Error>) -> Void) -> Void
+
+  init(
+    resolve: @escaping (Bool, @escaping (Result<String?, Error>) -> Void) -> Void = {
+      _, completion in completion(.success(nil))
+    }
+  ) {
+    self.resolve = resolve
+  }
+
+  func resolveDrawThingsCredential(
+    prepareIfNeeded: Bool, completion: @escaping (Result<String?, Error>) -> Void
+  ) {
+    resolve(prepareIfNeeded, completion)
+  }
+
+  func drawThingsInsufficientFunds(apiKey: String) {
+    XCTFail("These invocations should not open a purchase flow")
+  }
+}
+
 final class DrawThingsCLIInvocationTests: XCTestCase {
 
   private func withContext(
+    accountProvider: ToolAccountProvider? = nil,
     resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)? = nil,
     unloadTextGenerator: (() -> Void)? = nil,
     modelDownloadEvent: ((ModelDownloadEvent) -> Void)? = nil,
@@ -34,6 +58,7 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
       input: input, output: output, error: error,
       environment: ["DRAWTHINGS_MODELS_DIR": "Models"], isStandardOutputTTY: false,
       resolvePath: { URL(fileURLWithPath: $0, relativeTo: directory).standardizedFileURL.path },
+      accountProvider: accountProvider,
       resolveModelsDirectory: resolveModelsDirectory, unloadTextGenerator: unloadTextGenerator,
       modelDownloadEvent: modelDownloadEvent, imageGenerationEvent: imageGenerationEvent)
     func contents(_ stream: UnsafeMutablePointer<FILE>) -> String {
@@ -59,6 +84,197 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
       XCTAssertNotEqual(DrawThingsCLI.run(arguments: ["--not-a-flag"], context: context), 0)
       XCTAssertTrue(contents().1.contains("--not-a-flag"))
       XCTAssertEqual(DrawThingsCLI.run(arguments: ["models", "--help"], context: context), 0)
+    }
+  }
+
+  func testHostStatusReportsDefaultWithoutProvisioningOrRevealingKey() throws {
+    for key: String? in [nil, "dk_managed_test"] {
+      try withContext(
+        accountProvider: TestToolAccountProvider(resolve: { prepare, completion in
+          XCTAssertFalse(prepare)
+          completion(.success(key))
+        })
+      ) { context, _, contents in
+        XCTAssertEqual(DrawThingsCLI.run(arguments: ["auth", "status"], context: context), 0)
+        let value = try XCTUnwrap(
+          JSONSerialization.jsonObject(with: Data(contents().0.utf8)) as? [String: Any])
+        XCTAssertEqual(value["defaultBackend"] as? String, key == nil ? "local" : "cloud")
+        XCTAssertEqual(value["cloudCredentialAvailable"] as? Bool, key != nil)
+        XCTAssertFalse(contents().0.contains("dk_"))
+      }
+    }
+    try withContext { context, _, contents in
+      XCTAssertEqual(DrawThingsCLI.run(arguments: ["auth", "status"], context: context), 0)
+      XCTAssertTrue(contents().0.contains("\"local\""))
+    }
+  }
+
+  func testHostKeyUsesDrawThingsEndpointAndExplicitOverridesStayIndependent() throws {
+    var preparationCount = 0
+    try withContext(
+      accountProvider: TestToolAccountProvider(resolve: { prepare, completion in
+        XCTAssertTrue(prepare)
+        preparationCount += 1
+        completion(.success("dk_host"))
+      })
+    ) { context, _, _ in
+      let stored = CLICloudCredentials(
+        provider: "google", apiKey: "dk_standalone", apiBaseURL: "https://other.test",
+        savedAt: Date())
+      let hosted = try context.cloudAuthentication(
+        explicitAPIKey: nil, explicitBaseURL: nil, storedCredentials: stored)
+      XCTAssertEqual(hosted.apiKey, "dk_host")
+      XCTAssertEqual(hosted.baseURL, CLICloudDefaultAPIBaseURL)
+      XCTAssertEqual(hosted.hostAPIKey, "dk_host")
+      let overridden = try context.cloudAuthentication(
+        explicitAPIKey: "dk_explicit", explicitBaseURL: "https://custom.test",
+        storedCredentials: nil)
+      XCTAssertEqual(overridden.apiKey, "dk_explicit")
+      XCTAssertEqual(overridden.baseURL.absoluteString, "https://custom.test")
+      XCTAssertNil(overridden.hostAPIKey)
+      XCTAssertThrowsError(
+        try context.cloudAuthentication(
+          explicitAPIKey: nil, explicitBaseURL: "https://custom.test", storedCredentials: nil))
+      XCTAssertEqual(preparationCount, 1)
+    }
+  }
+
+  func testSignedOutHostDoesNotFallBackToAnotherSavedCLIAccount() throws {
+    for prepareIfNeeded in [false, true] {
+      try withContext(
+        accountProvider: TestToolAccountProvider(resolve: { prepare, completion in
+          XCTAssertEqual(prepare, prepareIfNeeded)
+          completion(.success(nil))
+        })
+      ) { context, _, _ in
+        let stored = CLICloudCredentials(
+          provider: "google", apiKey: "dk_other_user", apiBaseURL: nil, savedAt: Date())
+        XCTAssertThrowsError(
+          try context.cloudAuthentication(
+            explicitAPIKey: nil, explicitBaseURL: nil, storedCredentials: stored,
+            prepareIfNeeded: prepareIfNeeded))
+      }
+    }
+  }
+
+  func testGenerationDefaultRechecksHostCredentialBeforeDownloadingWeights() throws {
+    var savedKey: String?
+    var lookups = 0
+    let provider = TestToolAccountProvider(resolve: { prepare, completion in
+      XCTAssertFalse(prepare)
+      lookups += 1
+      completion(.success(savedKey))
+    })
+    for key: String? in [nil, "dk_managed_test", nil] {
+      savedKey = key
+      let previousLookups = lookups
+      var started = false
+      try withContext(
+        accountProvider: provider,
+        unloadTextGenerator: { XCTFail("This test must not load local weights") },
+        modelDownloadEvent: { _ in XCTFail("This test must not download weights") },
+        imageGenerationEvent: { event in
+          if case .started(_, _, _, _, _, let cancel) = event {
+            started = true
+            cancel()  // Verify cloud routing without connecting or spending credits.
+          }
+        }
+      ) { context, _, contents in
+        XCTAssertEqual(
+          DrawThingsCLI.run(
+            arguments: [
+              "generate", "--no-download-missing", "--model", "flux_2_klein_4b_q6p.ckpt",
+              "--prompt", "a cube", "--output", "cube.png",
+            ], context: context), key == nil ? 1 : 130)
+        XCTAssertEqual(lookups, previousLookups + 1)
+        XCTAssertEqual(started, key != nil)
+        let (output, error) = contents()
+        XCTAssertTrue(output.contains(key == nil ? "Backend: local" : "Backend: cloud-compute"))
+        XCTAssertEqual(error.contains("Missing model files:"), key == nil)
+        XCTAssertFalse(output.contains("dk_managed_test"))
+      }
+    }
+  }
+
+  func testLocalOnlyRequestsDoNotConsultHostCredential() throws {
+    let customModel = "test-local-model-\(UUID().uuidString).ckpt"
+    let originalOverrides = ModelZoo.overrideMapping
+    defer { ModelZoo.overrideMapping = originalOverrides }
+    ModelZoo.overrideMapping[customModel] = ModelZoo.Specification(
+      name: "Local custom model", file: customModel, prefix: "", version: .v1)
+    let cases: [(String, [String])] = [
+      ("flux_2_klein_4b_q6p.ckpt", ["--local"]),
+      ("flux_2_klein_4b_q6p.ckpt", ["--offline"]),
+      ("flux_2_klein_4b_q6p.ckpt", ["--output", "cube.mp4"]),
+      ("flux_2_klein_4b_q6p.ckpt", ["--audio", "voice.wav"]),
+      (
+        "flux_2_klein_4b_q6p.ckpt",
+        ["--config-json", #"{"loras":[{"file":"custom_lora.ckpt","weight":1}]}"#]
+      ),
+      ("ltx_2_19b_dev_q8p.ckpt", []),
+      (customModel, []),
+    ]
+    for (model, options) in cases {
+      let outputOptions = options.contains("--output") ? [] : ["--output", "cube.png"]
+      try withContext(
+        accountProvider: TestToolAccountProvider(resolve: { _, completion in
+          XCTFail("Local-only request accessed the account: \(model) \(options)")
+          completion(.success("dk_managed_test"))
+        })
+      ) { context, _, contents in
+        XCTAssertNotEqual(
+          DrawThingsCLI.run(
+            arguments: [
+              "generate", "--no-download-missing", "--model", model, "--prompt", "a cube",
+            ]
+              + options + outputOptions, context: context), 0)
+        let (output, error) = contents()
+        XCTAssertTrue(output.contains("Backend: local"), "\(model) \(options): \(error)")
+      }
+    }
+  }
+
+  func testExplicitBackendsOverrideHostDefault() throws {
+    for flag in ["--cloud-compute", "--remote"] {
+      try withContext(
+        accountProvider: TestToolAccountProvider(resolve: { _, completion in
+          XCTFail("Explicit backend must not look up the automatic default")
+          completion(.success(nil))
+        }),
+        imageGenerationEvent: { event in
+          if case .started(_, _, _, _, _, let cancel) = event { cancel() }
+        }
+      ) { context, _, contents in
+        XCTAssertEqual(
+          DrawThingsCLI.run(
+            arguments: [
+              "generate", flag, "--model", "flux_2_klein_4b_q6p.ckpt", "--prompt", "a cube",
+              "--output", "cube.png",
+            ], context: context), 130)
+        XCTAssertTrue(contents().0.contains("Backend: \(flag.dropFirst(2))"))
+      }
+      XCTAssertThrowsError(try GenerateBackendOptions.parse(["--local", flag]).validate())
+    }
+  }
+
+  func testCloudCredentialWaitCanBeCancelled() throws {
+    let requested = expectation(description: "credential requested")
+    let finished = expectation(description: "cancelled")
+    try withContext(
+      accountProvider: TestToolAccountProvider(resolve: { _, _ in requested.fulfill() })
+    ) { context, _, _ in
+      DispatchQueue.global().async {
+        do {
+          _ = try context.cloudAPIKey(prepareIfNeeded: true)
+          XCTFail("Expected cancellation")
+        } catch {
+          XCTAssertTrue(error is DrawThingsCLIInvocationError)
+        }
+        finished.fulfill()
+      }
+      wait(for: [requested], timeout: 1)
+      context.cancel()
+      wait(for: [finished], timeout: 1)
     }
   }
 

@@ -63,6 +63,7 @@ public func draw_things_main(
           fileURLWithPath: value, relativeTo: URL(fileURLWithPath: directory, isDirectory: true)
         ).standardizedFileURL.path
       }, cancellationRequested: { ios_commandCancellationRequested(cancellation) != 0 },
+      accountProvider: configuration?.accountProvider,
       resolveModelsDirectory: resolveModelsDirectory,
       unloadTextGenerator: configuration?.unloadTextGenerator,
       modelDownloadEvent: configuration.map { configuration in

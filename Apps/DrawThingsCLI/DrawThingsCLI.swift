@@ -232,8 +232,10 @@ private enum CLIHelpText {
     DESCRIPTION:
       Resolve a local inference model, load recommended settings, apply JSON overrides,
       then apply explicit command-line overrides before generation. By default generation
-      runs locally; use --remote for a Draw Things server or --cloud-compute for Draw
-      Things cloud compute.
+      runs locally in the standalone CLI. Local Code automatically uses cloud compute
+      for supported images when its account has a saved Draw Things key. Use --local
+      to force local generation, --remote for a Draw Things server, or --cloud-compute
+      to explicitly request Draw Things cloud compute.
 
     MODEL REFERENCES:
       --model accepts a model file id, a human-readable model name, an hf://owner/repo
@@ -456,30 +458,6 @@ private enum NetworkCacheResolver {
   }
 }
 
-private func resolvedCloudAPIBaseURL(
-  explicit: String?,
-  storedCredentials: CLICloudCredentials?
-) throws -> URL {
-  do {
-    return try CLICloudAuthClient.resolvedAPIBaseURL(
-      explicit: explicit,
-      storedCredentials: storedCredentials
-    )
-  } catch let error as CLICloudAuthError {
-    throw ValidationError(error.localizedDescription)
-  }
-}
-
-private func effectiveCloudAPIKey(
-  context: DrawThingsCLIContext, explicit: String?,
-  storedCredentials: CLICloudCredentials?
-) -> String? {
-  CLICloudAuthClient.effectiveAPIKey(
-    explicit: explicit,
-    storedCredentials: storedCredentials, environment: context.environment
-  )
-}
-
 private func fetchShortTermToken(
   context: DrawThingsCLIContext, apiKey: String,
   baseURL: URL,
@@ -623,6 +601,9 @@ struct GenerateExecutionOptions: ParsableArguments {
 }
 
 struct GenerateBackendOptions: ParsableArguments {
+  @Flag(name: .long, help: "Generate locally, overriding the embedding app's automatic backend.")
+  var local: Bool = false
+
   @Flag(name: .long, help: "Generate on a remote Draw Things server instead of local models.")
   var remote: Bool = false
 
@@ -646,6 +627,8 @@ struct GenerateBackendOptions: ParsableArguments {
   @Flag(name: .customLong("cloud-compute"), help: "Generate on Draw Things cloud compute.")
   var cloudCompute: Bool = false
 
+  var automaticCloudCompute = false
+
   @Option(
     name: .long,
     help:
@@ -661,6 +644,9 @@ struct GenerateBackendOptions: ParsableArguments {
   }
 
   func validate() throws {
+    if local && (remote || cloudCompute) {
+      throw ValidationError("--local cannot be combined with --remote or --cloud-compute.")
+    }
     if remote && cloudCompute {
       throw ValidationError("--remote and --cloud-compute cannot be combined.")
     }
@@ -2919,26 +2905,15 @@ private final class RemoteGenerationRunner {
   {
     let context = self.context
     guard backendOptions.cloudCompute else { return nil }
-    let storedCredentials = DrawThingsCLICredentialsStore.load()
-    guard
-      let apiKey = effectiveCloudAPIKey(
-        context: context, explicit: backendOptions.apiKey,
-        storedCredentials: storedCredentials
-      )
-    else {
-      throw ValidationError(
-        "--cloud-compute requires --api-key, DRAWTHINGS_API_KEY, or saved credentials from `auth login`."
-      )
-    }
-    let baseURL = try resolvedCloudAPIBaseURL(
-      explicit: backendOptions.cloudAPIBaseURL,
-      storedCredentials: storedCredentials
-    )
+    let authentication = try context.cloudAuthentication(
+      explicitAPIKey: backendOptions.apiKey, explicitBaseURL: backendOptions.cloudAPIBaseURL,
+      storedCredentials: DrawThingsCLICredentialsStore.load(),
+      prepareIfNeeded: !backendOptions.automaticCloudCompute)
     return { fromBridge, encodedBlob, configuration, hasImage, shuffleCount, cancellation in
       do {
         let shortTermToken = try fetchShortTermToken(
-          context: context, apiKey: apiKey,
-          baseURL: baseURL,
+          context: context, apiKey: authentication.apiKey,
+          baseURL: authentication.baseURL,
           emitStates: false
         )
         let estimatedComputeUnits = ComputeUnits.from(
@@ -2951,11 +2926,11 @@ private final class RemoteGenerationRunner {
           encodedBlob: encodedBlob,
           fromBridge: fromBridge,
           estimatedComputeUnits: estimatedComputeUnits,
-          baseURL: baseURL,
+          baseURL: authentication.baseURL,
           cancellation: cancellation
         )
       } catch {
-        context.print("[CloudAuth] \(error.localizedDescription)")
+        context.handleCloudAuthenticationError(error, hostAPIKey: authentication.hostAPIKey)
         return nil
       }
     }
@@ -4298,8 +4273,6 @@ extension DrawThingsCLI {
         ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
           "draw-things-cli-preview-\(UUID().uuidString).png"
         ).path
-      let livePreviewEnabled =
-        !backend.isRemoteOrCloud && !writesOutputFile && !execution.disablePreview
       let terminalImageMode: TerminalImageRenderMode =
         if output.terminalImage {
           .explicit
@@ -4346,6 +4319,28 @@ extension DrawThingsCLI {
       defer {
         LoRAZoo.overrideMapping = [:]
       }
+
+      // Resolve the host default for this invocation before downloading local weights.
+      // Explicit backends and local-only requests never consult the account.
+      let outputExtension = URL(fileURLWithPath: outputPath).pathExtension.lowercased()
+      if !backend.local && !backend.isRemoteOrCloud && !execution.offline,
+        imageInput.audio == nil, output.videoFormat == nil,
+        outputExtension.isEmpty || outputExtension == "png",
+        !ImageGeneratorUtils.isVideoModel(modelSpecification.version),
+        ModelZoo.isBuiltinModel(modelSpecification.file),
+        configuration.refinerModel.map(ModelZoo.isBuiltinModel) ?? true,
+        configuration.loras.allSatisfy({ $0.file.map(LoRAZoo.isBuiltinLoRA) ?? true }),
+        configuration.controls.allSatisfy({ $0.file.map(ControlNetZoo.isBuiltinControl) ?? true }),
+        configuration.upscaler.map(UpscalerZoo.isBuiltinUpscaler) ?? true
+      {
+        backend.cloudCompute = try context.cloudAPIKey(prepareIfNeeded: false) != nil
+        backend.automaticCloudCompute = backend.cloudCompute
+      }
+      context.print(
+        backend.cloudCompute
+          ? "Backend: cloud-compute" : backend.remote ? "Backend: remote" : "Backend: local")
+      let livePreviewEnabled =
+        !backend.isRemoteOrCloud && !writesOutputFile && !execution.disablePreview
 
       var files = requiredFiles(for: configuration)
       var fileMapping = [String: String]()
@@ -4397,7 +4392,6 @@ extension DrawThingsCLI {
 
       if backend.isRemoteOrCloud {
         let runner = RemoteGenerationRunner(context: context, backendOptions: backend)
-        context.print(backend.cloudCompute ? "Backend: cloud-compute" : "Backend: remote")
         let result = try runner.generate(
           prompt: promptValues.prompt,
           negativePrompt: resolvedNegativePrompt,
@@ -4496,8 +4490,30 @@ extension DrawThingsCLI {
   struct Auth: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Authentication helpers.",
-      subcommands: [Login.self, Logout.self, Token.self, State.self]
+      subcommands: [Login.self, Logout.self, Token.self, State.self, Status.self]
     )
+
+    struct Status: DrawThingsCLICommand {
+      static let configuration = CommandConfiguration(
+        abstract:
+          "Report the host's default generation backend without exposing credentials or signing in."
+      )
+
+      mutating func run(context: DrawThingsCLIContext) throws {
+        // Standalone CLI defaults remain local. Only the embedding account host
+        // can select cloud compute automatically; this command performs no network request.
+        let hasCredential = try context.cloudAPIKey(prepareIfNeeded: false) != nil
+        struct StatusOutput: Encodable {
+          let defaultBackend: String
+          let cloudCredentialAvailable: Bool
+        }
+        let data = try JSONEncoder().encode(
+          StatusOutput(
+            defaultBackend: hasCredential ? "cloud" : "local",
+            cloudCredentialAvailable: hasCredential))
+        context.print(String(decoding: data, as: UTF8.self))
+      }
+    }
 
     struct CloudAuthOptions: ParsableArguments {
       @Option(
@@ -4591,23 +4607,12 @@ extension DrawThingsCLI {
       @OptionGroup var auth: CloudAuthOptions
 
       mutating func run(context: DrawThingsCLIContext) throws {
-        let storedCredentials = DrawThingsCLICredentialsStore.load()
-        guard
-          let apiKey = effectiveCloudAPIKey(
-            context: context, explicit: auth.apiKey,
-            storedCredentials: storedCredentials
-          )
-        else {
-          throw ValidationError(
-            "--api-key, DRAWTHINGS_API_KEY, or saved credentials from `auth login` are required."
-          )
-        }
-        let baseURL = try resolvedCloudAPIBaseURL(
-          explicit: auth.cloudAPIBaseURL,
-          storedCredentials: storedCredentials
-        )
+        let authentication = try context.cloudAuthentication(
+          explicitAPIKey: auth.apiKey, explicitBaseURL: auth.cloudAPIBaseURL,
+          storedCredentials: DrawThingsCLICredentialsStore.load())
         _ = try fetchShortTermToken(
-          context: context, apiKey: apiKey, baseURL: baseURL, emitStates: false)
+          context: context, apiKey: authentication.apiKey, baseURL: authentication.baseURL,
+          emitStates: false)
         context.print("Short-term token fetched successfully.")
         context.print("Authentication test complete.")
       }
@@ -4621,26 +4626,15 @@ extension DrawThingsCLI {
       @OptionGroup var auth: CloudAuthOptions
 
       mutating func run(context: DrawThingsCLIContext) throws {
-        let storedCredentials = DrawThingsCLICredentialsStore.load()
-        guard
-          let apiKey = effectiveCloudAPIKey(
-            context: context, explicit: auth.apiKey,
-            storedCredentials: storedCredentials
-          )
-        else {
-          throw ValidationError(
-            "--api-key, DRAWTHINGS_API_KEY, or saved credentials from `auth login` are required."
-          )
-        }
-        let baseURL = try resolvedCloudAPIBaseURL(
-          explicit: auth.cloudAPIBaseURL,
-          storedCredentials: storedCredentials
-        )
+        let authentication = try context.cloudAuthentication(
+          explicitAPIKey: auth.apiKey, explicitBaseURL: auth.cloudAPIBaseURL,
+          storedCredentials: DrawThingsCLICredentialsStore.load())
         context.print("Cloud authentication configured")
-        context.print("  API base URL: \(baseURL)")
+        context.print("  API base URL: \(authentication.baseURL)")
         context.print("  Testing authentication...")
         _ = try fetchShortTermToken(
-          context: context, apiKey: apiKey, baseURL: baseURL, emitStates: true)
+          context: context, apiKey: authentication.apiKey, baseURL: authentication.baseURL,
+          emitStates: true)
         context.print("Auth state validation complete.")
       }
     }

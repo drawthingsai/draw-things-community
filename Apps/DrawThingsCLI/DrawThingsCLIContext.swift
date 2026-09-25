@@ -1,3 +1,4 @@
+import CLICloudAuth
 import Diffusion
 import Downloader
 import Foundation
@@ -26,8 +27,11 @@ public final class DrawThingsCLIContext {
   public let isStandardOutputTTY: Bool
   private let resolvePath: (String) -> String
   private let cancellationRequested: () -> Bool
+  private let accountProvider: ToolAccountProvider?
   private let resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)?
   private let unloadTextGenerator: (() -> Void)?
+  private var didRequestTopUp = false
+  var hasCloudAccountHost: Bool { accountProvider != nil }
   private var modelsDirectory: URL?
   private var isAccessingModelsDirectory = false
   private var didUnloadTextGenerator = false
@@ -47,6 +51,7 @@ public final class DrawThingsCLIContext {
     executablePath: String? = nil, isStandardOutputTTY: Bool,
     resolvePath: @escaping (String) -> String,
     cancellationRequested: @escaping () -> Bool = { false },
+    accountProvider: ToolAccountProvider? = nil,
     resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)? = nil,
     unloadTextGenerator: (() -> Void)? = nil,
     modelDownloadEvent: ((ModelDownloadEvent) -> Void)? = nil,
@@ -60,6 +65,7 @@ public final class DrawThingsCLIContext {
     self.isStandardOutputTTY = isStandardOutputTTY
     self.resolvePath = resolvePath
     self.cancellationRequested = cancellationRequested
+    self.accountProvider = accountProvider
     self.resolveModelsDirectory = resolveModelsDirectory
     self.unloadTextGenerator = unloadTextGenerator
     self.modelDownloadEvent = modelDownloadEvent
@@ -241,6 +247,71 @@ public final class DrawThingsCLIContext {
     try checkCancellation()
   }
 
+  func cloudAPIKey(prepareIfNeeded: Bool) throws -> String? {
+    guard let accountProvider else { return nil }
+    try checkCancellation()
+    // Like the model-folder picker, wait on the command thread, never the UI thread.
+    let condition = NSCondition()
+    var result: Result<String?, Error>?
+    accountProvider.resolveDrawThingsCredential(prepareIfNeeded: prepareIfNeeded) { value in
+      condition.lock()
+      result = value
+      condition.broadcast()
+      condition.unlock()
+    }
+    condition.lock()
+    while result == nil && !isCancelled {
+      condition.wait(until: Date().addingTimeInterval(0.1))
+    }
+    let resolved = result
+    condition.unlock()
+    try checkCancellation()
+    guard let resolved else { throw DrawThingsCLIInvocationError.cancelled }
+    return try resolved.get()
+  }
+
+  func handleCloudAuthenticationError(_ error: Error, hostAPIKey: String?) {
+    if case CLICloudAuthError.insufficientFunds = error {
+      print("Draw Things has insufficient funds. Complete the top-up, then retry generation.")
+      if let hostAPIKey, !didRequestTopUp, !isCancelled {
+        didRequestTopUp = true
+        accountProvider?.drawThingsInsufficientFunds(apiKey: hostAPIKey)
+      }
+    } else {
+      let message =
+        hostAPIKey.map {
+          error.localizedDescription.replacingOccurrences(of: $0, with: "<redacted>")
+        } ?? error.localizedDescription
+      print("[CloudAuth] \(message)")
+    }
+  }
+
+  func cloudAuthentication(
+    explicitAPIKey: String?, explicitBaseURL: String?, storedCredentials: CLICloudCredentials?,
+    prepareIfNeeded: Bool = true
+  ) throws -> (apiKey: String, baseURL: URL, hostAPIKey: String?) {
+    // A host-owned key must only go to Draw Things, never an endpoint overridden
+    // by shell arguments or old standalone CLI credentials.
+    if hasCloudAccountHost && explicitAPIKey == nil && explicitBaseURL == nil {
+      guard let key = try cloudAPIKey(prepareIfNeeded: prepareIfNeeded) else {
+        throw CLICloudAuthError.authenticationFailed(
+          "No Local Code Draw Things credential is available.")
+      }
+      return (key, CLICloudDefaultAPIBaseURL, key)
+    }
+    guard
+      let key = CLICloudAuthClient.effectiveAPIKey(
+        explicit: explicitAPIKey, storedCredentials: storedCredentials, environment: environment)
+    else {
+      throw CLICloudAuthError.authenticationFailed(
+        "--cloud-compute requires --api-key, DRAWTHINGS_API_KEY, or saved credentials from `auth login`."
+      )
+    }
+    let baseURL = try CLICloudAuthClient.resolvedAPIBaseURL(
+      explicit: explicitBaseURL, storedCredentials: storedCredentials)
+    return (key, baseURL, nil)
+  }
+
   func finishInvocation() {
     #if canImport(Darwin)
       if isAccessingModelsDirectory { modelsDirectory?.stopAccessingSecurityScopedResource() }
@@ -248,6 +319,7 @@ public final class DrawThingsCLIContext {
     modelsDirectory = nil
     isAccessingModelsDirectory = false
     didUnloadTextGenerator = false
+    didRequestTopUp = false
   }
 
   func write(_ value: String, to destination: Output = .standardOutput) {

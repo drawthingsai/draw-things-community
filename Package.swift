@@ -751,7 +751,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
     ),
     .target(
       name: "BashToolContext",
-      dependencies: ["Downloader", "ImageGenerator", "ios_system"],
+      dependencies: ["CLICloudAuth", "Downloader", "ImageGenerator", "ios_system"],
       path: "Libraries/BashToolContext/Sources"
     ),
     .target(
@@ -760,6 +760,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         "Advance",
         "BashToolContext",
         "BinaryResources",
+        "CLICloudAuth",
         "Components",
         "DataModels",
         "Diffusion",

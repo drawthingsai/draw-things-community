@@ -1,4 +1,5 @@
 import BashToolContext
+import CLICloudAuth
 import Downloader
 import DrawThingsCLICommand
 import DrawThingsCLILib
@@ -23,6 +24,23 @@ private func expectEqual<T: Equatable>(_ actual: T, _ expected: T, line: Int = #
 private func unwrap<T>(_ value: T?) throws -> T {
   guard let value else { throw TestFailure.assertion("Unexpected nil") }
   return value
+}
+
+private final class TestToolAccountProvider: ToolAccountProvider {
+  var cloudKey: String? = "dk_embedded_test"
+  var resolutionCount = 0
+
+  func resolveDrawThingsCredential(
+    prepareIfNeeded: Bool, completion: @escaping (Result<String?, Error>) -> Void
+  ) {
+    try! expect(!prepareIfNeeded)
+    resolutionCount += 1
+    completion(.success(cloudKey))
+  }
+
+  func drawThingsInsufficientFunds(apiKey: String) {
+    preconditionFailure("Auth status must not open a purchase flow")
+  }
 }
 
 @main
@@ -52,10 +70,12 @@ struct DrawThingsCLICommandTests {
     var expectedUserTime: TimeInterval = 0
     var expectedSystemTime: TimeInterval = 0
     let interaction = BashUserInteraction(time: { time })
+    let accountProvider = TestToolAccountProvider()
     let callerThread = Thread.current
     let previousContext = BashToolContext.current
     Thread.current.threadDictionary["draw-things-tests.unrelated"] = "do not inherit"
     BashToolContext.current = BashToolContext(
+      accountProvider: accountProvider,
       resloveDrawThingsModelsDirectory: { requested, interaction, completion in
         try! expect(Thread.current !== callerThread)
         try! expect(Thread.current.threadDictionary["draw-things-tests.unrelated"] == nil)
@@ -103,6 +123,10 @@ struct DrawThingsCLICommandTests {
           try! expect(false)
         }
       })
+    // Per-agent and per-turn context copies must retain the same account provider.
+    BashToolContext.current = BashToolContext.current?.with(unloadTextGenerator: {
+      unloadCount += 1
+    })
     weak var inheritedContext = BashToolContext.current
     defer {
       BashToolContext.current = previousContext
@@ -118,6 +142,15 @@ struct DrawThingsCLICommandTests {
       defer { ios_setStreams(stdin, stdout, stderr) }
       try expectEqual(ios_system_osh("draw-things-cli generate --help > help.txt; cat help.txt"), 0)
       try expect(contents().0.contains("--model"))
+      try expectEqual(resolutionCount, 0)
+      try expectEqual(unloadCount, 0)
+      try expectEqual(ios_system_osh("draw-things-cli auth status"), 0)
+      try expect(contents().0.contains("\"defaultBackend\":\"cloud\""))
+      try expect(!contents().0.contains("dk_embedded_test"))
+      accountProvider.cloudKey = nil
+      try expectEqual(ios_system_osh("draw-things-cli auth status"), 0)
+      try expect(contents().0.contains("\"defaultBackend\":\"local\""))
+      try expectEqual(accountProvider.resolutionCount, 2)
       try expectEqual(resolutionCount, 0)
       try expectEqual(unloadCount, 0)
       try expectEqual(ios_system_osh("draw-things-cli --not-a-flag"), 64)

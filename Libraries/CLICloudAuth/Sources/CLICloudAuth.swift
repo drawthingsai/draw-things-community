@@ -1,4 +1,5 @@
 import Foundation
+
 #if canImport(FoundationNetworking)
   import FoundationNetworking
 #endif
@@ -70,12 +71,14 @@ public struct CLICloudCredentialsStore {
   private var credentialsDirectoryURL: URL {
     let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
     #if os(macOS)
-      return home
+      return
+        home
         .appendingPathComponent("Library", isDirectory: true)
         .appendingPathComponent("Application Support", isDirectory: true)
         .appendingPathComponent(applicationName, isDirectory: true)
     #else
-      return home
+      return
+        home
         .appendingPathComponent(".config", isDirectory: true)
         .appendingPathComponent(applicationName, isDirectory: true)
     #endif
@@ -86,6 +89,7 @@ public enum CLICloudAuthError: LocalizedError {
   case invalidAPIBaseURL(String)
   case savedInvalidAPIBaseURL(String)
   case authenticationFailed(String)
+  case insufficientFunds
   case operationTimedOut(String)
   case unsupportedGoogleLoginPlatform
   case listenerFailed(String)
@@ -102,6 +106,8 @@ public enum CLICloudAuthError: LocalizedError {
       return "Saved credentials contain an invalid cloud API base URL: \(value)"
     case .authenticationFailed(let message):
       return message
+    case .insufficientFunds:
+      return "Insufficient Draw Things funds. Add PAYG credit and retry generation."
     case .operationTimedOut(let message):
       return message
     case .unsupportedGoogleLoginPlatform:
@@ -208,8 +214,11 @@ private func runAsync<T>(
 public struct CLICloudAuthClient {
   public let baseURL: URL
 
-  public init(baseURL: URL = CLICloudDefaultAPIBaseURL) {
+  private let session: URLSession
+
+  public init(baseURL: URL = CLICloudDefaultAPIBaseURL, session: URLSession = .shared) {
     self.baseURL = baseURL
+    self.session = session
   }
 
   public static func apiURL(baseURL: URL, path: String) -> URL {
@@ -288,11 +297,12 @@ public struct CLICloudAuthClient {
 
     do {
       let tokenResponse = try runAsync(timeout: 30) {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await self.session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
           throw CLICloudAuthError.authenticationFailed(
             "Authentication failed: missing HTTP response.")
         }
+        if httpResponse.statusCode == 402 { throw CLICloudAuthError.insufficientFunds }
         guard httpResponse.statusCode == 200 else {
           throw CLICloudAuthError.authenticationFailed(
             "Authentication failed with status code \(httpResponse.statusCode).")
@@ -362,7 +372,7 @@ public struct CLICloudAuthClient {
 
     let semaphore = DispatchSemaphore(value: 0)
     var result: Result<String?, Error> = .success(nil)
-    let task = URLSession.shared.dataTask(with: request) { data, response, error in
+    let task = session.dataTask(with: request) { data, response, error in
       defer { semaphore.signal() }
       if let error {
         result = .failure(error)
@@ -374,6 +384,10 @@ public struct CLICloudAuthClient {
             "Cloud authentication failed: missing HTTP response."))
         return
       }
+      if httpResponse.statusCode == 402 {
+        result = .failure(CLICloudAuthError.insufficientFunds)
+        return
+      }
       guard httpResponse.statusCode == 200, let data else {
         let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
         result = .failure(
@@ -383,7 +397,8 @@ public struct CLICloudAuthClient {
         return
       }
       do {
-        result = .success(try JSONDecoder().decode(AuthenticationResponse.self, from: data).gRPCToken)
+        result = .success(
+          try JSONDecoder().decode(AuthenticationResponse.self, from: data).gRPCToken)
       } catch {
         result = .failure(error)
       }
@@ -412,7 +427,7 @@ public struct CLICloudAuthClient {
 
     let semaphore = DispatchSemaphore(value: 0)
     var isEnabled = false
-    let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+    let task = session.dataTask(with: request) { data, response, _ in
       defer { semaphore.signal() }
       guard
         let httpResponse = response as? HTTPURLResponse,
@@ -1057,7 +1072,8 @@ public enum CLICloudGoogleOAuthDesktopFlow {
         let errorMessage = String(data: errorData, encoding: .utf8)?
           .trimmingCharacters(in: .whitespacesAndNewlines)
         let detail =
-          errorMessage?.isEmpty == false ? errorMessage! : "exit status \(process.terminationStatus)"
+          errorMessage?.isEmpty == false
+          ? errorMessage! : "exit status \(process.terminationStatus)"
         throw CLICloudAuthError.browserLaunchFailed(detail)
       }
     }
