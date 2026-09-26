@@ -681,7 +681,10 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         "Sources/project_thread.fbs",
         "Tests",
       ],
-      sources: ["Sources/ProjectHistoryManager.swift", "PreGeneratedSPM"]
+      sources: [
+        "Sources/ProjectHistoryManager.swift", "Sources/EmbedSpan.swift",
+        "Sources/EmbedsFileStore.swift", "PreGeneratedSPM",
+      ]
     ),
     .target(
       name: "UserAccount",
