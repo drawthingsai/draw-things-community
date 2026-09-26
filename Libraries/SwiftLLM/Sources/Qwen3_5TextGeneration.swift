@@ -118,6 +118,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
     precondition(!promptTokenIds.isEmpty)
     precondition(prefillChunkSize > 0)
     guard maxTokens > 0 else { return [] }
+    let emptyTokens = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Int32.self)
+    let emptyEmbeddings = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: FloatType.self)
     let streamContext = StreamContext(.GPU(0))
     return try graph.withStream(streamContext) {
       try graph.withNoGrad {
@@ -198,7 +200,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             caches, currentTokenLength: prefillTokenStart + firstChunkLength,
             configuration: configuration)
           let inputs: [DynamicGraph.AnyTensor] =
-            [firstPrefillTokens] + firstPrefillAttentionInputs + firstPrefillCacheInputs
+            [firstPrefillTokens, emptyEmbeddings, emptyTokens] + firstPrefillAttentionInputs
+            + firstPrefillCacheInputs
           let loadStart = Date.timeIntervalSinceReferenceDate
           guard shouldContinue() else { throw Qwen3_5TextGenerationError.cancelled }
           try graph.openStore(
@@ -250,7 +253,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               (
                 cachedTokenLength: start, tokenLength: length,
                 lastNumberOfTokens: isLast ? 1 : 0
-              ), inputs: chunkTokens, chunkAttentionInputs + chunkCacheInputs)
+              ), inputs: chunkTokens,
+              [emptyEmbeddings, emptyTokens] + chunkAttentionInputs + chunkCacheInputs)
             Self.updateLinearCaches(
               &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
             if !restoredPrefix, let validPrefixCache = validPrefixCache,
@@ -293,7 +297,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             let decodeCompileCacheInputs = Self.cacheInputs(
               caches, currentTokenLength: cacheCapacity, configuration: configuration)
             let decodeCompileInputs: [DynamicGraph.AnyTensor] =
-              [decodeCompileToken] + decodeCompileAttentionInputs + decodeCompileCacheInputs
+              [decodeCompileToken, emptyEmbeddings, emptyTokens] + decodeCompileAttentionInputs
+              + decodeCompileCacheInputs
             let decodeCompileStart = Date.timeIntervalSinceReferenceDate
             decoder.compile(
               (
@@ -343,7 +348,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                     cachedTokenLength: cachedTokenLength, tokenLength: 1,
                     lastNumberOfTokens: 1
                   ), inputs: nextTokenGPU,
-                  oneAttentionInputs + cacheInputs)
+                  [emptyEmbeddings, emptyTokens] + oneAttentionInputs + cacheInputs)
                 Self.updateLinearCaches(
                   &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
                 let logits = decodeOutputs[0].as(of: FloatType.self)
@@ -401,6 +406,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         acceptedDrafts: 0, rejectedDrafts: 0, d1AcceptedDrafts: 0, d1RejectedDrafts: 0,
         d2AcceptedDrafts: 0, d2RejectedDrafts: 0, replayRounds: 0)
     }
+    let emptyTokens = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Int32.self)
+    let emptyEmbeddings = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: FloatType.self)
     let streamContext = StreamContext(.GPU(0))
     return try graph.withStream(streamContext) {
       try graph.withNoGrad {
@@ -497,7 +504,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               cachedTokenLength: 0, tokenLength: promptTokenIds.count,
               lastNumberOfTokens: 1, linearStateCheckpointCount: 0, includeLogits: true
             ),
-            inputs: [promptTokens] + prefillAttentionInputs + prefillCacheInputs)
+            inputs: [promptTokens, emptyEmbeddings, emptyTokens] + prefillAttentionInputs
+              + prefillCacheInputs)
           try store.read(
             "text_model", model: decoder, strict: true,
             codec: [.jit, .i8x, .ezm7, .externalData])
@@ -506,7 +514,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               cachedTokenLength: 0, tokenLength: promptTokenIds.count,
               lastNumberOfTokens: 1, linearStateCheckpointCount: 0, includeLogits: true
             ),
-            inputs: [promptTokens] + prefillAttentionInputs + prefillCacheInputs, isEager: true)
+            inputs: [promptTokens, emptyEmbeddings, emptyTokens] + prefillAttentionInputs
+              + prefillCacheInputs, isEager: true)
         }
 
         let decodeTokenLength = 2
@@ -552,7 +561,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             sequenceLength: promptTokenIds.count, configuration: configuration, of: FloatType.self
           ).toGPU(0))
         let mtpPrefillInputs: [DynamicGraph.AnyTensor] = [
-          promptTokens, mtpPrefillCompileHidden, mtpPrefillRotary,
+          promptTokens, emptyEmbeddings, emptyTokens, mtpPrefillCompileHidden, mtpPrefillRotary,
           mtpK.reshaped(
             .NHWC(
               1, promptTokenIds.count, configuration.keyValueHeads,
@@ -603,7 +612,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1,
             linearStateCheckpointCount: 0, includeLogits: true
           ),
-          inputs: promptTokens, prefillAttentionInputs + prefillCacheInputs)
+          inputs: promptTokens,
+          [emptyEmbeddings, emptyTokens] + prefillAttentionInputs + prefillCacheInputs)
         for bankIndex in cacheBanks.indices {
           Self.updateLinearCaches(
             &cacheBanks[bankIndex], from: prefillOutputs, outputOffset: cacheOutputOffset,
@@ -651,6 +661,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           (cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1),
           inputs: promptTokens,
           [
+            emptyEmbeddings, emptyTokens,
             mtpPrefillHidden, mtpPrefillRotary,
             mtpK.reshaped(
               .NHWC(
@@ -699,6 +710,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           (cachedTokenLength: promptTokenIds.count, tokenLength: 1, lastNumberOfTokens: 1),
           inputs: currentTokenGPU,
           [
+            emptyEmbeddings, emptyTokens,
             firstDraftHidden, firstDraftRotary,
             mtpK.reshaped(
               .NHWC(
@@ -727,7 +739,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
 
         let maxDecodeCachedTokenLength = cacheCapacity - decodeTokenLength
         var decodeCompileInputs: [DynamicGraph.AnyTensor] = [
-          Functional.concat(axis: 0, currentTokenGPU, currentDraftTokenGPU)
+          Functional.concat(axis: 0, currentTokenGPU, currentDraftTokenGPU), emptyEmbeddings,
+          emptyTokens,
         ]
         if hasFullAttentionLayer {
           decodeCompileInputs.append(
@@ -749,7 +762,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           inputs: decodeCompileInputs, isEager: true)
         let mtpCompileTokenBlock = Functional.concat(axis: 0, currentTokenGPU, currentDraftTokenGPU)
         var mtpCompileInputs: [DynamicGraph.AnyTensor] = [
-          mtpCompileTokenBlock,
+          mtpCompileTokenBlock, emptyEmbeddings, emptyTokens,
           graph.variable(
             Tensor<BFloat16>(
               Array(
@@ -844,7 +857,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               lastNumberOfTokens: decodeTokenLength,
               linearStateCheckpointCount: decodeTokenLength - 1, includeLogits: true
             ),
-            inputs: tokenBlock, attentionInputs + cacheInputs)
+            inputs: tokenBlock, [emptyEmbeddings, emptyTokens] + attentionInputs + cacheInputs)
           let logits = outputs[logitsOutputIndex].as(of: FloatType.self)
           let tokenBlockGPU = Functional.argmax(logits, axis: 1).reshaped(.C(decodeTokenLength))
           let draftTokenCPU = firstDraftTokenGPU.toCPU()
@@ -902,6 +915,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
               ),
               inputs: processToken,
               [
+                emptyEmbeddings, emptyTokens,
                 DynamicGraph.Tensor<BFloat16>(from: processHidden), processRotary,
                 mtpK.reshaped(
                   .NHWC(
@@ -974,6 +988,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
   ) throws -> [Double] {
     precondition(!promptTokenIds.isEmpty)
     guard runs > 0 else { return [] }
+    let emptyTokens = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Int32.self)
+    let emptyEmbeddings = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: FloatType.self)
     let streamContext = StreamContext(.GPU(0))
     return try graph.withStream(streamContext) {
       try graph.withNoGrad {
@@ -1025,7 +1041,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let inputs = promptInputs()
           decoder.compile(
             (cachedTokenLength: 0, tokenLength: tokenLength, lastNumberOfTokens: 1),
-            inputs: [inputs.tokens] + inputs.attentionInputs + inputs.cacheInputs)
+            inputs: [inputs.tokens, emptyEmbeddings, emptyTokens] + inputs.attentionInputs
+              + inputs.cacheInputs)
           try store.read(
             "text_model", model: decoder, strict: true, codec: [.jit, .i8x, .ezm7, .externalData])
         }
@@ -1037,7 +1054,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           var outputs = decoder(
             (cachedTokenLength: 0, tokenLength: tokenLength, lastNumberOfTokens: 1),
             inputs: inputs.tokens,
-            inputs.attentionInputs + inputs.cacheInputs)
+            [emptyEmbeddings, emptyTokens] + inputs.attentionInputs + inputs.cacheInputs)
           Self.updateLinearCaches(
             &caches, from: outputs, outputOffset: 1, configuration: configuration)
           graph.joined()
@@ -1058,7 +1075,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           var outputs = decoder(
             (cachedTokenLength: 0, tokenLength: tokenLength, lastNumberOfTokens: 1),
             inputs: inputs.tokens,
-            inputs.attentionInputs + inputs.cacheInputs)
+            [emptyEmbeddings, emptyTokens] + inputs.attentionInputs + inputs.cacheInputs)
           Self.updateLinearCaches(
             &caches, from: outputs, outputOffset: 1, configuration: configuration)
           graph.joined()
@@ -1080,6 +1097,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
     precondition(!promptTokenIds.isEmpty)
     let startCount = max(1, startCount)
     let maxDraftTokens = max(1, min(maxDraftTokens, 4))
+    let emptyTokens = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Int32.self)
+    let emptyEmbeddings = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: FloatType.self)
     let streamContext = StreamContext(.GPU(0))
     return try graph.withStream(streamContext) {
       try graph.withNoGrad { () throws -> Qwen3_5MTPDraftAcceptanceResult in
@@ -1122,7 +1141,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let promptPrefixCacheInputs = Self.cacheInputs(
             caches, currentTokenLength: promptPrefixCount, configuration: configuration)
           prefillInputs =
-            [promptPrefixTokens] + promptPrefixAttentionInputs + promptPrefixCacheInputs
+            [promptPrefixTokens, emptyEmbeddings, emptyTokens] + promptPrefixAttentionInputs
+            + promptPrefixCacheInputs
         } else {
           let promptLastAttentionInputs: [DynamicGraph.AnyTensor]
           if hasFullAttentionLayer {
@@ -1135,7 +1155,9 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           }
           let promptLastCacheInputs = Self.cacheInputs(
             caches, currentTokenLength: 1, configuration: configuration)
-          prefillInputs = [promptLastToken] + promptLastAttentionInputs + promptLastCacheInputs
+          prefillInputs =
+            [promptLastToken, emptyEmbeddings, emptyTokens] + promptLastAttentionInputs
+            + promptLastCacheInputs
         }
         decoder.compile(
           (cachedTokenLength: 0, tokenLength: max(promptPrefixCount, 1)),
@@ -1168,7 +1190,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             caches, currentTokenLength: promptPrefixCount, configuration: configuration)
           var promptPrefixOutputs = decoder(
             (cachedTokenLength: 0, tokenLength: promptPrefixCount), inputs: promptPrefixTokens,
-            promptPrefixAttentionInputs + promptPrefixCacheInputs)
+            [emptyEmbeddings, emptyTokens] + promptPrefixAttentionInputs + promptPrefixCacheInputs)
           Self.updateLinearCaches(
             &caches, from: promptPrefixOutputs, outputOffset: cacheOutputOffset,
             configuration: configuration)
@@ -1187,7 +1209,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           caches, currentTokenLength: promptTokenIds.count, configuration: configuration)
         var prefillOutputs = decoder(
           (cachedTokenLength: promptPrefixCount, tokenLength: 1), inputs: promptLastToken,
-          promptLastAttentionInputs + promptLastCacheInputs)
+          [emptyEmbeddings, emptyTokens] + promptLastAttentionInputs + promptLastCacheInputs)
         Self.updateLinearCaches(
           &caches, from: prefillOutputs, outputOffset: cacheOutputOffset,
           configuration: configuration)
@@ -1203,7 +1225,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
 
         let maxDecodeCachedTokenLength = cacheCapacity - 1
         let decodeCompileInputs: [DynamicGraph.AnyTensor] =
-          [currentTokenGPU]
+          [currentTokenGPU, emptyEmbeddings, emptyTokens]
           + (hasFullAttentionLayer
             ? [
               graph.variable(
@@ -1262,7 +1284,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             configuration: configuration)
           var targetOutputs = decoder(
             (cachedTokenLength: currentCachedTokenLength, tokenLength: 1),
-            inputs: tokenGPU, targetAttentionInputs + targetCacheInputs)
+            inputs: tokenGPU,
+            [emptyEmbeddings, emptyTokens] + targetAttentionInputs + targetCacheInputs)
           Self.updateLinearCaches(
             &caches, from: targetOutputs, outputOffset: cacheOutputOffset,
             configuration: configuration)
@@ -1340,11 +1363,11 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           ])
         mtpStep.compile(
           (cachedTokenLength: 0, tokenLength: 1),
-          inputs: [traceTokensGPU[0], traceHiddens[0], compileRotary]
+          inputs: [traceTokensGPU[0], emptyEmbeddings, emptyTokens, traceHiddens[0], compileRotary]
             + mtpCacheInputs(currentTokenLength: 1))
         mtpStep.compile(
           (cachedTokenLength: mtpTokenLength - 1, tokenLength: 1),
-          inputs: [traceTokensGPU[0], traceHiddens[0], compileRotary]
+          inputs: [traceTokensGPU[0], emptyEmbeddings, emptyTokens, traceHiddens[0], compileRotary]
             + mtpCacheInputs(currentTokenLength: mtpTokenLength))
         try graph.openStore(
           filePath, flags: .readOnly,
@@ -1376,7 +1399,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             var mtpOutputs = mtpStep(
               (cachedTokenLength: mtpCachedTokenLength, tokenLength: 1),
               inputs: mtpStepToken,
-              [mtpStepHidden, mtpStepRotarySlice]
+              [emptyEmbeddings, emptyTokens, mtpStepHidden, mtpStepRotarySlice]
                 + mtpCacheInputs(currentTokenLength: mtpCachedTokenLength + 1))
             mtpStepHidden = DynamicGraph.Tensor<BFloat16>(from: mtpOutputs[0]).copied()
             let draftLogits = mtpOutputs[1].as(of: FloatType.self)
@@ -1472,81 +1495,98 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         )[0].as(of: Float.self)
         let imageEmbedsTyped = DynamicGraph.Tensor<FloatType>(from: imageEmbeds)
 
-        let promptTokens = graph.variable(
-          Tensor<Int32>(promptTokenIds, .CPU, .C(promptTokenIds.count)).toGPU(0))
-        var tokenMask = Tensor<Float>(
-          Array(repeating: 1, count: promptTokenIds.count), .CPU, .WC(promptTokenIds.count, 1))
-        for tokenPosition in imageTokenPositions {
-          tokenMask[Int(tokenPosition), 0] = 0
+        let emptyTokens = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Int32.self)
+        let emptyEmbeddings = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: FloatType.self)
+        let decoder = ModelBuilder {
+          (lengths: (cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int), _) in
+          Qwen3_5CausalLM(
+            FloatType.self, tokenLength: lengths.tokenLength,
+            cachedTokenLength: lengths.cachedTokenLength, configuration: configuration,
+            includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding,
+            lastNumberOfTokens: lengths.lastNumberOfTokens)
         }
-        let tokenMaskGPU = graph.variable(Tensor<FloatType>(from: tokenMask).toGPU(0))
-        var injectedEmbeddings = graph.variable(
-          .GPU(0), .WC(promptTokenIds.count, configuration.hiddenSize), of: FloatType.self)
-        injectedEmbeddings.full(0)
-        for (imageIndex, tokenPosition) in imageTokenPositions.enumerated() {
-          injectedEmbeddings[
-            Int(tokenPosition)..<Int(tokenPosition + 1), 0..<configuration.hiddenSize
-          ] =
-            imageEmbedsTyped[
-              imageIndex..<(imageIndex + 1), 0..<configuration.hiddenSize
-            ]
-        }
-
-        let decoder:
-          ModelBuilder<(cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int)> =
-            ModelBuilder {
-              (
-                tokenLengths: (
-                  cachedTokenLength: Int, tokenLength: Int, lastNumberOfTokens: Int
-                ), _
-              ) in
-              Qwen3_5CausalLM(
-                FloatType.self, tokenLength: tokenLengths.tokenLength,
-                cachedTokenLength: tokenLengths.cachedTokenLength, configuration: configuration,
-                includeLogits: true, outputCacheStates: true, tieEmbedding: tieEmbedding,
-                injectEmbeddings: true, lastNumberOfTokens: tokenLengths.lastNumberOfTokens)
-            }
         decoder.maxConcurrency = .limit(4)
-
         let positionIDs = Qwen3_5MakeMultimodalPositionIDs(
-          tokenTypeIDs: tokenTypeIds, imageGridThw: imageGridThw,
-          configuration: visionConfiguration)
+          tokenTypeIDs: tokenTypeIds, imageGridThw: imageGridThw, configuration: visionConfiguration
+        )
         let decodePositionOffset = positionIDs.ropeDelta
-        let prefillAttentionInputs: [DynamicGraph.AnyTensor]
-        if hasFullAttentionLayer {
-          let prefillRotary = Qwen3_5RotaryEmbedding(
-            positionIDs: positionIDs, configuration: configuration, of: FloatType.self)
-          prefillAttentionInputs = [graph.variable(prefillRotary.toGPU(0))]
-        } else {
-          prefillAttentionInputs = []
+        let allRotary = Qwen3_5RotaryEmbedding(
+          positionIDs: positionIDs, configuration: configuration, of: FloatType.self)
+        var imageRuns = [Range<Int>]()
+        for position in tokenTypeIds.indices where tokenTypeIds[position] == 1 {
+          if let last = imageRuns.last, last.upperBound == position {
+            imageRuns[imageRuns.count - 1] = last.lowerBound..<(position + 1)
+          } else {
+            imageRuns.append(position..<(position + 1))
+          }
         }
-        let prefillCacheInputs = Self.cacheInputs(
-          caches, currentTokenLength: promptTokenIds.count, configuration: configuration)
-        let inputs: [DynamicGraph.AnyTensor] =
-          [promptTokens, tokenMaskGPU, injectedEmbeddings] + prefillAttentionInputs
-          + prefillCacheInputs
-        graph.openStore(
-          filePath, flags: .readOnly,
-          externalStore: TensorData.externalStore(filePath: filePath)
-        ) { store in
-          decoder.compile(
-            (
-              cachedTokenLength: 0, tokenLength: promptTokenIds.count,
-              lastNumberOfTokens: 1
-            ),
-            inputs: inputs)
-          store.read(
-            "text_model", model: decoder, codec: [.jit, .i8x, .ezm7, .externalData])
+        var start = 0
+        var imageRow = 0
+        var prefillOutputs = [DynamicGraph.AnyTensor]()
+        while start < promptTokenIds.count {
+          let run = imageRuns.first { $0.upperBound > start }
+          let end =
+            run.flatMap { current in
+              imageRuns.first { $0.lowerBound > current.lowerBound }?.lowerBound
+            }
+            ?? promptTokenIds.count
+          let preEnd = run?.lowerBound ?? end
+          let postStart = run?.upperBound ?? end
+          let pre =
+            preEnd == start
+            ? emptyTokens
+            : graph.variable(
+              Tensor<Int32>(
+                Array(promptTokenIds[start..<preEnd]), kind: .CPU, format: .NHWC,
+                shape: [preEnd - start]
+              ).toGPU(0))
+          let post =
+            postStart == end
+            ? emptyTokens
+            : graph.variable(
+              Tensor<Int32>(
+                Array(promptTokenIds[postStart..<end]), kind: .CPU, format: .NHWC,
+                shape: [end - postStart]
+              ).toGPU(0))
+          let injected: DynamicGraph.Tensor<FloatType>
+          if let run {
+            injected = imageEmbedsTyped.reshaped(
+              .WC(run.count, configuration.hiddenSize),
+              offset: [imageRow, 0], strides: [configuration.hiddenSize, 1]
+            ).copied()
+            imageRow += run.count
+          } else {
+            injected = emptyEmbeddings
+          }
+          var inputs: [DynamicGraph.AnyTensor] = [pre, injected, post]
+          if hasFullAttentionLayer {
+            inputs.append(
+              graph.variable(
+                allRotary[0..<1, start..<end, 0..<1, 0..<configuration.attentionHeadDim].toGPU(0)))
+          }
+          inputs += Self.cacheInputs(caches, currentTokenLength: end, configuration: configuration)
+          let lengths = (
+            cachedTokenLength: start, tokenLength: end - start,
+            lastNumberOfTokens: end == promptTokenIds.count ? 1 : 0
+          )
+          if start == 0 {
+            decoder.compile(lengths, inputs: inputs)
+            try graph.openStore(
+              filePath, flags: .readOnly,
+              externalStore: TensorData.externalStore(filePath: filePath)
+            ) { store in
+              try store.read(
+                "text_model", model: decoder, strict: true,
+                codec: [.jit, .i8x, .ezm7, .externalData])
+            }
+          }
+          prefillOutputs = decoder(lengths, inputs: inputs[0], Array(inputs.dropFirst()))
+          Self.updateLinearCaches(
+            &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
+          start = end
         }
-        var prefillOutputs = decoder(
-          (cachedTokenLength: 0, tokenLength: promptTokenIds.count, lastNumberOfTokens: 1),
-          inputs: promptTokens,
-          [tokenMaskGPU, injectedEmbeddings] + prefillAttentionInputs + prefillCacheInputs)
-        Self.updateLinearCaches(
-          &caches, from: prefillOutputs, outputOffset: 1, configuration: configuration)
-        let logits = prefillOutputs[0].as(of: FloatType.self)
-        let token = Functional.argmax(logits, axis: 1).toCPU()
-        logits.graph.joined()
+        let token = Functional.argmax(prefillOutputs[0].as(of: FloatType.self), axis: 1).toCPU()
+        graph.joined()
         let nextTokenFromPrefill = Int32(token[0, 0])
         prefillOutputs.removeAll(keepingCapacity: false)
 
@@ -1561,11 +1601,6 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
 
         let maxDecodeCachedTokenLength = cacheCapacity - 1
         let decodeCompileToken = graph.variable(Tensor<Int32>([nextToken], .CPU, .C(1)).toGPU(0))
-        let decodeTokenMask = graph.variable(
-          Tensor<FloatType>(from: Tensor<Float>([1], .CPU, .WC(1, 1))).toGPU(0))
-        let decodeInjectedEmbeddings = graph.variable(
-          .GPU(0), .WC(1, configuration.hiddenSize), of: FloatType.self)
-        decodeInjectedEmbeddings.full(0)
         var decodeCompileAttentionInputs = [DynamicGraph.AnyTensor]()
         if hasFullAttentionLayer {
           let decodeCompileRotary = Qwen3_5RotaryEmbedding(
@@ -1581,7 +1616,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             cachedTokenLength: maxDecodeCachedTokenLength, tokenLength: 1,
             lastNumberOfTokens: 1
           ),
-          inputs: [decodeCompileToken, decodeTokenMask, decodeInjectedEmbeddings]
+          inputs: [decodeCompileToken, emptyEmbeddings, emptyTokens]
             + decodeCompileAttentionInputs + decodeCompileCacheInputs,
           isEager: true)
         graph.joined()
@@ -1612,7 +1647,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
           let decodeOutputs = decoder(
             (cachedTokenLength: cachedTokenLength, tokenLength: 1, lastNumberOfTokens: 1),
             inputs: nextTokenGPU,
-            [decodeTokenMask, decodeInjectedEmbeddings] + oneAttentionInputs + cacheInputs)
+            [emptyEmbeddings, emptyTokens] + oneAttentionInputs + cacheInputs)
           Self.updateLinearCaches(
             &caches, from: decodeOutputs, outputOffset: 1, configuration: configuration)
           let logits = decodeOutputs[0].as(of: FloatType.self)

@@ -233,9 +233,10 @@ private func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
   let concat = Concat(axis: 1)
   concat.flags = [.disableOpt]
   let convContext = concat(convState, mixedQKV)
+  // Tiny chunks must keep unit stride; automatic hint inference can choose a larger stride.
   let conv1d = Convolution(
     groups: convDim, filters: convDim, filterSize: [configuration.linearConvKernel, 1],
-    noBias: true, format: .OIHW,
+    noBias: true, hint: Hint(stride: [1, 1]), format: .OIHW,
     name: "\(prefix).linear_attn.conv1d.weight")
   let convStateNext = convContext.reshaped(
     [batchSize, convStateLength, 1, convDim], offset: [0, tokenLength, 0, 0],
@@ -312,7 +313,7 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
   configuration: Qwen3_5ModelConfiguration, batchSize: Int = 1,
   outputHiddenStates: Bool = false, includeLogits: Bool = true, outputCacheStates: Bool = false,
   outputFinalState: Bool = true, outputFinalHiddenState: Bool = false,
-  tieEmbedding: Bool = false, injectEmbeddings: Bool = false,
+  tieEmbedding: Bool = false,
   lastNumberOfTokens: Int = 1, linearStateCheckpointCount: Int = 0
 ) -> Model {
   precondition(lastNumberOfTokens >= 0)
@@ -321,16 +322,10 @@ public func Qwen3_5CausalLM<T: TensorNumeric>(
   let tokenEmbed = Embedding(
     T.self, vocabularySize: configuration.vocabularySize, embeddingSize: configuration.hiddenSize,
     name: "model.language_model.embed_tokens")
-  let textEmbedding: Model.IO
-  var inputs: [Input] = [tokens]
-  if injectEmbeddings {
-    let tokenMask = Input()
-    let injectedEmbeddings = Input()
-    textEmbedding = tokenEmbed(tokens) .* tokenMask + injectedEmbeddings
-    inputs.append(contentsOf: [tokenMask, injectedEmbeddings])
-  } else {
-    textEmbedding = tokenEmbed(tokens)
-  }
+  let injected = Input()
+  let postTokens = Input()
+  let textEmbedding = Concat(axis: 0)(tokenEmbed(tokens), injected, tokenEmbed(postTokens))
+  var inputs: [Input] = [tokens, injected, postTokens]
   let hasFullAttentionLayer = (0..<configuration.layers).contains {
     !configuration.isLinearAttentionLayer($0)
   }
@@ -423,6 +418,8 @@ public func Qwen3_5MTP<T: TensorNumeric, FloatType: TensorNumeric>(
   precondition(lastNumberOfTokens >= 0)
   precondition(lastNumberOfTokens <= tokenLength)
   let token = Input()
+  let injected = Input()
+  let postTokens = Input()
   let hidden = Input()
   let rotary = Input()
   let kIn = Input()
@@ -434,7 +431,8 @@ public func Qwen3_5MTP<T: TensorNumeric, FloatType: TensorNumeric>(
   let embeddingNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.pre_fc_norm_embedding")
   let hiddenNorm = RMSNorm(epsilon: 1e-6, axis: [1], name: "mtp.pre_fc_norm_hidden")
   let fc = Dense(count: configuration.hiddenSize, noBias: true, name: "mtp.fc")
-  let tokenEmbedding = tokenEmbed(token).to(T.dataType)
+  let tokenEmbedding = Concat(axis: 0)(tokenEmbed(token), injected, tokenEmbed(postTokens)).to(
+    T.dataType)
   let embeddingNormOut = embeddingNorm(tokenEmbedding)
   let hiddenNormOut = hiddenNorm(hidden.to(T.dataType))
   let concat = Concat(axis: 1)
@@ -463,5 +461,5 @@ public func Qwen3_5MTP<T: TensorNumeric, FloatType: TensorNumeric>(
     let lmHead = Dense(count: configuration.vocabularySize, noBias: true, name: "lm_head")
     logits = lmHead(out)
   }
-  return Model([token, hidden, rotary, kIn, vIn], [hiddenOut, logits])
+  return Model([token, injected, postTokens, hidden, rotary, kIn, vIn], [hiddenOut, logits])
 }

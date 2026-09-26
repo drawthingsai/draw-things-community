@@ -78,6 +78,34 @@ public func Qwen3_5VisionTokenCount(
     / (configuration.spatialMergeSize * configuration.spatialMergeSize)
 }
 
+public func Qwen3_5VisionSize(
+  height: Int, width: Int, configuration: Qwen3_5VisionConfiguration = .qwen3_5_4B,
+  size: (height: Int, width: Int)? = nil
+) -> (height: Int, width: Int) {
+  let factor = configuration.patchSize * configuration.spatialMergeSize
+  let temporal =
+    ((1 + configuration.temporalPatchSize - 1) / configuration.temporalPatchSize)
+    * configuration.temporalPatchSize
+  var resizedHeight = max(factor, Int((Double(height) / Double(factor)).rounded()) * factor)
+  var resizedWidth = max(factor, Int((Double(width) / Double(factor)).rounded()) * factor)
+  if temporal * resizedHeight * resizedWidth > 512 * 512 {
+    let beta = sqrt(Double(width * height) / Double(512 * 512))
+    resizedHeight = max(factor, Int(floor(Double(height) / beta / Double(factor))) * factor)
+    resizedWidth = max(factor, Int(floor(Double(width) / beta / Double(factor))) * factor)
+  } else if temporal * resizedHeight * resizedWidth < 256 * 256 {
+    let beta = sqrt(Double(256 * 256) / Double(width * height))
+    resizedHeight = Int(ceil(Double(height) * beta / Double(factor))) * factor
+    resizedWidth = Int(ceil(Double(width) * beta / Double(factor))) * factor
+  }
+  if let size {
+    precondition(
+      size.height > 0 && size.width > 0 && size.height % factor == 0 && size.width % factor == 0)
+    resizedHeight = size.height
+    resizedWidth = size.width
+  }
+  return (resizedHeight, resizedWidth)
+}
+
 public func Qwen3_5VisionPreprocess<FloatType: TensorNumeric>(
   _ input: Tensor<FloatType>, configuration: Qwen3_5VisionConfiguration = .qwen3_5_4B,
   size: (height: Int, width: Int)? = nil
@@ -86,27 +114,10 @@ public func Qwen3_5VisionPreprocess<FloatType: TensorNumeric>(
   precondition(shape.count == 4)
   precondition(shape[0] == 1)
   precondition(shape[3] == 3)
-  let factor = configuration.patchSize * configuration.spatialMergeSize
-  let temporal =
-    ((1 + configuration.temporalPatchSize - 1) / configuration.temporalPatchSize)
-    * configuration.temporalPatchSize
-  var resizedHeight = max(factor, Int((Double(shape[1]) / Double(factor)).rounded()) * factor)
-  var resizedWidth = max(factor, Int((Double(shape[2]) / Double(factor)).rounded()) * factor)
-  if temporal * resizedHeight * resizedWidth > 512 * 512 {
-    let beta = sqrt(Double(shape[2] * shape[1]) / Double(512 * 512))
-    resizedHeight = max(factor, Int(floor(Double(shape[1]) / beta / Double(factor))) * factor)
-    resizedWidth = max(factor, Int(floor(Double(shape[2]) / beta / Double(factor))) * factor)
-  } else if temporal * resizedHeight * resizedWidth < 256 * 256 {
-    let beta = sqrt(Double(256 * 256) / Double(shape[2] * shape[1]))
-    resizedHeight = Int(ceil(Double(shape[1]) * beta / Double(factor))) * factor
-    resizedWidth = Int(ceil(Double(shape[2]) * beta / Double(factor))) * factor
-  }
-  if let size {
-    precondition(
-      size.height > 0 && size.width > 0 && size.height % factor == 0 && size.width % factor == 0)
-    resizedHeight = size.height
-    resizedWidth = size.width
-  }
+  let targetSize = Qwen3_5VisionSize(
+    height: shape[1], width: shape[2], configuration: configuration, size: size)
+  let resizedHeight = targetSize.height
+  let resizedWidth = targetSize.width
   let resizedTensor: Tensor<Float>
   if resizedWidth == shape[2] && resizedHeight == shape[1] {
     resizedTensor = Tensor<Float>(from: input)
