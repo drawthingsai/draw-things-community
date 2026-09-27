@@ -81,6 +81,40 @@ int main(void)
         CHECK(ios_system_osh("ffmpeg -v error -i missing.wav -f null -") != 0);
         CHECK(ios_system_osh("ffmpeg -v error -i tone.wav -f null -") == 0);
 
+        // Exercise every external library through OSH, including quoted paths,
+        // command-local environment, redirection, and real ffprobe JSON parsing.
+        CHECK(ios_system_osh("ffmpeg -v error -y -f lavfi -i testsrc2=size=64x64:rate=10 "
+            "-i tone.wav -frames:v 2 -threads 1 -c:v libx264 -preset ultrafast "
+            "-c:a libopus -ar 48000 'codec clip.mkv'") == 0);
+        CHECK(ios_system_osh("ffmpeg -v error -y -i 'codec clip.mkv' -threads 1 "
+            "-c:v libx265 -pix_fmt yuv420p10le "
+            "-x265-params pools=none:frame-threads=1:log-level=error -c:a libmp3lame hevc.mkv") == 0);
+        CHECK(ios_system_osh("ffmpeg -v error -y -i hevc.mkv -an -threads 1 "
+            "-c:v libvpx-vp9 -deadline realtime -pix_fmt yuv420p vp9.webm") == 0);
+        CHECK(ios_system_osh("SVT_LOG=-1 ffmpeg -v error -y -i vp9.webm -an "
+            "-c:v libsvtav1 -preset 12 -svtav1-params lp=1 av1.mkv 2> svt.log") == 0);
+        CHECK(ios_system_osh("ffmpeg -v error -c:v libdav1d -i av1.mkv -threads 1 "
+            "-pix_fmt yuv420p -f rawvideo pipe:1 > av1.raw") == 0);
+        CHECK([NSData dataWithContentsOfURL:[project URLByAppendingPathComponent:@"av1.raw"]].length
+            == 2 * 64 * 64 * 3 / 2);
+        CHECK([NSData dataWithContentsOfURL:[project URLByAppendingPathComponent:@"svt.log"]].length == 0);
+        CHECK(ios_system_osh("ffmpeg -v error -f lavfi -i testsrc2=size=192x108:rate=10:duration=0.2 "
+            "-filter_complex 'split[a][b];[a][b]libvmaf=log_path=vmaf.json:log_fmt=json:n_threads=1' "
+            "-f null -") == 0);
+        NSData *vmafData = [NSData dataWithContentsOfURL:[project URLByAppendingPathComponent:@"vmaf.json"]];
+        CHECK(vmafData);
+        NSDictionary *vmaf = [NSJSONSerialization JSONObjectWithData:vmafData options:0 error:nil];
+        CHECK([vmaf[@"frames"] count] == 2);
+        CHECK([vmaf[@"pooled_metrics"][@"vmaf"][@"mean"] doubleValue] > 95);
+        CHECK(ios_system_osh("ffprobe -v error -show_streams -of json hevc.mkv > codecs.json") == 0);
+        NSData *codecsData = [NSData dataWithContentsOfURL:[project URLByAppendingPathComponent:@"codecs.json"]];
+        CHECK(codecsData);
+        NSDictionary *codecs = [NSJSONSerialization JSONObjectWithData:codecsData options:0 error:nil];
+        CHECK([codecs[@"streams"] count] == 2);
+        CHECK([codecs[@"streams"][0][@"codec_name"] isEqualToString:@"hevc"]);
+        CHECK([codecs[@"streams"][0][@"pix_fmt"] isEqualToString:@"yuv420p10le"]);
+        CHECK([codecs[@"streams"][1][@"codec_name"] isEqualToString:@"mp3"]);
+
         // ios_kill must use the cooperative token without calling an unrelated
         // process SIGINT handler or cancelling FFmpeg's command pthread.
         struct sigaction handler = {.sa_handler = signalHandler}, savedHandler;

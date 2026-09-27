@@ -3,18 +3,18 @@
 @@ -86,8 +86,8 @@
  #include "ffmpeg_utils.h"
  #include "graph/graphprint.h"
- 
+
 -const char program_name[] = "ffmpeg";
 -const int program_birth_year = 2000;
 +const char *program_name = "ffmpeg";
 +int program_birth_year = 2000;
- 
+
  FILE *vstats_file;
- 
+
 @@ -117,196 +117,28 @@
  Decoder     **decoders;
  int        nb_decoders;
- 
+
 -#if HAVE_TERMIOS_H
 -
 -/* init terminal so that we can grab keys */
@@ -218,13 +218,13 @@
 +extern void ffmpeg_common_uninit(void);
 +extern void ffmpeg_graph_reset(void);
 +extern void ff_resman_uninit(void);
- 
+
  static int decode_interrupt_cb(void *ctx)
  {
 -    return received_nb_signals > atomic_load(&transcode_init_done);
 +    return ffmpeg_host_cancelled();
  }
- 
+
  const AVIOInterruptCB int_cb = { decode_interrupt_cb, NULL };
 @@ -576,8 +408,7 @@
      int vid;
@@ -238,7 +238,7 @@
      int64_t hours;
 @@ -589,13 +420,13 @@
          return;
- 
+
      if (!is_last_report) {
 -        if (last_time == -1) {
 -            last_time = cur_time;
@@ -254,19 +254,19 @@
 -        last_time = cur_time;
 +        report_last_time = cur_time;
      }
- 
+
      t = (cur_time-timer_start) / 1000000.0;
 @@ -728,7 +559,7 @@
          }
      }
- 
+
 -    first_report = 0;
 +    report_first = 0;
  }
- 
+
  static void print_stream_maps(void)
 @@ -809,14 +640,7 @@
- 
+
  static void set_tty_echo(int on)
  {
 -#if HAVE_TERMIOS_H
@@ -279,29 +279,29 @@
 -#endif
 +    (void)on;
  }
- 
+
  static int check_keyboard_interaction(int64_t cur_time)
 @@ -906,7 +730,7 @@
      while (!sch_wait(sch, stats_period, &transcode_ts)) {
          int64_t cur_time= av_gettime_relative();
- 
+
 -        if (received_nb_signals)
 +        if (ffmpeg_host_cancelled())
              break;
- 
+
          /* if 'q' pressed, exits */
 @@ -978,16 +802,28 @@
  #endif
  }
- 
+
 -int main(int argc, char **argv)
 +int ffmpeg_command_main(int argc, char **argv)
  {
      Scheduler *sch = NULL;
- 
+
      int ret;
      BenchmarkTimeStamps ti;
- 
+
 +    /* Previous invocation has joined all workers before these resets. */
 +    ffmpeg_options_reset();
 +    ffmpeg_common_reset();
@@ -315,16 +315,16 @@
 +    report_first = 1;
 +    current_time = (BenchmarkTimeStamps){0};
      init_dynload();
- 
+
 -    setvbuf(stderr,NULL,_IONBF,0); /* win32 runtime needs this */
 +
- 
+
      av_log_set_flags(AV_LOG_SKIP_REPEATED);
      parse_loglevel(argc, argv, options);
 @@ -1047,9 +883,14 @@
      if (ret == AVERROR_EXIT)
          ret = 0;
- 
+
 +    /* Stop first, including partial startup and interruption paths. */
 +    if (sch) sch_stop(sch, NULL);
      ffmpeg_cleanup(ret);
@@ -334,7 +334,7 @@
 +    vstats_file = NULL;
 +    ff_resman_uninit();
 +    ffmpeg_common_uninit();
- 
+
      av_log(NULL, AV_LOG_VERBOSE, "\n");
      av_log(NULL, AV_LOG_VERBOSE, "Exiting with exit code %d\n", ret);
 --- a/fftools/ffmpeg_opt.c
@@ -350,12 +350,12 @@
 @@ -1250,7 +1249,7 @@
      return 0;
  }
- 
+
 -void show_help_default(const char *opt, const char *arg)
 +void ffmpeg_show_help_default(const char *opt, const char *arg)
  {
      int show_advanced = 0, show_avoptions = 0;
- 
+
 @@ -1516,28 +1515,15 @@
                 arg, av_err2str(ret));
          return ret;
@@ -364,7 +364,7 @@
      progress_avio = avio;
      return 0;
  }
- 
+
  int opt_timelimit(void *optctx, const char *opt, const char *arg)
  {
 -#if HAVE_SETRLIMIT
@@ -386,10 +386,10 @@
 +    av_log(NULL, AV_LOG_ERROR, "-timelimit is unavailable in the embedded command; use host cancellation.\n");
 +    return AVERROR(ENOSYS);
  }
- 
+
  static const char *const alt_channel_layout[] = { "ch_layout", NULL};
 @@ -2100,3 +2086,40 @@
- 
+
      { NULL, },
  };
 +
@@ -433,10 +433,10 @@
 +++ b/fftools/opt_common.c
 @@ -151,6 +151,7 @@
  }
- 
+
  static int warned_cfg = 0;
 +static int report_print_prefix = 1;
- 
+
  #define INDENT        1
  #define SHOW_VERSION  2
 @@ -1144,11 +1145,11 @@
@@ -445,7 +445,7 @@
      char line[1024];
 -    static int print_prefix = 1;
 +
- 
+
      va_copy(vl2, vl);
      av_log_default_callback(ptr, level, fmt, vl);
 -    av_log_format_line(ptr, level, fmt, vl2, line, sizeof(line), &print_prefix);
@@ -507,7 +507,7 @@
 @@ -377,14 +377,26 @@
      return ret;
  }
- 
+
 +static int print_prefix = 1;
 +static int count;
 +static char prev[LINE_SZ];
@@ -534,15 +534,15 @@
 +
      int type[2];
      unsigned tint = 0;
- 
+
 @@ -402,7 +414,7 @@
- 
+
  #if HAVE_ISATTY
      if (!is_atty)
 -        is_atty = isatty(2) ? 1 : -1;
 +        is_atty = isatty(fileno(stderr)) ? 1 : -1;
  #endif
- 
+
      if (print_prefix && (atomic_load_explicit(&av_log_flags, memory_order_relaxed) & AV_LOG_SKIP_REPEATED) && !strcmp(line, prev) &&
 --- a/libavformat/file.c
 +++ b/libavformat/file.c
@@ -563,11 +563,11 @@
 +    ret = ffmpeg_host_write(c->fd, buf, size);
      return (ret == -1) ? AVERROR(errno) : ret;
  }
- 
+
 @@ -467,7 +467,7 @@
          c->fd = fd;
      }
- 
+
 -    c->fd = fd_dup(h, c->fd);
 +    c->fd = fd_dup(h, ffmpeg_host_descriptor(c->fd));
      if (c->fd == -1)
@@ -610,13 +610,13 @@
   */
 -extern const char program_name[];
 +extern const char *program_name;
- 
+
  /**
   * program birth year, defined by the program for show_banner()
   */
 -extern const int program_birth_year;
 +extern int program_birth_year;
- 
+
  extern AVDictionary *sws_dict;
  extern AVDictionary *swr_opts;
 --- a/fftools/ffprobe.c
@@ -624,15 +624,15 @@
 @@ -90,8 +90,7 @@
      int       nb_streams;
  } InputFile;
- 
+
 -const char program_name[] = "ffprobe";
 -const int program_birth_year = 2007;
 +/* Program metadata and common options are shared under the host lock. */
- 
+
  static int do_analyze_frames = 0;
  static int do_bitexact = 0;
 @@ -369,6 +368,60 @@
- 
+
  static LogBuffer *log_buffer;
  static int log_buffer_size;
 +static int print_prefix = 1;
@@ -689,7 +689,7 @@
 +    memset(selected_entries, 0, sizeof(selected_entries));
 +    ffmpeg_common_reset();
 +}
- 
+
  static int is_key_selected_callback(AVTextFormatContext *tctx, const char *key)
  {
 @@ -383,7 +436,7 @@
@@ -699,7 +699,7 @@
 -    static int print_prefix = 1;
 +
      void *new_log_buffer;
- 
+
      va_copy(vl2, vl);
 @@ -1738,6 +1791,10 @@
          goto end;
@@ -715,7 +715,7 @@
 @@ -2568,9 +2625,12 @@
      if (!fmt_ctx)
          return AVERROR(ENOMEM);
- 
+
 +    fmt_ctx->interrupt_callback = (AVIOInterruptCB){ ffprobe_interrupt, NULL };
      err = set_decoders(fmt_ctx);
 -    if (err < 0)
@@ -727,21 +727,21 @@
          av_dict_set(&format_opts, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
          scan_all_pmts_set = 1;
 @@ -2614,7 +2674,7 @@
- 
+
      ifile->streams = av_calloc(fmt_ctx->nb_streams, sizeof(*ifile->streams));
      if (!ifile->streams)
 -        exit(1);
 +        return AVERROR(ENOMEM);
      ifile->nb_streams = fmt_ctx->nb_streams;
- 
+
      /* bind a decoder to each input stream */
 @@ -2630,20 +2690,26 @@
              continue;
- 
+
          {
 -            AVDictionary *opts;
 +            AVDictionary *opts = NULL;
- 
+
              err = filter_codec_opts(codec_opts, stream->codecpar->codec_id,
                                      fmt_ctx, stream, codec, &opts, NULL);
 -            if (err < 0)
@@ -750,7 +750,7 @@
 +                av_dict_free(&opts);
 +                return err;
 +            }
- 
+
              ist->dec_ctx = avcodec_alloc_context3(codec);
 -            if (!ist->dec_ctx)
 -                exit(1);
@@ -758,7 +758,7 @@
 +                av_dict_free(&opts);
 +                return AVERROR(ENOMEM);
 +            }
- 
+
              err = avcodec_parameters_to_context(ist->dec_ctx, stream->codecpar);
 -            if (err < 0)
 -                exit(1);
@@ -766,13 +766,13 @@
 +                av_dict_free(&opts);
 +                return err;
 +            }
- 
+
              if (do_show_log) {
                  // For logging it is needed to disable at least frame threads as otherwise
 @@ -2656,17 +2722,20 @@
- 
+
              ist->dec_ctx->pkt_timebase = stream->time_base;
- 
+
 -            if (avcodec_open2(ist->dec_ctx, codec, &opts) < 0) {
 +            if ((err = avcodec_open2(ist->dec_ctx, codec, &opts)) < 0) {
                  av_log(NULL, AV_LOG_WARNING, "Could not open codec for input stream %d\n",
@@ -781,7 +781,7 @@
 +                av_dict_free(&opts);
 +                return err;
              }
- 
+
              if ((t = av_dict_iterate(opts, NULL))) {
                  av_log(NULL, AV_LOG_ERROR, "Option %s for input stream %d not found\n",
                         t->key, stream->index);
@@ -791,11 +791,11 @@
 +            av_dict_free(&opts);
          }
      }
- 
+
 @@ -3042,7 +3111,7 @@
      return print_input_filename ? 0 : AVERROR(ENOMEM);
  }
- 
+
 -void show_help_default(const char *opt, const char *arg)
 +void ffprobe_show_help_default(const char *opt, const char *arg)
  {
@@ -804,7 +804,7 @@
 @@ -3153,6 +3222,7 @@
              n++;
      n++;
- 
+
 +    av_freep(&read_intervals);
      read_intervals = av_malloc_array(n, sizeof(*read_intervals));
      if (!read_intervals) {
@@ -812,7 +812,7 @@
 @@ -3363,19 +3433,20 @@
              do_show_##varname = 1;                                      \
      } while (0)
- 
+
 -int main(int argc, char **argv)
 +int ffprobe_command_main(int argc, char **argv)
  {
@@ -825,18 +825,18 @@
      char *f_name = NULL, *f_args = NULL;
      int ret, input_ret;
      AVTextFormatDataDump data_dump_format_id = AV_TEXTFORMAT_DATADUMP_XXD;
- 
+
 +    ffprobe_reset();
      init_dynload();
- 
+
 -    setvbuf(stderr, NULL, _IONBF, 0); /* win32 runtime needs this */
 +
- 
+
      av_log_set_flags(AV_LOG_SKIP_REPEATED);
- 
+
 @@ -3528,6 +3599,18 @@
      }
- 
+
  end:
 +    if (wctx) avtextwriter_context_close(&wctx);
 +    if (tctx) avtext_context_close(&tctx);
@@ -853,3 +853,63 @@
      av_freep(&output_format);
      av_freep(&output_filename);
      av_freep(&input_filename);
+--- a/libavcodec/libx265.c
++++ b/libavcodec/libx265.c
+@@ -144,15 +144,21 @@
+ {
+     libx265Context *ctx = avctx->priv_data;
+
+-    ctx->api->param_free(ctx->params);
++    if (ctx->params) {
++        ctx->api->param_free(ctx->params);
++        ctx->params = NULL;
++    }
+     av_freep(&ctx->sei_data);
+
+     for (int i = 0; i < ctx->nb_rd; i++)
+         rd_release(ctx, i);
+     av_freep(&ctx->rd);
+-
+-    if (ctx->encoder)
++    ctx->nb_rd = 0;
++
++    if (ctx->encoder) {
+         ctx->api->encoder_close(ctx->encoder);
++        ctx->encoder = NULL;
++    }
+
+     ff_dovi_ctx_unref(&ctx->dovi);
+
+@@ -604,7 +610,6 @@
+     ctx->encoder = ctx->api->encoder_open(ctx->params);
+     if (!ctx->encoder) {
+         av_log(avctx, AV_LOG_ERROR, "Cannot open libx265 encoder.\n");
+-        libx265_encode_close(avctx);
+         return AVERROR_INVALIDDATA;
+     }
+
+@@ -615,7 +620,6 @@
+         avctx->extradata_size = ctx->api->encoder_headers(ctx->encoder, &nal, &nnal);
+         if (avctx->extradata_size <= 0) {
+             av_log(avctx, AV_LOG_ERROR, "Cannot encode headers.\n");
+-            libx265_encode_close(avctx);
+             return AVERROR_INVALIDDATA;
+         }
+
+@@ -623,7 +627,6 @@
+         if (!avctx->extradata) {
+             av_log(avctx, AV_LOG_ERROR,
+                    "Cannot allocate HEVC header of size %d.\n", avctx->extradata_size);
+-            libx265_encode_close(avctx);
+             return AVERROR(ENOMEM);
+         }
+
+@@ -1098,6 +1101,7 @@
+     .close            = libx265_encode_close,
+     .priv_data_size   = sizeof(libx265Context),
+     .defaults         = x265_defaults,
+-    .caps_internal    = FF_CODEC_CAP_NOT_INIT_THREADSAFE |
++    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP |
++                        FF_CODEC_CAP_NOT_INIT_THREADSAFE |
+                         FF_CODEC_CAP_AUTO_THREADS,
+ };

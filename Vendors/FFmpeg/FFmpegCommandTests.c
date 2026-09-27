@@ -269,6 +269,193 @@ static void test_probe(void)
     expect(0, version);
 }
 
+static void test_external_codecs(void)
+{
+    const char *encoders[] = {"libx264", "libx265", "libvpx", "libvpx-vp9", "libsvtav1"};
+    const char *option[] = {"-preset", "-x265-params", "-deadline", "-deadline", "-svtav1-params"};
+    const char *value[] = {"ultrafast", "pools=none:frame-threads=1:log-level=error", "realtime", "realtime", "lp=1"};
+    for (int i = 0; i < 5; ++i) {
+        expect(0, (const char *[]){"ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+            "-i", "testsrc2=size=64x64:rate=10", "-frames:v", "2", "-threads", "1",
+            "-c:v", encoders[i], option[i], value[i], "codec.mkv", NULL});
+        FFmpegCommandContext c = context();
+        // Explicitly use dav1d to validate the external AV1 decoder too.
+        CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-threads", "1", "-c:v",
+            i == 4 ? "libdav1d" : i == 1 ? "hevc" : i == 0 ? "h264" : i == 2 ? "vp8" : "vp9",
+            "-i", "codec.mkv", "-threads", "1", "-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1", NULL}));
+        CHECK(ftell(c.output) == 2 * 64 * 64 * 3 / 2);
+        close_context(&c);
+    }
+    for (int depth = 10; depth <= 12; depth += 2) {
+        expect(0, (const char *[]){"ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+            "-i", "testsrc2=size=64x64:rate=10", "-frames:v", "1", "-threads", "1",
+            "-pix_fmt", depth == 10 ? "yuv420p10le" : "yuv420p12le", "-c:v", "libx265",
+            "-x265-params", "pools=none:frame-threads=1:log-level=error", "depth.mkv", NULL});
+    }
+    const char *audio_encoders[] = {"libopus", "libmp3lame"};
+    for (int i = 0; i < 2; ++i) {
+        expect(0, (const char *[]){"ffmpeg", "-v", "error", "-y", "-i", "tone.wav",
+            "-ar", "48000", "-c:a", audio_encoders[i], "codec.mka", NULL});
+        FFmpegCommandContext c = context();
+        CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-i", "codec.mka",
+            "-ar", "8000", "-f", "s16le", "pipe:1", NULL}));
+        CHECK(ftell(c.output) >= 1600);
+        close_context(&c);
+    }
+    double scores[2];
+    for (int distorted = 0; distorted < 2; ++distorted) {
+        expect(0, (const char *[]){"ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+            "testsrc2=size=192x108:rate=10:duration=0.2", "-filter_complex", distorted ?
+            "split[a][b];[a]negate[d];[d][b]libvmaf=log_path=vmaf.json:log_fmt=json:n_threads=1" :
+            "split[a][b];[a][b]libvmaf=log_path=vmaf.json:log_fmt=json:n_threads=1",
+            "-f", "null", "-", NULL});
+        char path[PATH_MAX]; snprintf(path, sizeof(path), "%s/vmaf.json", directory);
+        FILE *report = fopen(path, "r"); CHECK(report);
+        char json[16384]; size_t length = fread(json, 1, sizeof(json) - 1, report); json[length] = 0;
+        fclose(report);
+        char *score = strstr(json, "\"vmaf\":"); CHECK(score);
+        scores[distorted] = strtod(score + strlen("\"vmaf\":"), NULL);
+    }
+    // Identical frames need not score 100 (the first frame has zero motion).
+    CHECK(scores[0] > 95.0 && scores[0] <= 100.0);
+    CHECK(scores[1] >= 0 && scores[1] < scores[0] - 20.0);
+    for (int i = 0; i < 2; ++i)
+        expect(-1, (const char *[]){"ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+            "testsrc2=size=64x64:rate=10", "-frames:v", "1", "-c:v", encoders[i],
+            "-preset", "invalid-preset", "-f", "null", "-", NULL});
+    expect(-1, (const char *[]){"ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "testsrc2=size=192x108:rate=10:duration=0.2", "-filter_complex",
+        "split[a][b];[a][b]libvmaf=model=path=missing-model.json", "-f", "null", "-", NULL});
+}
+
+// Lossless modes provide a pixel oracle independent of file size or codec tags.
+static void test_lossless_and_damaged_input(void)
+{
+    unsigned char reference[4 * 32 * 32 * 3 / 2], decoded[sizeof(reference)];
+    FFmpegCommandContext c = context();
+    const char *decode[] = {"ffmpeg", "-v", "error", "-threads", "1", "-i", "video.mkv",
+        "-threads", "1", "-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1", NULL};
+    CHECK(!run(&c, decode)); rewind(c.output);
+    CHECK(fread(reference, 1, sizeof(reference), c.output) == sizeof(reference));
+    close_context(&c);
+    const char *encoders[] = {"libx264", "libx265", "libvpx-vp9"};
+    const char *options[] = {"-crf", "-x265-params", "-lossless"};
+    const char *values[] = {"0", "lossless=1:pools=none:frame-threads=1:log-level=error", "1"};
+    for (int i = 0; i < 3; ++i) {
+        expect(0, (const char *[]){"ffmpeg", "-v", "error", "-y", "-i", "video.mkv",
+            "-threads", "1", "-c:v", encoders[i], options[i], values[i], "lossless.mkv", NULL});
+        c = context();
+        CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-threads", "1", "-i", "lossless.mkv",
+            "-threads", "1", "-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1", NULL}));
+        rewind(c.output);
+        CHECK(fread(decoded, 1, sizeof(decoded), c.output) == sizeof(decoded));
+        CHECK(fgetc(c.output) == EOF);
+        CHECK(!memcmp(reference, decoded, sizeof(reference)));
+        close_context(&c);
+    }
+    char path[PATH_MAX]; snprintf(path, sizeof(path), "%s/lossless.mkv", directory);
+    FILE *source = fopen(path, "rb"); CHECK(source);
+    unsigned char header[16]; CHECK(fread(header, 1, sizeof(header), source) == sizeof(header));
+    fclose(source);
+    for (int bytes = 0; bytes <= 16; bytes += 4) {
+        snprintf(path, sizeof(path), "%s/damaged.mkv", directory);
+        FILE *damaged = fopen(path, "wb"); CHECK(damaged);
+        CHECK(fwrite(header, 1, bytes, damaged) == bytes); CHECK(!fclose(damaged));
+        expect(-1, (const char *[]){"ffmpeg", "-v", "error", "-i", "damaged.mkv", "-f", "null", "-", NULL});
+        expect(-1, (const char *[]){"ffprobe", "-v", "error", "-show_streams", "damaged.mkv", NULL});
+    }
+    expect(0, probe_audio);
+}
+
+static void test_codec_sessions(void)
+{
+    char paths[2][PATH_MAX], cwd[PATH_MAX], after[PATH_MAX];
+    CHECK(getcwd(cwd, sizeof(cwd)));
+    for (int i = 0; i < 2; ++i) {
+        snprintf(paths[i], sizeof(paths[i]), "%s/session %c", directory, 'A' + i);
+        CHECK(!mkdir(paths[i], 0700) || errno == EEXIST);
+    }
+    // Interleave two passes with identical relative filenames in two sessions.
+    // Pass 2 must read that session's statistics, including encoder sidecars.
+    for (int pass = 1; pass <= 2; ++pass) for (int session = 0; session < 2; ++session) {
+        FFmpegCommandContext c = context(); c.directory = paths[session]; c.home = paths[session];
+        CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+            session ? "testsrc2=size=96x64:rate=10" : "testsrc2=size=64x64:rate=10",
+            "-frames:v", "6", "-threads", "1", "-c:v", "libx264", "-b:v", "100k",
+            "-pass", pass == 1 ? "1" : "2", "-passlogfile", "stats", "out.mkv", NULL}));
+        close_context(&c);
+        char path[PATH_MAX]; snprintf(path, sizeof(path), "%s/stats-0.log", paths[session]);
+        struct stat st; CHECK(!stat(path, &st) && st.st_size > 0);
+    }
+    for (int session = 0; session < 2; ++session) {
+        FFmpegCommandContext c = context(); c.directory = paths[session]; c.home = paths[session];
+        CHECK(!run(&c, (const char *[]){"ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width", "-of", "csv=p=0", "/home/out.mkv", NULL}));
+        rewind(c.output); char width[32]; CHECK(fgets(width, sizeof(width), c.output));
+        CHECK(!strcmp(width, session ? "96\n" : "64\n")); close_context(&c);
+    }
+    // Close every stream between commands: SVT must not cache the first FILE*
+    // or the first session's logging environment.
+    const char *noisy[] = {"SVT_LOG=3", "AV_LOG_FORCE_NOCOLOR=1", NULL};
+    const char *quiet[] = {"SVT_LOG=-1", "AV_LOG_FORCE_NOCOLOR=1", NULL};
+    for (int i = 0; i < 3; ++i) {
+        FFmpegCommandContext c = context(); c.directory = paths[i % 2];
+        c.environment = i == 1 ? quiet : noisy;
+        CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+            "testsrc2=size=64x64:rate=10", "-frames:v", "1", "-c:v", "libsvtav1",
+            "-preset", "12", "-svtav1-params", "lp=1", "-f", "null", "-", NULL}));
+        CHECK(i == 1 ? ftell(c.error) == 0 : ftell(c.error) > 0);
+        close_context(&c);
+    }
+    CHECK(getcwd(after, sizeof(after))); CHECK(!strcmp(cwd, after));
+}
+
+static void test_encoder_cancellation(void)
+{
+    const char *encoders[] = {"libx264", "libx265", "libvpx", "libvpx-vp9", "libsvtav1"};
+    const char *option[] = {"-preset", "-x265-params", "-deadline", "-deadline", "-svtav1-params"};
+    const char *value[] = {"ultrafast", "pools=none:frame-threads=1:log-level=error", "realtime", "realtime", "lp=1"};
+    for (int codec = 0; codec < 5; ++codec) {
+        char progress[PATH_MAX]; snprintf(progress, sizeof(progress), "%s/encoder-progress.txt", directory);
+        unlink(progress);
+        const char *args[] = {"ffmpeg", "-v", "error", "-re", "-f", "lavfi", "-i",
+            "testsrc2=size=64x64:rate=30", "-threads", "1", "-c:v", encoders[codec],
+            option[codec], value[codec], "-stats_period", "0.01", "-progress", "encoder-progress.txt",
+            "-f", "null", "-", NULL};
+        Invocation running = {.c = context(), .args = args};
+        running.c.isCancelled = cancelled; running.c.cancellation = &running.cancellation;
+        pthread_t worker; CHECK(!pthread_create(&worker, NULL, invoke, &running));
+        int frames = 0;
+        // Wait for actual encoded output, not a timing guess about initialization.
+        for (int poll = 0; poll < 1000 && !frames; ++poll) {
+            FILE *file = fopen(progress, "r");
+            if (file) {
+                char line[256];
+                while (fgets(line, sizeof(line), file)) {
+                    int count;
+                    if (sscanf(line, "frame=%d", &count) == 1 && count > 0) frames = count;
+                }
+                fclose(file);
+            }
+            CHECK(!atomic_load(&running.finished));
+            if (!frames) usleep(10000);
+        }
+        CHECK(frames > 0);
+        Invocation queued = {.c = context(), .args = probe_version};
+        queued.c.isCancelled = cancelled; queued.c.cancellation = &queued.cancellation;
+        pthread_t waiting; CHECK(!pthread_create(&waiting, NULL, invoke, &queued));
+        for (int poll = 0; poll < 500 && !atomic_load(&queued.cancellation.polls); ++poll) usleep(10000);
+        CHECK(atomic_load(&queued.cancellation.polls)); CHECK(!atomic_load(&queued.finished));
+        atomic_store(&running.cancellation.cancelled, true);
+        wait_flag(&running.finished); CHECK(!pthread_join(worker, NULL)); CHECK(running.status == 130);
+        wait_flag(&queued.finished); CHECK(!pthread_join(waiting, NULL)); CHECK(queued.status == 0);
+        rewind(queued.c.output); char line[256]; CHECK(fgets(line, sizeof(line), queued.c.output));
+        CHECK(strstr(line, "ffprobe version"));
+        close_context(&running.c); close_context(&queued.c);
+    }
+    expect(0, audio);
+}
+
 int main(void)
 {
     const char *base = getenv("TEST_TMPDIR");
@@ -338,6 +525,10 @@ int main(void)
     close_context(&c);
     test_probe();
     test_cancellation();
+    test_external_codecs();
+    test_lossless_and_damaged_input();
+    test_codec_sessions();
+    test_encoder_cancellation();
 
     // A closed downstream reader must return an error without delivering a
     // process-wide SIGPIPE or leaving workers behind.
@@ -373,19 +564,32 @@ int main(void)
     unsigned initial_fds = descriptors();
     unsigned initial_threads = threads();
     size_t initial_allocated = allocated_bytes();
-    for (int i = 0; i < 40; ++i) {
+    int iterations = getenv("FFMPEG_TEST_SOAK") ? 200 : 40;
+    for (int i = 0; i < iterations; ++i) {
         expect(0, version); expect(-1, failure); expect(0, audio);
         expect(0, probe_audio); expect(-1, probe_failure); test_probe();
+        if (i % 10 == 0) {
+            test_external_codecs();
+            test_lossless_and_damaged_input();
+            test_codec_sessions();
+        }
+        if (i == 20) test_encoder_cancellation();
     }
     size_t final_allocated = allocated_bytes();
     CHECK(descriptors() == initial_fds);
     CHECK(threads() == initial_threads);
+#if __has_feature(address_sanitizer)
+    // ASan reports exact live allocations; do not hide per-invocation leaks
+    // behind the allowance needed by the native allocator's accounting.
+    CHECK(final_allocated <= initial_allocated);
+#else
     CHECK(final_allocated <= initial_allocated + 1024 * 1024);
+#endif
     for (int i = 0; i < 5; ++i) {
         struct sigaction current; CHECK(!sigaction(signals[i], NULL, &current));
         CHECK(current.sa_handler == original[i].sa_handler);
     }
-    fprintf(stderr, "FFmpeg lifecycle, media, cancellation and serialization tests passed; live allocation delta: %lld bytes\n",
-        (long long)final_allocated - (long long)initial_allocated);
+    fprintf(stderr, "FFmpeg lifecycle, media, cancellation and serialization tests passed (%d iterations); live allocation delta: %lld bytes\n",
+        iterations, (long long)final_allocated - (long long)initial_allocated);
     return 0;
 }

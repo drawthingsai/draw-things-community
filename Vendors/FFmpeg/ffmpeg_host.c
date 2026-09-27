@@ -1,4 +1,8 @@
 #include "ffmpeg_host.h"
+#include "config.h"
+#if CONFIG_LIBSVTAV1
+#include <svt-av1/EbSvtAv1Enc.h>
+#endif
 
 #include <errno.h>
 #include <limits.h>
@@ -16,6 +20,21 @@ extern int program_birth_year;
 static pthread_mutex_t command_mutex = PTHREAD_MUTEX_INITIALIZER;
 static const FFmpegCommandContext *active;
 static void (*command_help)(const char *, const char *);
+
+#if CONFIG_LIBSVTAV1
+static void svt_log(void *context, SvtAv1LogLevel level, const char *tag,
+    const char *format, va_list args)
+{
+    // SVT's default global logger caches a FILE* from its first invocation.
+    // Install a context-free callback once and resolve the active stream here.
+    const char *configured = ffmpeg_host_getenv("SVT_LOG");
+    int threshold = configured ? atoi(configured) : SVT_AV1_LOG_INFO;
+    if (level > threshold) return;
+    FILE *stream = ffmpeg_host_stream(2);
+    if (tag) fprintf(stream, "%s: ", tag);
+    vfprintf(stream, format, args);
+}
+#endif
 
 // Shared upstream help dispatch calls the current frontend's help function.
 void show_help_default(const char *opt, const char *arg)
@@ -54,6 +73,13 @@ static int command_run(int argc, char **argv, const FFmpegCommandContext *contex
     program_name = is_probe ? "ffprobe" : "ffmpeg";
     program_birth_year = is_probe ? 2007 : 2000;
     command_help = is_probe ? ffprobe_show_help_default : ffmpeg_show_help_default;
+#if CONFIG_LIBSVTAV1
+    static int svt_logger_initialized;
+    if (!svt_logger_initialized) {
+        svt_av1_set_log_callback(svt_log, NULL);
+        svt_logger_initialized = 1;
+    }
+#endif
     // stdio diagnostics/help also write to command pipes. Suppress SIGPIPE on
     // these descriptors for the invocation, then restore the host's flags.
     int output_fds[] = {fileno(context->output), fileno(context->error)};

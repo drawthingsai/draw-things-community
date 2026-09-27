@@ -23,13 +23,18 @@ def _ffmpeg_archive_impl(ctx):
     args.add(ctx.file._patch.dirname)
     args.add(output)
     args.add("asan" if "asan" in ctx.features else "none")
+    args.add("gpl" if ctx.attr.gpl else "lgpl")
+    args.add(ctx.file._tools.path)
+    for codec in ctx.attr.codecs:
+        args.add(codec.label.name.replace("_", "-"))
+        args.add(codec[DefaultInfo].files.to_list()[0].path)
     apple_support.run(
         actions = ctx.actions,
         apple_fragment = ctx.fragments.apple,
         xcode_config = xcode_config,
         executable = "/bin/bash",
         arguments = [args],
-        inputs = ctx.files.sources + ctx.files._support + [ctx.file._script, ctx.file._patch],
+        inputs = ctx.files.sources + ctx.files._support + ctx.files.codecs + [ctx.file._script, ctx.file._patch, ctx.file._tools],
         outputs = [output],
         mnemonic = "BuildFFmpeg",
     )
@@ -39,6 +44,9 @@ ffmpeg_archive = rule(
     implementation = _ffmpeg_archive_impl,
     attrs = dict(apple_support.action_required_attrs(), **{
         "sources": attr.label(default = "@ffmpeg//:sources"),
+        "gpl": attr.bool(default = True),
+        "codecs": attr.label_list(default = [":svt_av1", ":dav1d", ":opus", ":lame", ":libvmaf", ":x264", ":x265", ":libvpx"]),
+        "_tools": attr.label(default = ":build_tools", allow_single_file = True),
         "_script": attr.label(default = ":build_ffmpeg.sh", allow_single_file = True),
         "_patch": attr.label(default = ":ffmpeg-ios.patch", allow_single_file = True),
         "_support": attr.label(default = ":support"),
