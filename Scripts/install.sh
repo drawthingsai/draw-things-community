@@ -25,6 +25,8 @@ if [ "$OS" == "Darwin" ]; then
   brew install coreutils
   # Install xcode cmd line tools
   xcode-select --install || true
+  # Install cmake
+  brew install cmake
 else
   echo "try-import %workspace%/.bazelrc.linux" > $GIT_ROOT/.bazelrc
   ln -s $GIT_ROOT/WORKSPACE.linux $GIT_ROOT/WORKSPACE
