@@ -65,6 +65,10 @@ public struct LLMZoo: DownloadZoo {
     "qwen_3.8_27b_i8x.ckpt": "f208994678a8244c2a6a5c1178f2ca5b31a8543200013938a1462ee79413866e",
     "deepseek_4_flash_0731_i2x.ckpt":
       "9eaa72400970ab6b699885335ec6847929f2310e011785111afb75fb86d169c3",
+    "deepseek_4.1_flash_0910_i2x.ckpt":
+      "9f4fd99071f6d84e73c19ebe728eb0dc9b6bc1d54a92bcd605e0b61f92e49bf9",
+    "deepseek_4.1_flash_0910_i2x.engram":
+      "46a64d7a5d7dfbce0261b378627169ac62a6fa591ce14554dcac055215048c71",
   ]
 
   private static var specificationMapping: [String: Specification] = {
