@@ -22,7 +22,7 @@ macos_command_line_application(
     minimum_os_version = "13.0",
     visibility = ["//visibility:public"],
     deps = [
-        "//Apps:DrawThingsCLILib",
+        "//Apps:DrawThingsCLIExecutable",
     ],
 )
 

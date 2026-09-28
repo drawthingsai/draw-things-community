@@ -77,6 +77,7 @@ swift_binary(
 swift_library(
     name = "DrawThingsCLILib",
     srcs = glob(["DrawThingsCLI/*.swift"]),
+    module_name = "DrawThingsCLILib",
     visibility = ["//Apps:__subpackages__"],
     deps = [
         "//Libraries/AudioConverter",
@@ -101,11 +102,20 @@ swift_library(
     ],
 )
 
+swift_library(
+    name = "DrawThingsCLIExecutable",
+    srcs = ["DrawThingsCLI/Executable/Main.swift"],
+    visibility = ["//Apps:__subpackages__"],
+    deps = [
+        ":DrawThingsCLILib",
+    ],
+)
+
 swift_binary(
     name = "DrawThingsCLI",
     srcs = [],
     visibility = ["//visibility:public"],
     deps = [
-        ":DrawThingsCLILib",
+        ":DrawThingsCLIExecutable",
     ],
 )
