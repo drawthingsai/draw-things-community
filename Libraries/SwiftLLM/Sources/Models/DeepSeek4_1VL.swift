@@ -66,13 +66,14 @@ public func DeepSeek4_1VisionTokenCount(
   return ((grid.height + r - 1) / r) * ((grid.width + r - 1) / r + 1) + 2
 }
 
-public func DeepSeek4_1VisionRotaryEmbedding(
+public func DeepSeek4_1VisionRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   grid: (height: Int, width: Int),
-  configuration: DeepSeek4_1VisionConfiguration = .deepSeekV4_1Flash
-) -> Tensor<Float16> {
+  configuration: DeepSeek4_1VisionConfiguration = .deepSeekV4_1Flash,
+  of dataType: FloatType.Type = FloatType.self
+) -> Tensor<FloatType> {
   let d = configuration.headDim
   precondition(d.isMultiple(of: 4))
-  var result = Tensor<Float16>(.CPU, .NHWC(1, grid.height * grid.width, 1, d))
+  var result = Tensor<FloatType>(.CPU, .NHWC(1, grid.height * grid.width, 1, d))
   for y in 0..<grid.height {
     for x in 0..<grid.width {
       for i in 0..<(d / 2) {
@@ -82,8 +83,8 @@ public func DeepSeek4_1VisionRotaryEmbedding(
           / pow(
             configuration.ropeTheta,
             Double(2 * (i % (d / 4))) / Double(d / 2))
-        result[0, y * grid.width + x, 0, 2 * i] = Float16(cos(angle))
-        result[0, y * grid.width + x, 0, 2 * i + 1] = Float16(sin(angle))
+        result[0, y * grid.width + x, 0, 2 * i] = FloatType(cos(angle))
+        result[0, y * grid.width + x, 0, 2 * i + 1] = FloatType(sin(angle))
       }
     }
   }
