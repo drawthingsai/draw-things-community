@@ -819,7 +819,31 @@ public enum ImageConverter {
           return []
         }
       case .qwenImage2_1:
-        return []
+        imageHeight = shape[1] * 16
+        imageWidth = shape[2] * 16
+        isVideo = false
+        switch max(imageWidth, imageHeight) {
+        case 0...768:
+          taesd = qwenImage2_1TinyDecoderFor768
+          imagePaddingSize = 768
+        case 769...1024:
+          taesd = qwenImage2_1TinyDecoderFor1024
+          imagePaddingSize = 1024
+        case 1025...1280:
+          taesd = qwenImage2_1TinyDecoderFor1280
+          imagePaddingSize = 1280
+        case 1281...1536:
+          taesd = qwenImage2_1TinyDecoderFor1536
+          imagePaddingSize = 1536
+        case 1537...1792:
+          taesd = qwenImage2_1TinyDecoderFor1792
+          imagePaddingSize = 1792
+        case 1793...2048:
+          taesd = qwenImage2_1TinyDecoderFor2048
+          imagePaddingSize = 2048
+        default:
+          return []
+        }
       case .qwenImage, .cosmos2_5_2b, .krea2:
         imageHeight = shape[1] * 8
         imageWidth = shape[2] * 8
@@ -1166,13 +1190,16 @@ public enum ImageConverter {
             }
           }
         } else {
+          // Qwen Image 2.1 uses 16x spatial compression; other image TAEs use 8x.
+          let spatialScale = version == .qwenImage2_1 ? 16 : 8
+          let latentPaddingSize = imagePaddingSize / spatialScale
           var images = [Tensor<FloatType>]()
           if imageWidth != imagePaddingSize || imageHeight != imagePaddingSize {
             for i in 0..<shape[0] {
               var image = Tensor<FloatType>(
                 Array(
-                  repeating: 0, count: (imagePaddingSize / 8) * (imagePaddingSize / 8) * shape[3]),
-                .CPU, .NHWC(1, imagePaddingSize / 8, imagePaddingSize / 8, shape[3]))
+                  repeating: 0, count: latentPaddingSize * latentPaddingSize * shape[3]),
+                .CPU, .NHWC(1, latentPaddingSize, latentPaddingSize, shape[3]))
               image[0..<1, 0..<shape[1], 0..<shape[2], 0..<shape[3]] =
                 tensor[i..<(i + 1), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
               images.append(image)
@@ -1200,6 +1227,7 @@ public enum ImageConverter {
             return (0..<predictions.count).compactMap {
               let outFeatures = predictions.features(at: $0)
               let outputArray = outFeatures.featureValue(for: name)!.multiArrayValue!
+              let rowStride = outputArray.strides[1].intValue
               let stride = outputArray.strides[2].intValue
               return outputArray.withUnsafeBytes {
                 guard var fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
@@ -1223,7 +1251,7 @@ public enum ImageConverter {
                     i += stride
                     o += 4
                   }
-                  fp16 += imagePaddingSize * 32
+                  fp16 += rowStride
                 }
                 return CGImage(
                   width: imageWidth, height: imageHeight, bitsPerComponent: 8, bitsPerPixel: 32,
@@ -1319,7 +1347,7 @@ public enum ImageConverter {
           || version == .ernieImage
           || version == .flux2 || version == .flux2_4b || version == .flux2_9b
           || version == .ideogram4
-          || version == .qwenImage
+          || version == .qwenImage || version == .qwenImage2_1
           || version == .krea2
           || version == .cosmos2_5_2b
           || version == .wan21_1_3b || version == .wan21_14b || version == .ltx2

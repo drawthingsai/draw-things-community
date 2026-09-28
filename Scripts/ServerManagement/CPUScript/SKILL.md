@@ -162,8 +162,10 @@ openssl s_client -connect 127.0.0.1:8443 -servername compute.drawthings.ai </dev
 Launch the CPU proxy first. Any extra arguments after the model-list path are passed through to `ProxyServiceCLI`, including `-g` GPU worker ranges:
 
 ```bash
-ssh root@<new-ts-ip> 'cd /root/CPUScript && ./LaunchCPUServer.sh "<DATADOG_API_KEY>" /root/CPUScript/model-list -g 100.70.225.70:40001-40008:1 -g 100.115.89.107:40001-40008:1 -g 100.83.253.70:40001-40008:1 -g 100.64.66.84:40001-40008:1 -g 100.121.197.14:40001-40008:1 -g 100.110.198.32:40001-40008:1'
+ssh root@<new-ts-ip> 'cd /root/CPUScript && ./LaunchCPUServer.sh "<DATADOG_API_KEY>" /root/CPUScript/model-list -g 100.70.225.70:40001-40008:1 -g 100.115.89.107:40001-40008:1 -g 100.102.100.71:40001-40008:1 -g 100.102.159.74:40001-40008:1 -g 100.121.197.14:40001-40008:1 -g 100.110.198.32:40001-40008:1'
 ```
+
+Verify each host's current Tailscale address before executing this example. The rebuilt `dfw-242-009` and `dfw-243-010` replaced the retired `100.83.253.70` and `100.64.66.84` addresses. `LaunchCPUServer.sh` stops and recreates the central proxy container, which can interrupt in-flight generation requests; use a planned maintenance window. A plain restart of an existing container retains its previously saved `-g` arguments.
 
 `LaunchCPUServer.sh` mounts the directory containing the model list as `/app/Documents` and passes `--model-list-path /app/Documents/<filename>`. It also makes that directory and file writable by the container's non-root `appuser`; this is required because `update-model-list` writes atomically by creating a temporary file in the same directory.
 

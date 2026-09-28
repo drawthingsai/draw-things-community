@@ -354,6 +354,39 @@ import Foundation
       }
     }()
 
+    static let qwenImage2_1UnzipItem: URL? = {
+      let fileManager = FileManager.default
+      let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+      let coreMLUrl = urls.first!.appendingPathComponent("coreml")
+      let modelUrl = coreMLUrl.appendingPathComponent("qwen_image_2_1_tae")
+      do {
+        try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
+        guard !fileManager.fileExists(atPath: modelUrl.path) else { return modelUrl }
+        guard
+          let archiveUrl = Bundle.main.url(forResource: "qwen_image_2.1_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
+        for size in [768, 1024, 1280, 1536, 1792] {
+          do {
+            try fileManager.linkItem(
+              at: modelUrl.appendingPathComponent("weight.bin"),
+              to: modelUrl.appendingPathComponent("\(size).mlmodelc/weights/weight.bin"))
+          } catch {
+            try fileManager.copyItem(
+              at: modelUrl.appendingPathComponent("weight.bin"),
+              to: modelUrl.appendingPathComponent("\(size).mlmodelc/weights/weight.bin"))
+          }
+        }
+        try fileManager.moveItem(
+          at: modelUrl.appendingPathComponent("weight.bin"),
+          to: modelUrl.appendingPathComponent("2048.mlmodelc/weights/weight.bin"))
+        return modelUrl
+      } catch {
+        try? fileManager.removeItem(at: modelUrl)
+        return nil
+      }
+    }()
+
     static let wan21UnzipItem: URL? = {
       let fileManager = FileManager.default
       let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
@@ -1021,6 +1054,78 @@ import Foundation
       }
       return ManagedMLModel(
         contentsOf: flux1UnzipItem.appendingPathComponent("2048.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImage2_1TinyDecoderFor768: ManagedMLModel? = {
+      guard let qwenImage2_1UnzipItem = qwenImage2_1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: qwenImage2_1UnzipItem.appendingPathComponent("768.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImage2_1TinyDecoderFor1024: ManagedMLModel? = {
+      guard let qwenImage2_1UnzipItem = qwenImage2_1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: qwenImage2_1UnzipItem.appendingPathComponent("1024.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImage2_1TinyDecoderFor1280: ManagedMLModel? = {
+      guard let qwenImage2_1UnzipItem = qwenImage2_1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: qwenImage2_1UnzipItem.appendingPathComponent("1280.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImage2_1TinyDecoderFor1536: ManagedMLModel? = {
+      guard let qwenImage2_1UnzipItem = qwenImage2_1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: qwenImage2_1UnzipItem.appendingPathComponent("1536.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImage2_1TinyDecoderFor1792: ManagedMLModel? = {
+      guard let qwenImage2_1UnzipItem = qwenImage2_1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: qwenImage2_1UnzipItem.appendingPathComponent("1792.mlmodelc"),
+        configuration: configuration)
+    }()
+    static let qwenImage2_1TinyDecoderFor2048: ManagedMLModel? = {
+      guard let qwenImage2_1UnzipItem = qwenImage2_1UnzipItem else { return nil }
+      var configuration = MLModelConfiguration()
+      if #available(iOS 16.0, *) {
+        configuration.computeUnits = .cpuAndNeuralEngine
+      } else {
+        configuration.computeUnits = .all
+      }
+      return ManagedMLModel(
+        contentsOf: qwenImage2_1UnzipItem.appendingPathComponent("2048.mlmodelc"),
         configuration: configuration)
     }()
     static let wan21TinyDecoderFor512: ManagedMLModel? = {
