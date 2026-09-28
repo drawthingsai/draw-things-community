@@ -111,6 +111,14 @@ load("@ripgrep_crates//:defs.bzl", "crate_repositories")
 
 crate_repositories()
 
+load("//Vendors/PDFInspector:repositories.bzl", "pdf_inspector_repositories")
+
+pdf_inspector_repositories()
+
+load("@pdf_inspector_crates//:defs.bzl", pdf_inspector_crate_repositories = "crate_repositories")
+
+pdf_inspector_crate_repositories()
+
 git_repository(
     name = "dflat",
     commit = "73925e51e4f44add842177a229f9990cb13711ff",

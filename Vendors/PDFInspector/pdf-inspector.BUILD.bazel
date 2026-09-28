@@ -1,0 +1,26 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "pdf_inspector",
+    srcs = glob(["src/**/*.rs"], exclude = ["src/bin/**"]),
+    compile_data = glob(["external/bcmaps/**"]),
+    crate_name = "pdf_inspector",
+    crate_root = "src/lib.rs",
+    edition = "2021",
+    rustc_env = {"CARGO_PKG_VERSION": "1.25.0"},
+    deps = [
+        "@pdf_inspector_crates//:env_logger",
+        "@pdf_inspector_crates//:include_dir",
+        "@pdf_inspector_crates//:log",
+        "@pdf_inspector_crates//:lopdf",
+        "@pdf_inspector_crates//:once_cell",
+        "@pdf_inspector_crates//:rayon",
+        "@pdf_inspector_crates//:regex",
+        "@pdf_inspector_crates//:thiserror",
+        "@pdf_inspector_crates//:ttf-parser",
+        "@pdf_inspector_crates//:unicode-bidi",
+        "@pdf_inspector_crates//:unicode-normalization",
+    ],
+)

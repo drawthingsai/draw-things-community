@@ -744,6 +744,22 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       ],
       path: "Vendors/SwiftMarkdownEngine/Sources/MarkdownEngineLatex"
     ),
+    .systemLibrary(
+      name: "CPDFInspector",
+      path: "Vendors/PDFInspector/SwiftPM"
+    ),
+    .target(
+      name: "PDFTextExtractor",
+      dependencies: ["CPDFInspector"],
+      path: "Libraries/PDFTextExtractor/Sources",
+      linkerSettings: [
+        .unsafeFlags([
+          "-L",
+          URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent(".build/pdf-inspector/lib").path,
+        ])
+      ]
+    ),
     .target(
       name: "Ripgrep",
       path: "Apps/LocalCodeCatalyst/Support/Ripgrep"
@@ -779,6 +795,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         "MarkdownEngineLatex",
         "ModelZoo",
         "Nuke",
+        "PDFTextExtractor",
         "ProjectHistoryManager",
         "RemoteAPI",
         "Ripgrep",

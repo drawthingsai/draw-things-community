@@ -1,0 +1,5 @@
+module CPDFInspector {
+  header "../include/pdf_inspector.h"
+  link "pdf_inspector_bridge"
+  export *
+}

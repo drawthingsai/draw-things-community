@@ -90,6 +90,14 @@ load("@ripgrep_crates//:defs.bzl", "crate_repositories")
 
 crate_repositories()
 
+load("//Vendors/PDFInspector:repositories.bzl", "pdf_inspector_repositories")
+
+pdf_inspector_repositories()
+
+load("@pdf_inspector_crates//:defs.bzl", pdf_inspector_crate_repositories = "crate_repositories")
+
+pdf_inspector_crate_repositories()
+
 git_repository(
     name = "rules_xcodeproj",
     commit = "b5265cf4c360a7607d82ab89e109d20f2a66188b",
