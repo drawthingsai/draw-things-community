@@ -13,8 +13,11 @@ pipeline stage clone mutable shell state, options, functions, and traps, then
 restore their working directory. A virtual child runs its own `EXIT` trap and
 cannot replace the parent's trap table.
 
-Pipelines are deliberately finite and buffered between stages, with a 16 MiB
-per-stage limit. A background job requested with `&` emits a warning and runs
+Pipelines are deliberately finite and buffered between stages, with a 256 MiB
+per-stage limit checked after each intermediate stage completes. Exceeding the
+limit emits a diagnostic, skips the remaining stages, and fails the pipeline
+with status 125 without throwing; scripts can handle the failure with `||` or
+`$?`. A background job requested with `&` emits a warning and runs
 synchronously in isolated shell state inside the current Local Code Bash job.
 It does not create a shell job, populate `$!`, or outlive that Bash job.
 Process substitution, named descriptors, and other descriptor manipulation are

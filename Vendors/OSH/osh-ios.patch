@@ -659,7 +659,7 @@
    syntax_asdl::command_t* UP_node = nullptr;
    process::Pipeline* pi = nullptr;
    process::Process* p = nullptr;
-@@ -24832,9 +25393,51 @@
+@@ -24832,9 +25393,55 @@
      print_stderr(StrFormat("[%%%d] PID %d Started", job_id, this->mem->last_bg_pid));
    }
    return 0;
@@ -698,9 +698,13 @@
 +    codes->append(status);
 +    pipe_locs->append(Alloc<loc::Command>(child));
 +    if (!is_last) {
-+      if (stage_output->Length() > 16 * 1024 * 1024) {
-+        OshIosUnsupported("pipeline stage output larger than 16 MiB");
-+        throw Alloc<util::HardExit>(OSH_IOS_STATUS_UNSUPPORTED);
++      if (stage_output->Length() > 256 * 1024 * 1024) {
++        mylib::Stderr()->write(StrFromC(
++            "osh: pipeline stage output larger than 256 MiB\n"));
++        // Fail the pipeline normally and skip the remaining stages. Do not
++        // mark the whole invocation unsupported: callers can handle $?.
++        codes->set(i, OSH_IOS_STATUS_UNSUPPORTED);
++        break;
 +      }
 +      previous_output = stage_output->getvalue();
 +    }

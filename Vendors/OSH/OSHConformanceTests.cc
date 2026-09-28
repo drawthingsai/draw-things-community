@@ -84,12 +84,22 @@ int RunExternal(int argc, const char* const argv[], int envc,
   if (strcmp(argv[0], "big") == 0) {
     char bytes[4096];
     memset(bytes, 'x', sizeof(bytes));
-    size_t remaining = 16 * 1024 * 1024 + 1;
+    size_t remaining = argc == 2 ? strtoul(argv[1], nullptr, 10) : 0;
     while (remaining != 0) {
       size_t count = remaining < sizeof(bytes) ? remaining : sizeof(bytes);
       fwrite(bytes, 1, count, output);
       remaining -= count;
     }
+    return 0;
+  }
+  if (strcmp(argv[0], "countbytes") == 0) {
+    char bytes[4096];
+    size_t total = 0;
+    size_t count;
+    while ((count = fread(bytes, 1, sizeof(bytes), input)) != 0) {
+      total += count;
+    }
+    fprintf(output, "%zu\n", total);
     return 0;
   }
   if (strcmp(argv[0], "wait_external") == 0) {
@@ -268,9 +278,18 @@ int main() {
          "trap 'echo parent' EXIT; (trap 'echo child' EXIT); echo after", 0,
          "child\nafter\nparent\n");
   Expect("empty job primitives", "jobs; wait", 0, "");
-  Expect("pipeline size unsupported", "big | cat",
+  Expect("pipeline above old limit", "big 16777217 | countbytes",
+         0, "16777217\n");
+  Expect("pipeline at size limit", "big 268435456 | countbytes",
+         0, "268435456\n");
+  Expect("pipeline size exceeded", "big 268435457 | showargv not-run",
          OSH_IOS_STATUS_UNSUPPORTED, "",
-         "unsupported in Local Code: pipeline stage output larger than 16 MiB");
+         "pipeline stage output larger than 256 MiB");
+  Expect("pipeline size failure recovery",
+         "set -o pipefail; big 268435457 | showargv not-run || "
+         "{ echo \"status=$? stages=${PIPESTATUS[*]}\"; }; echo recovered",
+         0, "status=125 stages=125\nrecovered\n",
+         "pipeline stage output larger than 256 MiB");
 
   gExternalBlocked.store(false, std::memory_order_release);
   gReleaseExternal.store(false, std::memory_order_release);
