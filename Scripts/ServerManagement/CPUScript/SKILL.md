@@ -9,7 +9,7 @@ Use this workflow from `Scripts/ServerManagement/CPUScript`.
 
 ## Files
 
-- `InitCPUServer.sh`: install/update Docker, install Tailscale, run `tailscale up --ssh`, lock the root password, and pull `drawthingsai/draw-things-proxy-server-cli:latest` plus Envoy 1.39.1 pinned to its Linux amd64 image digest.
+- `InitCPUServer.sh`: install/update Docker, install Tailscale, run `tailscale up --ssh`, lock the root password, and pull `drawthingsai/draw-things-proxy-server-cli:v20260928.2` plus Envoy 1.39.1 pinned to its Linux amd64 image digest.
 - `InitCertificate.sh`: request a Let's Encrypt cert for `compute.drawthings.ai` with standalone certbot on port 80, set the permissions required by the non-root proxy container, and install the renewal deploy hook.
 - `restart-drawthings-tls.sh`: Certbot deploy hook that repairs renewed certificate permissions and restarts `proxy_service` and `envoy_grpc_web_proxy` so both processes load the renewed certificate.
 - `LaunchCPUServer.sh`: start `proxy_service` on public `443` and Tailscale control port `TS_IP:50002`.

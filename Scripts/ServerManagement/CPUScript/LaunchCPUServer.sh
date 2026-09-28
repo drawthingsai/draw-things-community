@@ -65,7 +65,7 @@ docker run -d \
   -v /etc/letsencrypt:/etc/letsencrypt:ro \
   -v "$MODEL_LIST_DIR:$CONTAINER_MODEL_LIST_DIR" \
   -u appuser \
-  drawthingsai/draw-things-proxy-server-cli \
+  drawthingsai/draw-things-proxy-server-cli:v20260928.2 \
   /usr/local/bin/ProxyServiceCLI \
   --model-list-path "$CONTAINER_MODEL_LIST_PATH" \
   -p 8080 \
