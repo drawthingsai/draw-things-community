@@ -29,6 +29,23 @@ typedef int (*osh_ios_get_process_id)(void* context);
  * or -1 to let OSH inspect the real filesystem. */
 typedef int (*osh_ios_lookup_virtual_path)(const char* path, void* context);
 
+/* The runner owns each distinct stream until that stage exits, closes it then,
+ * and fills every status before returning. Arguments remain valid for the call.
+ * Pipeline stages must run concurrently; no process-wide stdio is redirected. */
+typedef struct osh_ios_pipeline_command {
+  int argc;
+  const char* const* argv;
+  FILE* input;
+  FILE* output;
+  FILE* error;
+  /* If non-null, write this diagnostic to error and return status 1 instead of
+   * running the command. Close the stage streams normally in either case. */
+  const char* redirect_error;
+} osh_ios_pipeline_command;
+typedef void (*osh_ios_pipeline_runner)(
+    int count, const osh_ios_pipeline_command commands[], int envc,
+    const char* const environment[], int statuses[], void* context);
+
 typedef struct osh_ios_config {
   osh_ios_external_runner run_external;
   osh_ios_is_cancelled is_cancelled;
@@ -39,6 +56,9 @@ typedef struct osh_ios_config {
   int environment_count;
   const char* const* environment;
   void* context;
+  osh_ios_pipeline_runner run_pipeline;
+  /* Optional capability check, called before opening redirects or pipe streams. */
+  int (*can_run_pipeline)(int count, const char* const names[], void* context);
 } osh_ios_config;
 
 int osh_ios_run(const char* command, FILE* input, FILE* output, FILE* error,

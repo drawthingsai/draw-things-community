@@ -10,6 +10,7 @@
 #include <atomic>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -19,13 +20,10 @@ std::atomic<bool> gReleaseExternal(false);
 void Copy(FILE* input, FILE* output) {
   char bytes[4096];
   while (true) {
-    size_t count = fread(bytes, 1, sizeof(bytes), input);
-    if (count != 0) {
-      fwrite(bytes, 1, count, output);
-    }
-    if (count != sizeof(bytes)) {
-      break;
-    }
+    ssize_t count = read(fileno(input), bytes, sizeof(bytes));
+    if (count < 0 && errno == EINTR) continue;
+    if (count <= 0) break;
+    if (fwrite(bytes, 1, count, output) != static_cast<size_t>(count)) break;
   }
 }
 
@@ -87,7 +85,7 @@ int RunExternal(int argc, const char* const argv[], int envc,
     size_t remaining = argc == 2 ? strtoul(argv[1], nullptr, 10) : 0;
     while (remaining != 0) {
       size_t count = remaining < sizeof(bytes) ? remaining : sizeof(bytes);
-      fwrite(bytes, 1, count, output);
+      if (fwrite(bytes, 1, count, output) != count) return 1;
       remaining -= count;
     }
     return 0;
@@ -102,7 +100,19 @@ int RunExternal(int argc, const char* const argv[], int envc,
     fprintf(output, "%zu\n", total);
     return 0;
   }
-  if (strcmp(argv[0], "wait_external") == 0) {
+  if (strcmp(argv[0], "exitcode") == 0 && argc == 2) return atoi(argv[1]);
+  if (strcmp(argv[0], "takebyte") == 0) {
+    int c = fgetc(input);
+    if (c != EOF) fputc(c, output);
+    return 0;
+  }
+  if (strcmp(argv[0], "wait_external") == 0 || strcmp(argv[0], "stream_wait") == 0) {
+    if (strcmp(argv[0], "stream_wait") == 0) {
+      fputs("out\n", output);
+      fflush(output);
+      fputs("err\n", error);
+      fflush(error);
+    }
     gExternalBlocked.store(true, std::memory_order_release);
     while (!gReleaseExternal.load(std::memory_order_acquire)) {
       usleep(1000);
@@ -111,6 +121,27 @@ int RunExternal(int argc, const char* const argv[], int envc,
   }
   fprintf(error, "%s: command not found\n", argv[0]);
   return 127;
+}
+
+void RunPipeline(int count, const osh_ios_pipeline_command commands[], int envc,
+                 const char* const environment[], int statuses[], void* context) {
+  std::vector<std::thread> threads;
+  for (int i = 0; i < count; ++i) {
+    threads.emplace_back([&, i] {
+      const auto& c = commands[i];
+      if (c.redirect_error != nullptr) {
+        fputs(c.redirect_error, c.error);
+        statuses[i] = 1;
+      } else {
+        statuses[i] = RunExternal(c.argc, c.argv, envc, environment,
+                                 c.input, c.output, c.error, context);
+      }
+      fclose(c.input);
+      fclose(c.output);
+      fclose(c.error);
+    });
+  }
+  for (auto& thread : threads) thread.join();
 }
 
 struct Context {
@@ -175,7 +206,7 @@ Result Run(const char* command, const char* input_contents = "",
   Context context = {cancelled};
   osh_ios_config config = {RunExternal, IsCancelled, SendSignal,
                             SetSignalHandler, GetProcessId, nullptr, 1, environment,
-                            &context};
+                            &context, RunPipeline, nullptr};
   int status = osh_ios_run(command, input, output, error, &config);
   Result result = {status, Read(output), Read(error)};
   fclose(input);
@@ -280,16 +311,84 @@ int main() {
   Expect("empty job primitives", "jobs; wait", 0, "");
   Expect("pipeline above old limit", "big 16777217 | countbytes",
          0, "16777217\n");
-  Expect("pipeline at size limit", "big 268435456 | countbytes",
+  Expect("pipeline at size limit", "{ big 268435456; } | countbytes",
          0, "268435456\n");
-  Expect("pipeline size exceeded", "big 268435457 | showargv not-run",
+  Expect("pipeline size exceeded", "{ big 268435457; } | showargv not-run",
          OSH_IOS_STATUS_UNSUPPORTED, "",
          "pipeline stage output larger than 256 MiB");
   Expect("pipeline size failure recovery",
-         "set -o pipefail; big 268435457 | showargv not-run || "
+         "set -o pipefail; { big 268435457; } | showargv not-run || "
          "{ echo \"status=$? stages=${PIPESTATUS[*]}\"; }; echo recovered",
          0, "status=125 stages=125\nrecovered\n",
          "pipeline stage output larger than 256 MiB");
+
+  Expect("streaming pipeline statuses",
+         "set -o pipefail; exitcode 3 | exitcode 7; "
+         "echo \"$? ${PIPESTATUS[*]}\"", 0, "7 3 7\n");
+  Expect("streaming exact argv", "showargv 'a b' '' 'a|b' | cat", 0,
+         "[a b][][a|b]\n");
+  Expect("early pipeline consumer exit",
+         "set -o pipefail; big 10485760 | takebyte", 1, "x");
+  Expect("streaming beyond buffered limit", "big 268435457 | countbytes",
+         0, "268435457\n");
+
+  Expect("failed producer redirect still runs consumer",
+         "showargv not-run <osh-ios-missing-input | countbytes; "
+         "echo \"$? ${PIPESTATUS[*]}\"", 0, "0\n0 1 0\n",
+         "osh-ios-missing-input");
+  Expect("failed redirect with pipefail",
+         "set -o pipefail; showargv not-run <osh-ios-missing-input | countbytes; "
+         "echo \"$? ${PIPESTATUS[*]}\"", 0, "0\n1 1 0\n",
+         "osh-ios-missing-input");
+  Expect("failed middle redirect",
+         "exitcode 0 | cat <osh-ios-missing-input | countbytes; "
+         "echo \"$? ${PIPESTATUS[*]}\"", 0, "0\n0 0 1 0\n",
+         "osh-ios-missing-input");
+  Expect("failed last redirect",
+         "exitcode 7 | cat >osh-ios-missing-directory/output; "
+         "echo \"$? ${PIPESTATUS[*]}\"", 0, "1 7 1\n",
+         "osh-ios-missing-directory/output");
+  Expect("all redirects fail",
+         "cat <osh-ios-missing-input | cat >osh-ios-missing-directory/output; "
+         "echo \"$? ${PIPESTATUS[*]}\"", 0, "1 1 1\n");
+  Expect("redirect failure respects earlier stderr redirect",
+         "showargv not-run 2>osh-ios-redirect-error <osh-ios-missing-input "
+         "| countbytes; [[ -s osh-ios-redirect-error ]]", 0, "0\n");
+  Expect("redirect failure skips later redirects",
+         "showargv not-run <osh-ios-missing-input >osh-ios-not-created "
+         "| countbytes; [[ ! -e osh-ios-not-created ]]", 0, "0\n",
+         "osh-ios-missing-input");
+  Expect("redirect diagnostic follows earlier pipe duplication",
+         "showargv not-run 2>&1 <osh-ios-missing-input | grep osh-ios-missing-input; "
+         "echo \"$? ${PIPESTATUS[*]}\"", 0,
+         "osh: osh-ios-missing-input: No such file or directory\n0 1 0\n");
+
+  for (const char* command : {
+           "stream_wait 2>&1 | cat > osh-ios-stream-output",
+           "if true; then stream_wait > osh-ios-stream-output 2>&1; fi"}) {
+    unlink("osh-ios-stream-output");
+    gExternalBlocked.store(false, std::memory_order_release);
+    gReleaseExternal.store(false, std::memory_order_release);
+    Result streamed = {};
+    std::thread worker([&] { streamed = Run(command); });
+    bool received = false;
+    for (int attempt = 0; attempt < 5000; ++attempt) {
+      FILE* live = fopen("osh-ios-stream-output", "r");
+      if (live != nullptr) {
+        received = Read(live) == "out\nerr\n";
+        fclose(live);
+      }
+      if (received) break;
+      usleep(1000);
+    }
+    gReleaseExternal.store(true, std::memory_order_release);
+    worker.join();
+    if (!received || streamed.status != 0) {
+      fprintf(stderr, "output did not arrive before producer exit: %s\n%s\n",
+              command, streamed.error.c_str());
+      return 1;
+    }
+  }
 
   gExternalBlocked.store(false, std::memory_order_release);
   gReleaseExternal.store(false, std::memory_order_release);
