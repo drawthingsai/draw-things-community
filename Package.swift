@@ -16,7 +16,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/liuliu/s4nnc.git",
-      revision: "e2926609354a093395a4c3c30bcb627b9c1787aa"),
+      revision: "1db38650465deeff7b51d04e413c9c74ea842464"),
     .package(
       url: "https://github.com/liuliu/dflat.git",
       revision: "73925e51e4f44add842177a229f9990cb13711ff"),
