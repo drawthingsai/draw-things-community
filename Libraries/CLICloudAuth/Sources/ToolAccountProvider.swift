@@ -5,7 +5,4 @@ public protocol ToolAccountProvider: AnyObject {
   /// sign in and provision a credential before completing the request.
   func resolveDrawThingsCredential(
     prepareIfNeeded: Bool, completion: @escaping (Result<String?, Error>) -> Void)
-
-  /// Requests top-up for the credential used by this command, not another account.
-  func drawThingsInsufficientFunds(apiKey: String)
 }

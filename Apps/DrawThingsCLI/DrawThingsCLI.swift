@@ -4195,6 +4195,9 @@ public struct DrawThingsCLI: ParsableCommand {
       try context.checkCancellation()
       return 0
     } catch {
+      // The authentication handler already printed the actual failure. Its nil token
+      // causes a secondary transport error, which must not obscure that explanation.
+      if context.hasCloudAuthenticationError && !context.isCancelled { return 1 }
       if context.isCancelled || error is DrawThingsCLIInvocationError {
         var reportedError = error
         // A cancelled backend may throw its own transport error while unwinding.

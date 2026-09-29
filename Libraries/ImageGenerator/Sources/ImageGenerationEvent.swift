@@ -4,6 +4,10 @@ import NNC
 
 /// Generation updates for an embedded host. The host owns preview rendering.
 public enum ImageGenerationEvent {
+  public enum Failure {
+    case insufficientBalance
+  }
+
   case started(
     id: UUID, name: String, version: ModelVersion, prompt: String,
     signposts: Set<ImageGeneratorSignpost>,
@@ -12,5 +16,5 @@ public enum ImageGenerationEvent {
     id: UUID, signpost: ImageGeneratorSignpost, signposts: Set<ImageGeneratorSignpost>,
     preview: Tensor<FloatType>?)
   case segmentStarted(id: UUID)
-  case finished(id: UUID)
+  case finished(id: UUID, failure: Failure? = nil)
 }

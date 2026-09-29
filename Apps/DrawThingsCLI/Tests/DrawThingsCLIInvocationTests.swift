@@ -26,10 +26,6 @@ private final class TestToolAccountProvider: ToolAccountProvider {
   ) {
     resolve(prepareIfNeeded, completion)
   }
-
-  func drawThingsInsufficientFunds(apiKey: String) {
-    XCTFail("These invocations should not open a purchase flow")
-  }
 }
 
 final class DrawThingsCLIInvocationTests: XCTestCase {
@@ -662,7 +658,9 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
           XCTAssertEqual(version, .flux2_4b)
           XCTAssertTrue(signposts.contains(.sampling(20)))
           cancel()
-        case .finished(let id): finished = id
+        case .finished(let id, let failure):
+          finished = id
+          XCTAssertNil(failure)
         case .progress, .segmentStarted:
           XCTFail("Cancellation must happen before starting inference or connecting")
         }
@@ -714,7 +712,7 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
         return XCTFail("Missing segment event")
       }
       XCTAssertEqual(segmentID, id)
-      guard case .finished(let finishedID) = events[4] else {
+      guard case .finished(let finishedID, nil) = events[4] else {
         return XCTFail("Missing finish event")
       }
       XCTAssertEqual(finishedID, id)
@@ -749,6 +747,43 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
       }
       context.setCancellation(nil)
       context.finishImageGeneration(second)
+    }
+  }
+
+  func testGenerationTopUpOutcomeRequiresHostedInsufficientFunds() throws {
+    let scenarios: [(CLICloudAuthError, String?, Bool, Bool)] = [
+      (.insufficientFunds, "dk_host", false, true),
+      (.insufficientFunds, nil, false, false),
+      (.authenticationFailed("Invalid session"), "dk_host", false, false),
+      (.insufficientFunds, "dk_host", true, false),
+    ]
+    for (error, hostKey, cancel, expectsTopUp) in scenarios {
+      var events = [ImageGenerationEvent]()
+      try withContext(imageGenerationEvent: { events.append($0) }) { context, _, contents in
+        let id = context.beginImageGeneration(
+          name: "Model", version: .v1, prompt: "Prompt", signposts: [])
+        context.handleCloudAuthenticationError(error, hostAPIKey: hostKey)
+        XCTAssertTrue(context.hasCloudAuthenticationError)
+        if cancel { context.cancel() }
+        context.finishImageGeneration(id)
+        XCTAssertEqual(events.count, 2)
+        guard case .finished(let finishedID, let failure) = events.last else {
+          return XCTFail("Missing generation outcome")
+        }
+        XCTAssertEqual(finishedID, id)
+        if expectsTopUp {
+          guard case .insufficientBalance = failure else {
+            return XCTFail("Missing insufficient-balance outcome")
+          }
+          XCTAssertTrue(
+            contents().0.contains("Image generation failed due to insufficient balance"))
+        } else {
+          XCTAssertNil(failure)
+        }
+        XCTAssertFalse(contents().0.contains("dk_host"))
+        context.finishInvocation()
+        XCTAssertFalse(context.hasCloudAuthenticationError)
+      }
     }
   }
 

@@ -37,10 +37,6 @@ private final class TestToolAccountProvider: ToolAccountProvider {
     resolutionCount += 1
     completion(.success(cloudKey))
   }
-
-  func drawThingsInsufficientFunds(apiKey: String) {
-    preconditionFailure("Auth status must not open a purchase flow")
-  }
 }
 
 @main
@@ -71,6 +67,9 @@ struct DrawThingsCLICommandTests {
     var expectedSystemTime: TimeInterval = 0
     let interaction = BashUserInteraction(time: { time })
     let accountProvider = TestToolAccountProvider()
+    let generationProjectURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("generation-origin", isDirectory: true)
+    let generationThreadId: Int64 = 42
     let callerThread = Thread.current
     let previousContext = BashToolContext.current
     Thread.current.threadDictionary["draw-things-tests.unrelated"] = "do not inherit"
@@ -104,7 +103,9 @@ struct DrawThingsCLICommandTests {
           try! expectEqual(interaction.systemInteractionInterval(since: 0), expectedSystemTime)
         }
       },
-      imageGenerationEvent: { event in
+      imageGenerationEvent: { event, projectURL, threadId in
+        try! expectEqual(projectURL, generationProjectURL)
+        try! expectEqual(threadId, generationThreadId)
         switch event {
         case .started(_, _, _, let prompt, _, let cancel):
           generationStarts += 1
@@ -123,7 +124,9 @@ struct DrawThingsCLICommandTests {
           try! expect(false)
         }
       })
-    // Per-agent and per-turn context copies must retain the same account provider.
+    BashToolContext.current = BashToolContext.current?.with(
+      projectURL: generationProjectURL, threadId: generationThreadId)
+    // Per-agent and per-turn copies must retain the account provider and conversation origin.
     BashToolContext.current = BashToolContext.current?.with(unloadTextGenerator: {
       unloadCount += 1
     })

@@ -30,7 +30,6 @@ public final class DrawThingsCLIContext {
   private let accountProvider: ToolAccountProvider?
   private let resolveModelsDirectory: ((URL?, @escaping (Result<URL, Error>) -> Void) -> Void)?
   private let unloadTextGenerator: (() -> Void)?
-  private var didRequestTopUp = false
   var hasCloudAccountHost: Bool { accountProvider != nil }
   private var modelsDirectory: URL?
   private var isAccessingModelsDirectory = false
@@ -41,6 +40,8 @@ public final class DrawThingsCLIContext {
   private var cancellationError = DrawThingsCLIInvocationError.cancelled
   private var modelDownloadID: UUID?
   private var imageGenerationID: UUID?
+  private var imageGenerationFailure: ImageGenerationEvent.Failure?
+  private var cloudAuthenticationFailed = false
   let modelDownloadEvent: ((ModelDownloadEvent) -> Void)?
   let imageGenerationEvent: ((ImageGenerationEvent) -> Void)?
   var offline = false
@@ -171,6 +172,7 @@ public final class DrawThingsCLIContext {
     let id = UUID()
     cancellationLock.lock()
     imageGenerationID = id
+    imageGenerationFailure = nil
     cancellationLock.unlock()
     imageGenerationEvent?(
       .started(
@@ -201,10 +203,12 @@ public final class DrawThingsCLIContext {
   }
 
   func finishImageGeneration(_ id: UUID) {
+    let wasCancelled = isCancelled
     cancellationLock.lock()
+    let failure = imageGenerationID == id && !wasCancelled ? imageGenerationFailure : nil
     if imageGenerationID == id { imageGenerationID = nil }
     cancellationLock.unlock()
-    imageGenerationEvent?(.finished(id: id))
+    imageGenerationEvent?(.finished(id: id, failure: failure))
   }
 
   func path(_ value: String) -> String { resolvePath(value) }
@@ -271,12 +275,14 @@ public final class DrawThingsCLIContext {
   }
 
   func handleCloudAuthenticationError(_ error: Error, hostAPIKey: String?) {
+    cancellationLock.lock()
+    cloudAuthenticationFailed = true
+    if case CLICloudAuthError.insufficientFunds = error, hostAPIKey != nil {
+      imageGenerationFailure = .insufficientBalance
+    }
+    cancellationLock.unlock()
     if case CLICloudAuthError.insufficientFunds = error {
-      print("Draw Things has insufficient funds. Complete the top-up, then retry generation.")
-      if let hostAPIKey, !didRequestTopUp, !isCancelled {
-        didRequestTopUp = true
-        accountProvider?.drawThingsInsufficientFunds(apiKey: hostAPIKey)
-      }
+      print("Image generation failed due to insufficient balance. Top up, then retry generation.")
     } else {
       let message =
         hostAPIKey.map {
@@ -284,6 +290,12 @@ public final class DrawThingsCLIContext {
         } ?? error.localizedDescription
       print("[CloudAuth] \(message)")
     }
+  }
+
+  var hasCloudAuthenticationError: Bool {
+    cancellationLock.lock()
+    defer { cancellationLock.unlock() }
+    return cloudAuthenticationFailed
   }
 
   func cloudAuthentication(
@@ -319,7 +331,10 @@ public final class DrawThingsCLIContext {
     modelsDirectory = nil
     isAccessingModelsDirectory = false
     didUnloadTextGenerator = false
-    didRequestTopUp = false
+    cancellationLock.lock()
+    cloudAuthenticationFailed = false
+    imageGenerationFailure = nil
+    cancellationLock.unlock()
   }
 
   func write(_ value: String, to destination: Output = .standardOutput) {

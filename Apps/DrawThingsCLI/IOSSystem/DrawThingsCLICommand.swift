@@ -93,7 +93,9 @@ public func draw_things_main(
             }
           case .progress, .segmentStarted: break
           }
-          configuration.imageGenerationEvent?(event)
+          if let projectURL = configuration.projectURL, let threadId = configuration.threadId {
+            configuration.imageGenerationEvent?(event, projectURL, threadId)
+          }
         }
       })
     // ios_system exposes cancellation by polling. Keep that polling at the host
