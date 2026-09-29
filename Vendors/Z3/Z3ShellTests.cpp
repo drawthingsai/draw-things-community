@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -250,10 +251,15 @@ int main() {
     int flags = fcntl(descriptors[1], F_GETFL);
     int noSignal = fcntl(descriptors[1], F_GETNOSIGPIPE);
     std::atomic<bool> cancel{false};
-    std::thread canceller([&] {
-      std::this_thread::sleep_for(std::chrono::milliseconds(200));
-      cancel.store(true);
-    });
+    std::thread canceller;
+    if (!broken)
+      canceller = std::thread([&] {
+        // Wait for output so cancellation exercises backpressure, not parsing.
+        pollfd reader{descriptors[0], POLLIN, 0};
+        require(poll(&reader, 1, 5000) == 1 && (reader.revents & POLLIN),
+                "output reaches the blocked pipe");
+        cancel.store(true);
+      });
     char command[] = "z3", option[] = "-in";
     char* argv[] = {command, option, nullptr};
     int status = Z3ShellRun(
@@ -262,7 +268,7 @@ int main() {
           return static_cast<const std::atomic<bool>*>(value)->load();
         },
         &cancel);
-    canceller.join();
+    if (canceller.joinable()) canceller.join();
     require(status == (broken ? 1 : 130),
             "output interruption status " + std::to_string(status));
     // Darwin also reports its internal FWASWRITTEN bit after the first write.
