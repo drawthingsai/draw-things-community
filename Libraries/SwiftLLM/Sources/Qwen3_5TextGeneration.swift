@@ -184,7 +184,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
         do {
           let firstChunkLength = min(prefillChunkSize, promptTokenIds.count - prefillTokenStart)
           let firstPrefillTokens = promptTokens.reshaped(
-            .C(firstChunkLength), offset: [prefillTokenStart], strides: [1])
+            .C(firstChunkLength), offset: [prefillTokenStart], strides: [1]
+          ).copied()
           var firstPrefillAttentionInputs = [DynamicGraph.AnyTensor]()
           if let prefillRotaryGPU = prefillRotaryGPU {
             firstPrefillAttentionInputs.append(
@@ -194,7 +195,8 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
                 strides: [
                   promptTokenIds.count * configuration.attentionHeadDim,
                   configuration.attentionHeadDim, configuration.attentionHeadDim, 1,
-                ]))
+                ]
+              ).copied())
           }
           let firstPrefillCacheInputs = Self.cacheInputs(
             caches, currentTokenLength: prefillTokenStart + firstChunkLength,
@@ -235,6 +237,7 @@ public struct Qwen3_5TextGeneration<FloatType: TensorNumeric & BinaryFloatingPoi
             let length = min(prefillChunkSize, promptTokenIds.count - start)
             let isLast = start + length == promptTokenIds.count
             let chunkTokens = promptTokens.reshaped(.C(length), offset: [start], strides: [1])
+              .copied()
             var chunkAttentionInputs = [DynamicGraph.AnyTensor]()
             if let prefillRotaryGPU = prefillRotaryGPU {
               chunkAttentionInputs.append(
