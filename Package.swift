@@ -683,6 +683,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       ],
       sources: [
         "Sources/ProjectHistoryManager.swift", "Sources/EmbedSpan.swift",
+        "Sources/MemoryContext.swift",
         "Sources/EmbedsFileStore.swift", "PreGeneratedSPM",
       ]
     ),
