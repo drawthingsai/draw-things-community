@@ -34,6 +34,14 @@
       }
     },
     {
+      "identity" : "lottie-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/airbnb/lottie-ios.git",
+      "state" : {
+        "revision" : "a004050748dc197c56256a14dca49a035d74726c"
+      }
+    },
+    {
       "identity" : "s4nnc",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/liuliu/s4nnc.git",
