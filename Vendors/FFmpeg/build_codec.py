@@ -155,8 +155,9 @@ def main():
             run(["make", "-j4"], src, x264_env)
             run(["make", "install-lib-static"], src, x264_env)
         elif name == "libvpx":
-            vpx_target = f"{arch}-" + ("darwin-gcc" if sdk == "iphoneos" else
-                          "iphonesimulator-gcc" if sdk == "iphonesimulator" else "darwin25-gcc")
+            # libvpx has no arm64 simulator target. Its generic Darwin target keeps NEON, and the
+            # -target / -isysroot in CFLAGS select the simulator platform and SDK.
+            vpx_target = f"{arch}-" + ("darwin-gcc" if sdk == "iphoneos" else "darwin25-gcc")
             run(["./configure", f"--prefix={destination}", f"--target={vpx_target}",
                  "--disable-shared", "--enable-static", "--enable-pic", "--disable-examples",
                  "--disable-tools", "--disable-docs", "--disable-unit-tests", "--enable-vp9-highbitdepth"], src, env)
