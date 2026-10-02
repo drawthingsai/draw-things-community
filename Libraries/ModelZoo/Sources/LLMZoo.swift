@@ -9,11 +9,12 @@ public struct LLMZoo: DownloadZoo {
     public let version: LLMVersion
     public let deprecated: Bool?
     public let huggingFaceLink: String?
+    public let note: String?
 
     public init(
       name: String, file: String, engram: String? = nil, version: LLMVersion,
       deprecated: Bool? = nil,
-      huggingFaceLink: String? = nil
+      huggingFaceLink: String? = nil, note: String? = nil
     ) {
       self.name = name
       self.file = file
@@ -21,26 +22,42 @@ public struct LLMZoo: DownloadZoo {
       self.version = version
       self.deprecated = deprecated
       self.huggingFaceLink = huggingFaceLink
+      self.note = note
     }
   }
 
   public static let builtinSpecifications: [Specification] = [
     Specification(
       name: "Qwen 3.8 27B (2-bit S)", file: "qwen_3.8_27b_i2x.ckpt",
-      version: .qwen_3_5_27b, huggingFaceLink: "Qwen/Qwen3.8-27B"),
+      version: .qwen_3_5_27b, huggingFaceLink: "Qwen/Qwen3.8-27B",
+      note:
+        "A small but capable model that understands images. Strong at coding and excels at long-horizon work."
+    ),
     Specification(
       name: "Qwen 3.8 27B (4-bit S)", file: "qwen_3.8_27b_i4x.ckpt",
-      version: .qwen_3_5_27b, huggingFaceLink: "Qwen/Qwen3.8-27B"),
+      version: .qwen_3_5_27b, huggingFaceLink: "Qwen/Qwen3.8-27B",
+      note:
+        "A small but capable model that understands images. Strong at coding and excels at long-horizon work."
+    ),
     Specification(
       name: "Qwen 3.8 27B (8-bit S)", file: "qwen_3.8_27b_i8x.ckpt",
-      version: .qwen_3_5_27b),
+      version: .qwen_3_5_27b,
+      note:
+        "A small but capable model that understands images. Strong at coding and excels at long-horizon work."
+    ),
     Specification(
       name: "DeepSeek 4.1 Flash 0910 (2-bit S)", file: "deepseek_4.1_flash_0910_i2x.ckpt",
       engram: "deepseek_4.1_flash_0910_i2x.engram",
-      version: .deepseek_4_1_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash"),
+      version: .deepseek_4_1_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash",
+      note:
+        "A larger, more capable model that understands images. Built for long-horizon work and the most complex problems."
+    ),
     Specification(
       name: "DeepSeek 4 Flash 0731 (2-bit S)", file: "deepseek_4_flash_0731_i2x.ckpt",
-      version: .deepseek_4_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4-Flash-0731"),
+      version: .deepseek_4_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4-Flash-0731",
+      note:
+        "A fast, powerful text-only model. Thrives on long-horizon, more complex problems, in coding and beyond."
+    ),
     Specification(
       name: "Qwen 3.6 27B (4-bit S)", file: "qwen_3.6_27b_i4x.ckpt",
       version: .qwen_3_5_27b, deprecated: true),
