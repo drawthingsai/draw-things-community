@@ -130,6 +130,16 @@ public struct LLMZoo: DownloadZoo {
     return specification.name
   }
 
+  public static func subtitleForModel(_ name: String) -> String {
+    guard let specification = specificationForModel(name) else { return "" }
+    switch specification.version {
+    case .qwen_3_5_4b, .qwen_3_5_9b, .qwen_3_5_27b:
+      return "Qwen, from Alibaba Group"
+    case .deepseek_4_flash, .deepseek_4_1_flash:
+      return "DeepSeek AI"
+    }
+  }
+
   public static func isModelDeprecated(_ name: String) -> Bool {
     guard let specification = specificationForModel(name) else { return false }
     return specification.deprecated ?? false
