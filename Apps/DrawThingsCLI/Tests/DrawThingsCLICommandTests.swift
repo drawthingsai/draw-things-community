@@ -257,13 +257,48 @@ struct DrawThingsCLICommandTests {
           ProcessInfo.processInfo.environment["DRAWTHINGS_CLI_TEST_MODEL"]
           ?? "sd_v1.5_f16.ckpt"
         ios_setenv("DRAWTHINGS_CLI_TEST_MODEL", model, 1)
+        // Replace the cancellation fixture for opt-in generation tests.
+        let cancellationContext = BashToolContext.current
+        BashToolContext.current = BashToolContext(
+          resloveDrawThingsModelsDirectory: { requested, _, completion in
+            completion(.success(requested!))
+          }, unloadTextGenerator: { unloadCount += 1 })
+        defer { BashToolContext.current = cancellationContext }
+        let video = ProcessInfo.processInfo.environment["DRAWTHINGS_CLI_TEST_VIDEO"] == "1"
+        let output = video ? "generated.mp4" : "generated.png"
+        let options: String
+        if video {
+          let image = try unwrap(
+            ProcessInfo.processInfo.environment["DRAWTHINGS_CLI_TEST_IMAGE"])
+          ios_setenv("DRAWTHINGS_CLI_TEST_IMAGE", image, 1)
+          options =
+            "--width 256 --height 256 --frames 5 --image \"$DRAWTHINGS_CLI_TEST_IMAGE\" --image \"$DRAWTHINGS_CLI_TEST_IMAGE\" --video-format h264"
+        } else {
+          options = "--width 64 --height 64"
+        }
         try expectEqual(
           ios_system_osh(
-            "draw-things-cli generate --offline --model \"$DRAWTHINGS_CLI_TEST_MODEL\" --prompt 'a red cube' --width 64 --height 64 --steps 1 --cfg 1 --seed 42 --output generated.png"
+            "draw-things-cli generate --offline --no-download-missing --model \"$DRAWTHINGS_CLI_TEST_MODEL\" --prompt 'a red cube' \(options) --steps 1 --cfg 1 --seed 42 --output \(output) 2>&1"
           ), 0)
-        let png = try Data(contentsOf: project.appendingPathComponent("generated.png"))
-        try expectEqual(Array(png.prefix(8)), [137, 80, 78, 71, 13, 10, 26, 10])
+        let data = try Data(contentsOf: project.appendingPathComponent(output))
+        if video {
+          try expectEqual(String(decoding: data.dropFirst(4).prefix(4), as: UTF8.self), "ftyp")
+        } else {
+          try expectEqual(Array(data.prefix(8)), [137, 80, 78, 71, 13, 10, 26, 10])
+        }
         try expectEqual(unloadCount, 1)
+        try expectEqual(ios_system_osh("echo generation-finished; true; pwd; ls"), 0)
+        try expect(contents().0.contains("generation-finished"))
+        try expectEqual(ios_system_osh("echo shell-still-works > after-generation.txt"), 0)
+        try expectEqual(
+          String(
+            contentsOf: project.appendingPathComponent("after-generation.txt"), encoding: .utf8),
+          "shell-still-works\n")
+        // Bash jobs open fresh streams from NSTemporaryDirectory for every command.
+        let probe = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let stream = try unwrap(fopen(probe.path, "w+"))
+        fclose(stream)
+        try FileManager.default.removeItem(at: probe)
       }
     }
     // Finished commands must not retain the context after its host releases it.
