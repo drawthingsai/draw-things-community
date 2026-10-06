@@ -4,6 +4,8 @@ load(
     "swift_library",
 )
 
+# _GNU_SOURCE must stay local to C compilation: exporting it makes glibc socket
+# declarations import as transparent unions in Swift.
 cc_library(
     name = "CNIOAtomics",
     srcs = glob([
@@ -14,8 +16,8 @@ cc_library(
     ]),
     aspect_hints = [":CNIOAtomics_swift_interop"],
     copts = [],
-    defines = ["_GNU_SOURCE"],
     includes = ["Sources/CNIOAtomics/include"],
+    local_defines = ["_GNU_SOURCE"],
     tags = ["swift_module=CNIOAtomics"],
 )
 
@@ -55,11 +57,11 @@ cc_library(
     ]),
     aspect_hints = [":CNIOLLHTTP_swift_interop"],
     copts = [],
-    defines = [
+    includes = ["Sources/CNIOLLHTTP/include"],
+    local_defines = [
         "_GNU_SOURCE",
         "LLHTTP_STRICT_MODE",
     ],
-    includes = ["Sources/CNIOLLHTTP/include"],
     tags = ["swift_module=CNIOLLHTTP"],
 )
 
@@ -79,6 +81,7 @@ cc_library(
     aspect_hints = [":CNIOLinux_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOLinux/include"],
+    local_defines = ["_GNU_SOURCE"],
     tags = ["swift_module=CNIOLinux"],
 )
 
@@ -143,8 +146,8 @@ cc_library(
     srcs = glob(["Sources/CNIOPosix/**/*.c"]),
     hdrs = glob(["Sources/CNIOPosix/**/*.h"]),
     aspect_hints = [":CNIOPosix_swift_interop"],
-    defines = ["_GNU_SOURCE"],
     includes = ["Sources/CNIOPosix/include"],
+    local_defines = ["_GNU_SOURCE"],
 )
 
 swift_interop_hint(
