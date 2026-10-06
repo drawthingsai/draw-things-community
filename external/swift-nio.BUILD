@@ -14,6 +14,7 @@ cc_library(
     ]),
     aspect_hints = [":CNIOAtomics_swift_interop"],
     copts = [],
+    defines = ["_GNU_SOURCE"],
     includes = ["Sources/CNIOAtomics/include"],
     tags = ["swift_module=CNIOAtomics"],
 )
@@ -55,6 +56,7 @@ cc_library(
     aspect_hints = [":CNIOLLHTTP_swift_interop"],
     copts = [],
     defines = [
+        "_GNU_SOURCE",
         "LLHTTP_STRICT_MODE",
     ],
     includes = ["Sources/CNIOLLHTTP/include"],
@@ -123,8 +125,49 @@ swift_interop_hint(
     module_name = "CNIOWindows",
 )
 
+cc_library(
+    name = "CNIOOpenBSD",
+    srcs = glob(["Sources/CNIOOpenBSD/**/*.c"]),
+    hdrs = glob(["Sources/CNIOOpenBSD/**/*.h"]),
+    aspect_hints = [":CNIOOpenBSD_swift_interop"],
+    includes = ["Sources/CNIOOpenBSD/include"],
+)
+
+swift_interop_hint(
+    name = "CNIOOpenBSD_swift_interop",
+    module_name = "CNIOOpenBSD",
+)
+
+cc_library(
+    name = "CNIOPosix",
+    srcs = glob(["Sources/CNIOPosix/**/*.c"]),
+    hdrs = glob(["Sources/CNIOPosix/**/*.h"]),
+    aspect_hints = [":CNIOPosix_swift_interop"],
+    defines = ["_GNU_SOURCE"],
+    includes = ["Sources/CNIOPosix/include"],
+)
+
+swift_interop_hint(
+    name = "CNIOPosix_swift_interop",
+    module_name = "CNIOPosix",
+)
+
+cc_library(
+    name = "CNIOWASI",
+    srcs = glob(["Sources/CNIOWASI/**/*.c"]),
+    hdrs = glob(["Sources/CNIOWASI/**/*.h"]),
+    aspect_hints = [":CNIOWASI_swift_interop"],
+    includes = ["Sources/CNIOWASI/include"],
+)
+
+swift_interop_hint(
+    name = "CNIOWASI_swift_interop",
+    module_name = "CNIOWASI",
+)
+
 swift_library(
     name = "NIO",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIO/*.swift",
     ]),
@@ -139,6 +182,7 @@ swift_library(
 
 swift_library(
     name = "NIOConcurrencyHelpers",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIOConcurrencyHelpers/*.swift",
     ]),
@@ -151,16 +195,25 @@ swift_library(
 
 swift_library(
     name = "NIOCore",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIOCore/**/*.swift",
     ]),
-    copts = [],
+    copts = [
+        "-enable-experimental-feature",
+        "Lifetimes",
+    ],
     module_name = "NIOCore",
     visibility = ["//visibility:public"],
     deps = [
+        ":CNIODarwin",
         ":CNIOLinux",
+        ":CNIOOpenBSD",
+        ":CNIOWASI",
         ":CNIOWindows",
         ":NIOConcurrencyHelpers",
+        ":_NIOBase64",
+        ":_NIODataStructures",
         "@SwiftCollections//:Collections",
         "@swift-atomics//:SwiftAtomics",
     ],
@@ -168,6 +221,7 @@ swift_library(
 
 swift_library(
     name = "NIOEmbedded",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIOEmbedded/*.swift",
     ]),
@@ -178,12 +232,14 @@ swift_library(
         ":NIOConcurrencyHelpers",
         ":NIOCore",
         ":_NIODataStructures",
+        "@SwiftCollections//:Collections",
         "@swift-atomics//:SwiftAtomics",
     ],
 )
 
 swift_library(
     name = "NIOFoundationCompat",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIOFoundationCompat/*.swift",
     ]),
@@ -197,6 +253,7 @@ swift_library(
 
 swift_library(
     name = "NIOHTTP1",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIOHTTP1/*.swift",
     ]),
@@ -207,11 +264,13 @@ swift_library(
         ":NIO",
         ":NIOConcurrencyHelpers",
         ":NIOCore",
+        "@SwiftCollections//:Collections",
     ],
 )
 
 swift_library(
     name = "NIOPosix",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIOPosix/*.swift",
     ]),
@@ -221,16 +280,20 @@ swift_library(
     deps = [
         ":CNIODarwin",
         ":CNIOLinux",
+        ":CNIOOpenBSD",
+        ":CNIOPosix",
         ":CNIOWindows",
         ":NIOConcurrencyHelpers",
         ":NIOCore",
         ":_NIODataStructures",
+        "@SwiftCollections//:Collections",
         "@swift-atomics//:SwiftAtomics",
     ],
 )
 
 swift_library(
     name = "NIOTLS",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/NIOTLS/*.swift",
     ]),
@@ -244,7 +307,16 @@ swift_library(
 )
 
 swift_library(
+    name = "_NIOBase64",
+    package_name = "SwiftNIO",
+    srcs = glob(["Sources/_NIOBase64/*.swift"]),
+    module_name = "_NIOBase64",
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
     name = "_NIODataStructures",
+    package_name = "SwiftNIO",
     srcs = glob([
         "Sources/_NIODataStructures/*.swift",
     ]),
