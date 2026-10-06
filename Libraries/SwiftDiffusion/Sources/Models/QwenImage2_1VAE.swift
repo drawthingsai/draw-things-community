@@ -162,7 +162,8 @@ public func QwenImage2_1Encoder(
 }
 
 public func QwenImage2_1Decoder(
-  channels: [Int], height: Int, width: Int, usesFlashAttention: Bool
+  channels: [Int], height: Int, width: Int, highPrecisionKeysAndValues: Bool,
+  usesFlashAttention: Bool
 ) -> Model {
   let x = Input()
   let postQuantConv = Convolution(
@@ -205,7 +206,7 @@ public func QwenImage2_1Decoder(
       // The final two upsamplers and residual stages can exceed FP16 range.
       // Return to input precision after the final normalization.
       out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut
-      if i == channels.count - 4 {
+      if i == channels.count - 4, !highPrecisionKeysAndValues {
         out = out.to(.Float32)
       }
       h *= 2

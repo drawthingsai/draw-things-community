@@ -617,6 +617,7 @@ extension FirstStage {
         existingDecoder
         ?? QwenImage2_1Decoder(
           channels: [1152, 1152, 576, 288, 144], height: height, width: width,
+          highPrecisionKeysAndValues: highPrecisionKeysAndValues,
           usesFlashAttention: decoderUsesFlashAttention)
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(1)
