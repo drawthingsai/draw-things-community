@@ -12,7 +12,7 @@
 
  GLOBAL_STR(S_Aoo, "");
  GLOBAL_STR(S_Bkk, "\u0000");
-@@ -11648,6 +11653,210 @@
+@@ -11648,6 +11653,217 @@
 
  }  // define namespace oils_for_unix
 
@@ -198,12 +198,19 @@
 +  args->append(StrFromC(command));
 +
 +  pyos::PushVirtualStdin(input_contents);
-+  int status = oils_for_unix::main(args);
++  int status;
++  // main reports I/O errors on stderr. When that write fails too (for example,
++  // on a full disk), the error must not unwind into the host.
++  try {
++    status = oils_for_unix::main(args);
++    mylib::Stdout()->flush();
++    mylib::Stderr()->flush();
++  } catch (IOError_OSError*) {
++    status = 2;
++  }
 +  if (gOshIosUnsupported) {
 +    status = OSH_IOS_STATUS_UNSUPPORTED;
 +  }
-+  mylib::Stdout()->flush();
-+  mylib::Stderr()->flush();
 +  for (int i = 0; i < gOshIosPermanentVirtualStdinCount; ++i) {
 +    pyos::PopVirtualStdin();
 +  }
@@ -223,7 +230,7 @@
  namespace assign_osh {  // define
 
  using option_asdl::builtin_i;
-@@ -18497,25 +18706,36 @@
+@@ -18497,25 +18713,36 @@
    args::Reader* arg_r = nullptr;
    Dict<BigStr*, BigStr*>* environ = nullptr;
    int i;
@@ -261,7 +268,7 @@
  }
 
  Wait::Wait(process::Waiter* waiter, process::JobList* job_list, state::Mem* mem, dev::Tracer* tracer, ui::ErrorFormatter* errfmt) {
-@@ -24362,7 +24582,21 @@
+@@ -24362,7 +24589,21 @@
  using error::e_die_status;
  using mylib::print_stderr;
 
@@ -283,7 +290,7 @@
    return (posix::access(full_path, X_OK) and path_stat::isfile(full_path));
  }
 
-@@ -24373,6 +24607,10 @@
+@@ -24373,6 +24614,10 @@
      return nullptr;
    }
    if (str_contains(name, S_ckc)) {
@@ -294,7 +301,7 @@
      return path_stat::exists(name) ? name : nullptr;
    }
    for (ListIter<BigStr*> it(path_dirs); !it.Done(); it.Next()) {
-@@ -24382,7 +24620,12 @@
+@@ -24382,7 +24627,12 @@
        found = _IsPathExecutable(full_path);
      }
      else {
@@ -307,7 +314,7 @@
      }
      if (found) {
        return full_path;
-@@ -24632,6 +24875,494 @@
+@@ -24632,6 +24882,494 @@
    ;  // pass
  }
 
@@ -802,7 +809,7 @@
  ShellExecutor::ShellExecutor(state::Mem* mem, optview::Exec* exec_opts, state::MutableOpts* mutable_opts, state::Procs* procs, hay_ysh::HayState* hay_state, Dict<int, vm::_Builtin*>* builtins, dev::Tracer* tracer, ui::ErrorFormatter* errfmt, executor::SearchPath* search_path, process::ExternalProgram* ext_prog, process::Waiter* waiter, process::JobControl* job_control, process::JobList* job_list, process::FdState* fd_state, trap_osh::TrapState* trap_state) : ::vm::_Executor(mem, exec_opts, mutable_opts, procs, hay_state, builtins, tracer, errfmt) {
    this->search_path = search_path;
    this->ext_prog = ext_prog;
-@@ -24719,10 +25450,14 @@
+@@ -24719,10 +25457,14 @@
      builtin_id = _RewriteExternToBuiltin(cmd_val->argv);
      if (builtin_id != consts::NO_INDEX) {
        if (builtin_id == builtin_i::cat) {
@@ -817,7 +824,7 @@
        }
        else {
          return this->RunBuiltin(builtin_id, cmd_val);
-@@ -24733,6 +25468,18 @@
+@@ -24733,6 +25475,18 @@
  }
 
  int ShellExecutor::RunExternal(BigStr* arg0, syntax_asdl::loc_t* arg0_loc, cmd_value::Argv* cmd_val, runtime_asdl::CommandStatus* cmd_st, int run_flags) {
@@ -836,7 +843,7 @@
    Dict<BigStr*, BigStr*>* environ = nullptr;
    BigStr* argv0_path = nullptr;
    bool do_fork;
-@@ -24792,9 +25539,18 @@
+@@ -24792,9 +25546,18 @@
    this->tracer->OnExec(cmd_val->argv);
    this->ext_prog->Exec(argv0_path, cmd_val, environ);
    assert(0);  // AssertionError
@@ -855,7 +862,7 @@
    syntax_asdl::command_t* UP_node = nullptr;
    process::Pipeline* pi = nullptr;
    process::Process* p = nullptr;
-@@ -24832,9 +25588,61 @@
+@@ -24832,9 +25595,61 @@
      print_stderr(StrFormat("[%%%d] PID %d Started", job_id, this->mem->last_bg_pid));
    }
    return 0;
@@ -917,7 +924,7 @@
    process::Pipeline* pi = nullptr;
    List<syntax_asdl::loc_t*>* pipe_locs = nullptr;
    int n;
-@@ -24868,9 +25676,14 @@
+@@ -24868,9 +25683,14 @@
      this->fg_pipeline = nullptr;
    }
    status_out->pipe_locs = pipe_locs;
@@ -932,7 +939,7 @@
    process::Process* p = nullptr;
    StackRoot _root0(&node);
    StackRoot _root1(&p);
-@@ -24880,9 +25693,20 @@
+@@ -24880,9 +25700,20 @@
      p->AddStateChange(Alloc<process::SetPgid>(process::OWN_LEADER, this->tracer));
    }
    return p->RunProcess(this->waiter, trace::ForkWait);
@@ -953,7 +960,7 @@
    process::Process* p = nullptr;
    int r;
    int w;
-@@ -24928,9 +25752,14 @@
+@@ -24928,9 +25759,14 @@
    status = p->Wait(this->waiter);
    stdout_str = S_Aoo->join(chunks)->rstrip(S_nfs);
    return Tuple2<int, BigStr*>(status, stdout_str);
@@ -968,7 +975,7 @@
    process::Process* p = nullptr;
    int stdout_fd;
    int w;
-@@ -25006,6 +25835,7 @@
+@@ -25006,6 +25842,7 @@
    stdout_str = S_Aoo->join(stdout_chunks);
    stderr_str = S_Aoo->join(stderr_chunks);
    return Tuple3<int, BigStr*, BigStr*>(status, stdout_str, stderr_str);
@@ -976,7 +983,7 @@
  }
 
  BigStr* ShellExecutor::RunCommandSub(syntax_asdl::CommandSub* cs_part) {
-@@ -25054,6 +25884,10 @@
+@@ -25054,6 +25891,10 @@
  }
 
  BigStr* ShellExecutor::RunProcessSub(syntax_asdl::CommandSub* cs_part) {
@@ -987,7 +994,7 @@
    loc::WordPart* cs_loc = nullptr;
    process::Process* p = nullptr;
    int r;
-@@ -25115,9 +25949,137 @@
+@@ -25115,9 +25956,137 @@
        assert(0);  // AssertionError
      }
    }
@@ -1125,7 +1132,7 @@
    StackRoot _root0(&redirects);
    StackRoot _root1(&err_out);
 
-@@ -25125,13 +26087,51 @@
+@@ -25125,13 +26094,51 @@
      return ;
    }
    this->fd_state->Push(redirects, err_out);
@@ -1177,7 +1184,7 @@
  }
 
  void ShellExecutor::PushProcessSub() {
-@@ -38080,6 +39080,11 @@
+@@ -38080,6 +39087,11 @@
  }
 
  int CommandEvaluator::_Execute(syntax_asdl::command_t* node) {

@@ -363,6 +363,24 @@ int main() {
          "echo \"$? ${PIPESTATUS[*]}\"", 0,
          "osh: osh-ios-missing-input: No such file or directory\n0 1 0\n");
 
+  {
+    // When the disk is full, reporting a failed stdout write to stderr fails
+    // too. The error must become a status instead of escaping into the host.
+    FILE* input = tmpfile();
+    FILE* unwritable = fopen("/dev/null", "r");
+    Context context = {false};
+    osh_ios_config config = {RunExternal, IsCancelled, SendSignal,
+                              SetSignalHandler, GetProcessId, nullptr, 0, nullptr,
+                              &context, RunPipeline, nullptr};
+    int status = osh_ios_run("echo no", input, unwritable, unwritable, &config);
+    fclose(input);
+    fclose(unwritable);
+    if (status != 2) {
+      fprintf(stderr, "unwritable streams returned %d (expected 2)\n", status);
+      return 1;
+    }
+  }
+
   for (const char* command : {
            "stream_wait 2>&1 | cat > osh-ios-stream-output",
            "if true; then stream_wait > osh-ios-stream-output 2>&1; fi"}) {
