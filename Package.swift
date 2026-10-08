@@ -770,6 +770,23 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       path: "Apps/LocalCodeCatalyst/Support/ios_system"
     ),
     .target(
+      name: "TypedStream",
+      path: "Vendors/Madrid",
+      exclude: ["BUILD", "UPSTREAM.txt"],
+      sources: ["Sources"],
+      resources: [.copy("Madrid-LICENSE.txt")]
+    ),
+    .target(
+      name: "AppleUtilities",
+      dependencies: [
+        "BashToolContext",
+        "TypedStream",
+        "ios_system",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+      ],
+      path: "Libraries/AppleUtilities/Sources"
+    ),
+    .target(
       name: "BashToolContext",
       dependencies: ["CLICloudAuth", "Downloader", "ImageGenerator", "ios_system"],
       path: "Libraries/BashToolContext/Sources"
@@ -778,6 +795,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       name: "LocalCodeApp",
       dependencies: [
         "Advance",
+        "AppleUtilities",
         "BashToolContext",
         "BinaryResources",
         "CLICloudAuth",
