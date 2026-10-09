@@ -73,8 +73,8 @@ draw-things-cli train --help
 | Backend | Selection | Preparation | Current output boundary |
 | --- | --- | --- | --- |
 | Local Mac | default | Download model files locally | PNG and supported local video formats |
-| Draw Things cloud | `--cloud-compute` | Run `auth login`; may consume paid compute | PNG, or `.mp4`/`.mov` with model audio for video models; no `--audio` or `--avc` |
-| Draw Things server | `--remote` | Obtain host, TLS, port, and optional secret | PNG, or `.mp4`/`.mov` with model audio for video models; no `--audio` or `--avc` |
+| Draw Things cloud | `--cloud-compute` | Run `auth login`; may consume paid compute | PNG only |
+| Draw Things server | `--remote` | Obtain host, TLS, port, and optional secret | PNG only |
 
 Keep these current CLI boundaries explicit:
 

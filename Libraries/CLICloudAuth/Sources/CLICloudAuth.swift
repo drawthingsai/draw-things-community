@@ -90,8 +90,6 @@ public enum CLICloudAuthError: LocalizedError {
   case savedInvalidAPIBaseURL(String)
   case authenticationFailed(String)
   case insufficientFunds
-  /// The plan's free allowance cannot cover the request; pay-as-you-go credit is required.
-  case payAsYouGoRequired
   case operationTimedOut(String)
   case unsupportedGoogleLoginPlatform
   case listenerFailed(String)
@@ -110,9 +108,6 @@ public enum CLICloudAuthError: LocalizedError {
       return message
     case .insufficientFunds:
       return "Insufficient Draw Things funds. Add PAYG credit and retry generation."
-    case .payAsYouGoRequired:
-      return
-        "This request exceeds your plan's free cloud compute allowance. Add PAYG credit and retry generation, or reduce size, frames, or steps."
     case .operationTimedOut(let message):
       return message
     case .unsupportedGoogleLoginPlatform:
@@ -395,14 +390,6 @@ public struct CLICloudAuthClient {
       }
       guard httpResponse.statusCode == 200, let data else {
         let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        // The plan's free allowance cannot cover this request: either a single request
-        // exceeds it ("... payg is required") or the monthly free requests are used up.
-        if httpResponse.statusCode == 403,
-          body.contains("payg is required") || body.contains("monthly free request quota exceeded")
-        {
-          result = .failure(CLICloudAuthError.payAsYouGoRequired)
-          return
-        }
         result = .failure(
           CLICloudAuthError.authenticationFailed(
             "Cloud authentication failed with status \(httpResponse.statusCode). \(body)")

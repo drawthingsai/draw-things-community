@@ -754,8 +754,6 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
     let scenarios: [(CLICloudAuthError, String?, Bool, Bool)] = [
       (.insufficientFunds, "dk_host", false, true),
       (.insufficientFunds, nil, false, false),
-      (.payAsYouGoRequired, "dk_host", false, true),
-      (.payAsYouGoRequired, nil, false, false),
       (.authenticationFailed("Invalid session"), "dk_host", false, false),
       (.insufficientFunds, "dk_host", true, false),
     ]
