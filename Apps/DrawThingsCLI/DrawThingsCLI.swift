@@ -594,6 +594,15 @@ struct GenerateExecutionOptions: ParsableArguments {
 
   @Flag(
     name: .long,
+    help: ArgumentHelp(
+      "Print the request's estimated cloud compute units as JSON and exit.",
+      discussion:
+        "Resolves the model and settings like a normal run, but does not download models, contact the network, or generate."
+    ))
+  var estimate: Bool = false
+
+  @Flag(
+    name: .long,
     help:
       "Disable network access. Uses cached community catalogs and recommended settings only, and never downloads models."
   )
@@ -2063,11 +2072,6 @@ private final class LocalGenerationRunner {
     let timing: GenerationTimingSummary
   }
 
-  private enum OutputDestination {
-    case png(URL)
-    case video(URL, containerExtension: String)
-  }
-
   private final class GenerationTimingTracker {
     private enum SamplingPhase {
       case firstPass
@@ -2175,7 +2179,7 @@ private final class LocalGenerationRunner {
       prompt: prompt, negativePrompt: negativePrompt, configuration: configuration,
       inputImage: inputImage, hints: hints, fileMapping: fileMapping,
       livePreviewSession: livePreviewSession)
-    let outputPaths = try saveOutputs(
+    let outputPaths = try GenerationOutputWriter().saveOutputs(
       tensorResult.images, audio: tensorResult.audio?.first ?? fallbackAudio,
       outputPath: outputPath,
       configuration: configuration, videoFormat: videoFormat)
@@ -2288,10 +2292,20 @@ private final class LocalGenerationRunner {
     return GenerationTensorResult(
       images: images, audio: nil, timing: combinedTimingSummary(timings))
   }
+}
+
+/// Writes generated tensors to PNG frames or a video container with muxed audio.
+/// It holds no state so local and remote/cloud runners can share it.
+private struct GenerationOutputWriter {
+  private enum OutputDestination {
+    case png(URL)
+    case video(URL, containerExtension: String)
+  }
 
   func saveOutputs(
     _ tensors: [Tensor<FloatType>], audio: Tensor<Float>?, outputPath: String,
-    configuration: GenerationConfiguration, videoFormat: VideoExportFormat?
+    configuration: GenerationConfiguration, videoFormat: VideoExportFormat?,
+    audioSampleRate audioSampleRateOverride: Double? = nil
   ) throws -> [String] {
     let destination = try normalizedOutputDestination(outputPath)
     switch destination {
@@ -2303,7 +2317,8 @@ private final class LocalGenerationRunner {
     case .video(let outputURL, let containerExtension):
       let framesPerSecond = ModelZoo.framesPerSecondForModel(configuration.model ?? "")
       let audioSampleRate = audio.map { _ in
-        Double(ModelZoo.audioSampleRateForModel(configuration.model ?? ""))
+        audioSampleRateOverride
+          ?? Double(ModelZoo.audioSampleRateForModel(configuration.model ?? ""))
       }
       let path = try writeVideo(
         tensors: tensors, to: outputURL, containerExtension: containerExtension,
@@ -2534,8 +2549,15 @@ private final class LocalGenerationRunner {
     }
 
     private func audioSettings(
-      for containerExtension: String, sampleRate: Double
+      for containerExtension: String, sampleRate sourceSampleRate: Double
     ) -> [String: Any] {
+      // Encoders accept only standard rates. Audio from a remote result can carry an
+      // inferred rate, so encode at the nearest standard rate at or above it and let
+      // the writer resample the source buffers.
+      let standardRates: [Double] = [
+        8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000,
+      ]
+      let sampleRate = standardRates.first { $0 >= sourceSampleRate } ?? 48_000
       if containerExtension == "mp4" {
         // AAC caps the allowed bitrate per sample rate; 192kbps is invalid at 16kHz.
         let bitRate = min(192_000, Int(sampleRate) * 6)
@@ -2752,9 +2774,6 @@ private final class RemoteGenerationRunner {
     hints: [(ControlHintType, [(AnyTensor, Float)])],
     videoFormat: VideoExportFormat?
   ) throws -> LocalGenerationRunner.GenerationRunResult {
-    if videoFormat != nil || isVideoOutputPath(outputPath) {
-      throw ValidationError("Remote and cloud generation currently support .png output only.")
-    }
     let context = self.context
     try context.checkCancellation()
     defer { context.setCancellation(nil) }
@@ -2790,19 +2809,33 @@ private final class RemoteGenerationRunner {
     guard let tensors = result.0, !tensors.isEmpty else {
       throw DrawThingsCLIError.generationFailed
     }
-    var outputURL = URL(fileURLWithPath: outputPath)
-    if outputURL.pathExtension.isEmpty {
-      outputURL = outputURL.appendingPathExtension("png")
-    }
-    guard outputURL.pathExtension.lowercased() == "png" else {
-      throw ValidationError("Remote and cloud generation currently support .png output only.")
-    }
-    let outputPaths = try savePNGOutputs(tensors, outputURL: outputURL)
+    let audio = result.1?.first
+    let outputPaths = try GenerationOutputWriter().saveOutputs(
+      tensors, audio: audio, outputPath: outputPath, configuration: configuration,
+      videoFormat: videoFormat,
+      audioSampleRate: audio.flatMap {
+        remoteAudioSampleRate($0, frameCount: tensors.count, configuration: configuration)
+      })
     progressPrinter.update(progress: 1, label: "Generated", detail: nil)
     return LocalGenerationRunner.GenerationRunResult(
       outputPaths: outputPaths,
       timing: timingTracker.summary()
     )
+  }
+
+  /// Remote responses carry no audio sample rate. Generated audio spans the clip, so
+  /// when the model's nominal rate disagrees with the video length by more than 3%
+  /// (cloud MiniMax H3 audio arrives sampled faster than 32 kHz), infer the rate from
+  /// the frame count instead of playing the speech slow and low.
+  private func remoteAudioSampleRate(
+    _ audio: Tensor<Float>, frameCount: Int, configuration: GenerationConfiguration
+  ) -> Double? {
+    let model = configuration.model ?? ""
+    guard audio.shape.count == 2, frameCount > 1 else { return nil }
+    let nominal = Double(ModelZoo.audioSampleRateForModel(model))
+    let seconds = Double(frameCount) / ModelZoo.framesPerSecondForModel(model)
+    let inferred = (Double(audio.shape[1]) / seconds).rounded()
+    return abs(inferred / nominal - 1) > 0.03 ? inferred : nil
   }
 
   private func configuredRemoteGenerator() throws -> (
@@ -2961,11 +2994,6 @@ private final class RemoteGenerationRunner {
       label: progressText.label,
       detail: progressText.detail
     )
-  }
-
-  private func isVideoOutputPath(_ outputPath: String) -> Bool {
-    let ext = URL(fileURLWithPath: outputPath).pathExtension.lowercased()
-    return ext == "mov" || ext == "mp4"
   }
 }
 
@@ -4287,7 +4315,8 @@ extension DrawThingsCLI {
       try validateVideoOutputOptions(outputPath: outputPath, videoFormat: output.videoFormat)
       try TerminalImageRenderer.validateRequestedOutput(
         context: context, outputPath: outputPath, mode: terminalImageMode,
-        protocolChoice: output.terminalImageProtocol, requiresRenderableOutput: !writesOutputFile)
+        protocolChoice: output.terminalImageProtocol,
+        requiresRenderableOutput: !writesOutputFile && !execution.estimate)
 
       guard let model = modelResolution.model else {
         printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
@@ -4338,6 +4367,22 @@ extension DrawThingsCLI {
       {
         backend.cloudCompute = try context.cloudAPIKey(prepareIfNeeded: false) != nil
         backend.automaticCloudCompute = backend.cloudCompute
+      }
+      if execution.estimate {
+        struct EstimateOutput: Encodable {
+          let model: String
+          let computeUnits: Int?
+        }
+        // Mirrors the cloud request: the first image is the input, the rest are shuffle hints.
+        let computeUnits = ComputeUnits.from(
+          configuration, hasImage: !imagePaths.isEmpty,
+          shuffleCount: max(0, imagePaths.count - 1))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(
+          EstimateOutput(model: modelSpecification.file, computeUnits: computeUnits))
+        context.print(String(decoding: data, as: UTF8.self))
+        return
       }
       context.print(
         backend.cloudCompute
@@ -4764,7 +4809,7 @@ extension DrawThingsCLI.Generate {
       configuration: configuration, inputImage: referenceImage, audio: audioInput.waveform,
       conditionFrames: condFrames, fileMapping: fileMapping,
       zeroAudioFeatures: avc.zeroAudioFeatures)
-    let outputPaths = try runner.saveOutputs(
+    let outputPaths = try GenerationOutputWriter().saveOutputs(
       result.images, audio: fallbackAudio, outputPath: outputURL.path, configuration: configuration,
       videoFormat: output.videoFormat)
     for path in outputPaths {

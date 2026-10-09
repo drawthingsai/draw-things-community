@@ -277,11 +277,22 @@ public final class DrawThingsCLIContext {
   func handleCloudAuthenticationError(_ error: Error, hostAPIKey: String?) {
     cancellationLock.lock()
     cloudAuthenticationFailed = true
-    if case CLICloudAuthError.insufficientFunds = error, hostAPIKey != nil {
+    let needsTopUp: Bool
+    switch error {
+    case CLICloudAuthError.insufficientFunds, CLICloudAuthError.payAsYouGoRequired:
+      needsTopUp = true
+    default:
+      needsTopUp = false
+    }
+    if needsTopUp, hostAPIKey != nil {
       imageGenerationFailure = .insufficientBalance
     }
     cancellationLock.unlock()
-    if case CLICloudAuthError.insufficientFunds = error {
+    if case CLICloudAuthError.payAsYouGoRequired = error {
+      print(
+        "Image generation failed due to insufficient balance: this request exceeds your plan's free cloud compute allowance. Top up, then retry generation, or reduce size, frames, or steps."
+      )
+    } else if needsTopUp {
       print("Image generation failed due to insufficient balance. Top up, then retry generation.")
     } else {
       let message =
