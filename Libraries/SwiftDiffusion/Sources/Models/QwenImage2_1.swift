@@ -292,14 +292,11 @@ private func TransformerBlock<T: TensorNumeric>(
   case .scale1:
     queries = (1 / Float(128).squareRoot()) * queries
     let attention = ScaledDotProductAttention(
-      scale: 1,
-      isCausal: false,
-      flags: [.Float16])
+      scale: 1, flags: [.Float16])
     attended = attention(queries, allKeys, allValues).reshaped([batchSize * count, channels])
   case .scaleMerged, .quantized:
     let attention = ScaledDotProductAttention(
-      scale: 1 / Float(128).squareRoot(),
-      isCausal: false,
+      scale: 1 / Float(128).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     attended = attention(queries, allKeys, allValues).reshaped([batchSize * count, channels])
   }
@@ -717,14 +714,11 @@ private func LoRATransformerBlock<T: TensorNumeric>(
   case .scale1:
     queries = (1 / Float(128).squareRoot()) * queries
     let attention = ScaledDotProductAttention(
-      scale: 1,
-      isCausal: false,
-      flags: [.Float16])
+      scale: 1, flags: [.Float16])
     attended = attention(queries, allKeys, allValues).reshaped([batchSize * count, channels])
   case .scaleMerged, .quantized:
     let attention = ScaledDotProductAttention(
-      scale: 1 / Float(128).squareRoot(),
-      isCausal: false,
+      scale: 1 / Float(128).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     attended = attention(queries, allKeys, allValues).reshaped([batchSize * count, channels])
   }

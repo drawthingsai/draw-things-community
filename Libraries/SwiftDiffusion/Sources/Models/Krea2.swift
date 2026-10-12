@@ -234,7 +234,7 @@ private func Krea2Attention(
     }
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(headDim).squareRoot(),
+      scale: 1.0 / Float(headDim).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     if segments.count > 1 {
       var offset = 0
@@ -815,7 +815,7 @@ private func LoRAKrea2Attention(
       attentionScale = 1.0 / Float(headDim).squareRoot()
     }
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: attentionScale,
+      scale: attentionScale, useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     if segments.count > 1 {
       var offset = 0

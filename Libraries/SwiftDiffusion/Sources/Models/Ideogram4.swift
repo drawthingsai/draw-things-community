@@ -131,7 +131,7 @@ private func Ideogram4Attention(
     ).reshaped([batchSize, queryLength, 4_608])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(256).squareRoot(),
+      scale: 1.0 / Float(256).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([
       batchSize, queryLength, 4_608,
@@ -422,7 +422,7 @@ private func LoRAIdeogram4Attention(
     ).reshaped([batchSize, queryLength, 4_608])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(256).squareRoot(),
+      scale: 1.0 / Float(256).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([
       batchSize, queryLength, 4_608,

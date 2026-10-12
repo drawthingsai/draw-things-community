@@ -270,7 +270,7 @@ private func JointTransformerBlock(
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
+      scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
@@ -487,7 +487,7 @@ private func SingleTransformerBlock(
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
+      scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
@@ -690,7 +690,7 @@ private func JointTransformerBlockImageOnly(
       .reshaped([b, -1, k * h])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
+      scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
   }
@@ -779,7 +779,7 @@ private func SingleTransformerBlockImageOnly(
         .reshaped([b, -1, k * h])
     case .scaleMerged, .quantized:
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(),
+        scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
         flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
       out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
     }
@@ -1195,7 +1195,7 @@ private func LoRAJointTransformerBlock(
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
+      scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
@@ -1428,7 +1428,7 @@ private func LoRASingleTransformerBlock(
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
+      scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
@@ -1535,7 +1535,7 @@ private func LoRAJointTransformerBlockImageOnly(
       .reshaped([b, -1, k * h])
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
+      scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
       flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
     out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
   }
@@ -1631,7 +1631,7 @@ private func LoRASingleTransformerBlockImageOnly(
         .reshaped([b, -1, k * h])
     case .scaleMerged, .quantized:
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(),
+        scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
         flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
       out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
     }
