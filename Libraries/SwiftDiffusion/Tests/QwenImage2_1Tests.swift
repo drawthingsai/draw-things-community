@@ -27,7 +27,7 @@ final class QwenImage2_1Tests: XCTestCase {
               decode
               ? QwenImage2_1Decoder(
                 channels: [1152, 1152, 576, 288, 144], height: size / 16, width: size / 16,
-                usesFlashAttention: flash)
+                highPrecisionKeysAndValues: false, usesFlashAttention: flash)
               : QwenImage2_1Encoder(
                 channels: [96, 192, 384, 768, 768], height: size, width: size,
                 usesFlashAttention: flash)
@@ -183,7 +183,7 @@ final class QwenImage2_1Tests: XCTestCase {
         for (useFloat16, flash) in [(false, false), (true, false), (true, true)] {
           let model = QwenImage2_1Decoder(
             channels: [1152, 1152, 576, 288, 144], height: height, width: width,
-            usesFlashAttention: flash)
+            highPrecisionKeysAndValues: false, usesFlashAttention: flash)
           let x: DynamicGraph.AnyTensor =
             useFloat16 ? input : DynamicGraph.Tensor<Float>(from: input)
           model.maxConcurrency = .limit(1)
@@ -441,7 +441,7 @@ final class QwenImage2_1Tests: XCTestCase {
             usesFlashAttention: flash)
           : QwenImage2_1Decoder(
             channels: [1152, 1152, 576, 288, 144], height: height, width: width,
-            usesFlashAttention: flash)
+            highPrecisionKeysAndValues: false, usesFlashAttention: flash)
         let baseline = QwenImage2_1VAEReference(encoder: encoder, height: height, width: width).0
         let x: DynamicGraph.AnyTensor =
           useFloat16

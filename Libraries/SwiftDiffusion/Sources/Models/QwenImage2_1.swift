@@ -249,11 +249,12 @@ private func TransformerBlock<T: TensorNumeric>(
     left: normQ(toQueries(attentionInput).reshaped([batchSize, count, heads, 128])),
     right: rotary
   )
+  // Both key sequences are already rotated at their original positions; append the cache.
   // Keep RoPE outputs contiguous when concatenating batched cached K/V, as in Flux2.
   let allKeys = Functional.concat(
-    axis: 1, cachedK, keys, flags: batchSize > 1 ? [.disableOpt] : [])
+    axis: 1, keys, cachedK, flags: batchSize > 1 ? [.disableOpt] : [])
   let allValues = Functional.concat(
-    axis: 1, cachedV, values, flags: batchSize > 1 ? [.disableOpt] : [])
+    axis: 1, values, cachedV, flags: batchSize > 1 ? [.disableOpt] : [])
   let attended: Model.IO
   switch usesFlashAttention {
   case .none:
@@ -671,11 +672,12 @@ private func LoRATransformerBlock<T: TensorNumeric>(
     left: normQ(toQueries(attentionInput).reshaped([batchSize, count, heads, 128])),
     right: rotary
   )
+  // Both key sequences are already rotated at their original positions; append the cache.
   // Keep RoPE outputs contiguous when concatenating batched cached K/V, as in Flux2.
   let allKeys = Functional.concat(
-    axis: 1, cachedK, keys, flags: batchSize > 1 ? [.disableOpt] : [])
+    axis: 1, keys, cachedK, flags: batchSize > 1 ? [.disableOpt] : [])
   let allValues = Functional.concat(
-    axis: 1, cachedV, values, flags: batchSize > 1 ? [.disableOpt] : [])
+    axis: 1, values, cachedV, flags: batchSize > 1 ? [.disableOpt] : [])
   let attended: Model.IO
   switch usesFlashAttention {
   case .none:
