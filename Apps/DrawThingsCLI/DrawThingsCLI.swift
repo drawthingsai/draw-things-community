@@ -4189,7 +4189,7 @@ public struct DrawThingsCLI: ParsableCommand {
         let isPartialOffloadPreferred = DeviceCapability.isPartialOffloadPreferred.load(
           ordering: .acquiring)
         let isMFAEnabled = DeviceCapability.isMFAEnabled.load(ordering: .acquiring)
-        let isMFAAppleNeuralEngineEnabled = DeviceCapability.isMFAAppleNeuralEngineEnabled.load(
+        let appleNeuralEngineState = DeviceCapability.appleNeuralEngineState.load(
           ordering: .acquiring)
         let isCoreMLSupported = CoreMLModelManager.isCoreMLSupported.load(ordering: .acquiring)
         let isLoRASupported = CoreMLModelManager.isLoRASupported.load(ordering: .acquiring)
@@ -4204,8 +4204,8 @@ public struct DrawThingsCLI: ParsableCommand {
           DeviceCapability.isPartialOffloadPreferred.store(
             isPartialOffloadPreferred, ordering: .releasing)
           DeviceCapability.isMFAEnabled.store(isMFAEnabled, ordering: .releasing)
-          DeviceCapability.isMFAAppleNeuralEngineEnabled.store(
-            isMFAAppleNeuralEngineEnabled, ordering: .releasing)
+          DeviceCapability.appleNeuralEngineState.store(
+            appleNeuralEngineState, ordering: .releasing)
           CoreMLModelManager.isCoreMLSupported.store(isCoreMLSupported, ordering: .releasing)
           CoreMLModelManager.isLoRASupported.store(isLoRASupported, ordering: .releasing)
           DynamicGraph.flags = flags

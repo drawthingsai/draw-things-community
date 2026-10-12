@@ -135,7 +135,7 @@ public final class ModelPreloader {
   private var activeSentinel: Int = 0
   private let sentinel = ManagedAtomic<Int>(0)
   private var useCoreML: Bool? = nil
-  private var useAppleNeuralEngineFor8BitSModels: Bool? = nil
+  private var useAppleNeuralEngineFor8BitSModels: DeviceCapability.AppleNeuralEngineState? = nil
   private var useMFA: Int? = nil
   private var loraUseCoreML: Bool? = nil
   private var externalStore: JITWeightsLoading = .automatic
@@ -269,7 +269,7 @@ public final class ModelPreloader {
       }
     }
     useAppleNeuralEngineFor8BitSModelsSubscription = workspace.dictionary.subscribe(
-      "use_mfa_apple_neural_engine", of: Bool.self
+      "use_mfa_apple_neural_engine_v2", of: Int.self
     ) { [weak self] value in
       queue.async { [weak self] in
         guard let self = self else { return }
@@ -1029,11 +1029,12 @@ extension ModelPreloader {
     }
   }
 
-  func updateUseAppleNeuralEngineFor8BitSModels(_ value: Bool?) {
+  func updateUseAppleNeuralEngineFor8BitSModels(_ value: Int?) {
     dispatchPrecondition(condition: .onQueue(queue))
     let useAppleNeuralEngineFor8BitSModels =
-      value ?? DeviceCapability.isMFAAppleNeuralEngineFaster
-    DeviceCapability.isMFAAppleNeuralEngineEnabled.store(
+      value.flatMap(DeviceCapability.AppleNeuralEngineState.init(rawValue:))
+      ?? (DeviceCapability.isMFAAppleNeuralEngineFaster ? .appleNeuralEngineAndGPU : .disabled)
+    DeviceCapability.appleNeuralEngineState.store(
       useAppleNeuralEngineFor8BitSModels, ordering: .releasing)
     guard
       self.useAppleNeuralEngineFor8BitSModels != nil

@@ -224,6 +224,13 @@ public struct DeviceCapability {
       return false
     #endif
   }()
+  // Raw values are persisted in "use_mfa_apple_neural_engine_v2".
+  public enum AppleNeuralEngineState: Int, AtomicValue, Sendable {
+    case disabled = 0
+    case appleNeuralEngineOnly = 1
+    // Rowwise int8 GEMM may split rows between the ANE and the GPU, or pick either alone.
+    case appleNeuralEngineAndGPU = 2
+  }
   public static let isMFAAppleNeuralEngineFaster: Bool = {
     #if arch(i386) || arch(x86_64) || !canImport(Metal)
       return false
@@ -240,7 +247,8 @@ public struct DeviceCapability {
     #endif
   }()
   public static let isMFAEnabled = ManagedAtomic(isMFASupported ? 1 : 0)
-  public static let isMFAAppleNeuralEngineEnabled = ManagedAtomic(isMFAAppleNeuralEngineFaster)
+  public static let appleNeuralEngineState = ManagedAtomic<AppleNeuralEngineState>(
+    isMFAAppleNeuralEngineFaster ? .appleNeuralEngineAndGPU : .disabled)
   public struct Scale: Equatable & Hashable & CustomDebugStringConvertible {
     public let widthScale: UInt16
     public let heightScale: UInt16

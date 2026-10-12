@@ -4062,10 +4062,15 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+      switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+      case .disabled:
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-      } else {
+      case .appleNeuralEngineOnly:
         DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+      case .appleNeuralEngineAndGPU:
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
       }
     }
     var signposts = Set<ImageGeneratorSignpost>([
@@ -4794,10 +4799,15 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+        switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+        case .disabled:
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-        } else {
+        case .appleNeuralEngineOnly:
           DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+        case .appleNeuralEngineAndGPU:
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
         }
       }
       let startWidth: Int
@@ -5194,10 +5204,15 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+        switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+        case .disabled:
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-        } else {
+        case .appleNeuralEngineOnly:
           DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+        case .appleNeuralEngineAndGPU:
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
         }
       }
       guard
@@ -5262,10 +5277,15 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+        switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+        case .disabled:
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-        } else {
+        case .appleNeuralEngineOnly:
           DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+        case .appleNeuralEngineAndGPU:
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
         }
       }
       var secondPassResult = modelPreloader.consumeFirstStageDecode(
@@ -5460,10 +5480,15 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+      switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+      case .disabled:
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-      } else {
+      case .appleNeuralEngineOnly:
         DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+      case .appleNeuralEngineAndGPU:
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
       }
     }
     var hasHints = Set(hints.keys)
@@ -6247,10 +6272,15 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+        switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+        case .disabled:
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-        } else {
+        case .appleNeuralEngineOnly:
           DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+        case .appleNeuralEngineAndGPU:
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
         }
       }
       var firstStageResult = modelPreloader.consumeFirstStageDecode(
@@ -6964,10 +6994,15 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+      switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+      case .disabled:
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-      } else {
+      case .appleNeuralEngineOnly:
         DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+      case .appleNeuralEngineAndGPU:
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
       }
     }
     var hasHints = Set(hints.keys)
@@ -7722,10 +7757,15 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+        switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+        case .disabled:
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-        } else {
+        case .appleNeuralEngineOnly:
           DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+        case .appleNeuralEngineAndGPU:
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
         }
       }
       let firstStageResult = modelPreloader.consumeFirstStageDecode(
@@ -7911,10 +7951,15 @@ extension LocalImageGenerator {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+      switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+      case .disabled:
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-      } else {
+      case .appleNeuralEngineOnly:
         DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+      case .appleNeuralEngineAndGPU:
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
       }
     }
     var hasHints = Set(hints.keys)
@@ -8865,10 +8910,15 @@ extension LocalImageGenerator {
         if !DeviceCapability.isMFAAttentionFaster {
           DynamicGraph.flags.insert(.disableMFAAttention)
         }
-        if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+        switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+        case .disabled:
           DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-        } else {
+        case .appleNeuralEngineOnly:
           DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+        case .appleNeuralEngineAndGPU:
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+          DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
         }
       }
       let firstStageResult = modelPreloader.consumeFirstStageDecode(

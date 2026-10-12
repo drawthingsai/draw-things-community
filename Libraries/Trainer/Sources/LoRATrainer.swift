@@ -5968,10 +5968,15 @@ public struct LoRATrainer {
       if !DeviceCapability.isMFAAttentionFaster {
         DynamicGraph.flags.insert(.disableMFAAttention)
       }
-      if !DeviceCapability.isMFAAppleNeuralEngineEnabled.load(ordering: .acquiring) {
+      switch DeviceCapability.appleNeuralEngineState.load(ordering: .acquiring) {
+      case .disabled:
         DynamicGraph.flags.insert(.disableMFAAppleNeuralEngine)
-      } else {
+      case .appleNeuralEngineOnly:
         DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.insert(.disableMFAAppleNeuralEngineAndGpu)
+      case .appleNeuralEngineAndGPU:
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngine)
+        DynamicGraph.flags.remove(.disableMFAAppleNeuralEngineAndGpu)
       }
     }
     graph.openStore(session, flags: .readOnly) { sessionStore in
