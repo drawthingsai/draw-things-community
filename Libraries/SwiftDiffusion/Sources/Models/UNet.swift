@@ -292,7 +292,7 @@ func CrossAttention(
       if injectIPAdapterLengths.count > 0 {
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, h * k])
         var ipKVs = [Input]()
         for _ in injectIPAdapterLengths {
@@ -300,7 +300,7 @@ func CrossAttention(
           let ipValues = Input()
           let scaledDotProductAttention = ScaledDotProductAttention(
             scale: 1.0 / Float(k).squareRoot(),
-            flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+            flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
           out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
           ipKVs.append(contentsOf: [ipKeys, ipValues])
         }
@@ -310,7 +310,7 @@ func CrossAttention(
       } else {
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16],
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16],
           multiHeadOutputProjectionFused: true)
         var out = scaledDotProductAttention(queries, keys, values)
         if upcastAttention {
@@ -340,7 +340,7 @@ func CrossAttention(
         )
         out0 = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
         )(queries0, keys0, values0).reshaped([b0, hw, h * k])
       } else {
         var outs = [Model.IO]()
@@ -356,7 +356,7 @@ func CrossAttention(
           outs.append(
             ScaledDotProductAttention(
               scale: 1.0 / Float(k).squareRoot(),
-              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+              flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
             )(queries0, keys0, values0).reshaped([1, hw, h * k]))
         }
         out0 = Concat(axis: 0)(outs)
@@ -373,7 +373,7 @@ func CrossAttention(
         )
         out1 = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
         )(queries1, keys1, values1).reshaped([b0, hw, h * k])
       } else {
         var outs = [Model.IO]()
@@ -391,7 +391,7 @@ func CrossAttention(
           outs.append(
             ScaledDotProductAttention(
               scale: 1.0 / Float(k).squareRoot(),
-              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+              flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
             )(queries1, keys1, values1).reshaped([1, hw, h * k]))
         }
         out1 = Concat(axis: 0)(outs)
@@ -403,7 +403,7 @@ func CrossAttention(
         let ipValues = Input()
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
         ipKVs.append(contentsOf: [ipKeys, ipValues])
       }

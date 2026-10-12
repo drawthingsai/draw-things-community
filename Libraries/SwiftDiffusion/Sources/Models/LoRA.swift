@@ -500,7 +500,7 @@ func LoRASelfAttention(
       scaledDotProductAttention = ScaledDotProductAttention(
         scale: 1.0 / Float(k).squareRoot(),
         flags: upcastAttention
-          ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
+          ? [] : (usesFlashAttention == .quantized ? [.Int8] : [.Float16]))
     }
     var out = scaledDotProductAttention(queries, keys, values)
     let unifyheads = LoRADense(count: k * h, configuration: LoRAConfiguration)
@@ -581,7 +581,7 @@ func LoRACrossAttention(
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
           flags: upcastAttention
-            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
+            ? [] : (usesFlashAttention == .quantized ? [.Int8] : [.Float16]))
         var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, h * k])
         var ipKVs = [Input]()
         for _ in injectIPAdapterLengths {
@@ -590,7 +590,7 @@ func LoRACrossAttention(
           let scaledDotProductAttention = ScaledDotProductAttention(
             scale: 1.0 / Float(k).squareRoot(),
             flags: upcastAttention
-              ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
+              ? [] : (usesFlashAttention == .quantized ? [.Int8] : [.Float16]))
           out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
           ipKVs.append(contentsOf: [ipKeys, ipValues])
         }
@@ -601,7 +601,7 @@ func LoRACrossAttention(
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
           flags: upcastAttention
-            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
+            ? [] : (usesFlashAttention == .quantized ? [.Int8] : [.Float16]))
         var out = scaledDotProductAttention(queries, keys, values)
         let unifyheads = LoRADense(count: k * h, configuration: LoRAConfiguration)
         out = unifyheads(out.reshaped([b, hw, h * k]))
@@ -630,7 +630,7 @@ func LoRACrossAttention(
         out0 = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
           flags: upcastAttention
-            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))(
+            ? [] : (usesFlashAttention == .quantized ? [.Int8] : [.Float16]))(
             queries0, keys0, values0
           ).reshaped([b0, hw, h * k])
       } else {
@@ -1337,7 +1337,7 @@ func LoRACrossAttentionKeysAndValues(
       let scaledDotProductAttention = ScaledDotProductAttention(
         scale: 1.0 / Float(k).squareRoot(),
         flags: upcastAttention
-          ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
+          ? [] : (usesFlashAttention == .quantized ? [.Int8] : [.Float16]))
       var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, h * k])
       var ipKVs = [Input]()
       for _ in injectIPAdapterLengths {
@@ -1346,7 +1346,7 @@ func LoRACrossAttentionKeysAndValues(
         let scaledDotProductAttention = ScaledDotProductAttention(
           scale: 1.0 / Float(k).squareRoot(),
           flags: upcastAttention
-            ? [] : (usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]))
+            ? [] : (usesFlashAttention == .quantized ? [.Int8] : [.Float16]))
         out = out + scaledDotProductAttention(queries, ipKeys, ipValues).reshaped([b, hw, h * k])
         ipKVs.append(contentsOf: [ipKeys, ipValues])
       }

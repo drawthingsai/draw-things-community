@@ -172,7 +172,7 @@ private func LongCatAvatarBlock(
             strides: [nNoise * h * k, h * k, k, 1])
           let frontAttention = ScaledDotProductAttention(
             scale: scale,
-            flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+            flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
           noisePieces.append(frontAttention(qNoiseFront, kFull, vFull))
         }
         let qNoiseMasked = qNoise.reshaped(
@@ -186,7 +186,7 @@ private func LongCatAvatarBlock(
           strides: [(nCond + nNoise) * h * k, h * k, k, 1])
         let maskedAttention = ScaledDotProductAttention(
           scale: scale,
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         noisePieces.append(maskedAttention(qNoiseMasked, kNonRef, vNonRef))
         if endPos < nNoise {
           let qNoiseBack = qNoise.reshaped(
@@ -194,7 +194,7 @@ private func LongCatAvatarBlock(
             strides: [nNoise * h * k, h * k, k, 1])
           let backAttention = ScaledDotProductAttention(
             scale: scale,
-            flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+            flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
           noisePieces.append(backAttention(qNoiseBack, kFull, vFull))
         }
         out = noisePieces.count == 1 ? noisePieces[0] : Concat(axis: 1)(noisePieces)
@@ -202,7 +202,7 @@ private func LongCatAvatarBlock(
       } else {
         let noiseAttention = ScaledDotProductAttention(
           scale: scale,
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         out = noiseAttention(qNoise, kFull, vFull).reshaped([1, nNoise, c])
       }
     } else if condFrames > 1 {
@@ -219,7 +219,7 @@ private func LongCatAvatarBlock(
         [1, nRef, h, k], offset: [0, 0, 0, 0], strides: [n * h * k, h * k, k, 1])
       let refAttention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       let outRef = refAttention(qRef, kRef, vRef)
       let qCond = queries.reshaped(
         [1, nContinuationCond, h, k], offset: [0, nRef, 0, 0],
@@ -232,7 +232,7 @@ private func LongCatAvatarBlock(
         strides: [n * h * k, h * k, k, 1])
       let condAttention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       let outCond = condAttention(qCond, kCond, vCond)
       let qNoise = queries.reshaped(
         [1, nNoise, h, k], offset: [0, nCond, 0, 0], strides: [n * h * k, h * k, k, 1])
@@ -252,7 +252,7 @@ private func LongCatAvatarBlock(
             strides: [nNoise * h * k, h * k, k, 1])
           let frontAttention = ScaledDotProductAttention(
             scale: scale,
-            flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+            flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
           noisePieces.append(frontAttention(qNoiseFront, keys, values))
         }
         let qNoiseMasked = qNoise.reshaped(
@@ -266,7 +266,7 @@ private func LongCatAvatarBlock(
           strides: [n * h * k, h * k, k, 1])
         let maskedAttention = ScaledDotProductAttention(
           scale: scale,
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         noisePieces.append(maskedAttention(qNoiseMasked, kNonRef, vNonRef))
         if endPos < nNoise {
           let qNoiseBack = qNoise.reshaped(
@@ -274,14 +274,14 @@ private func LongCatAvatarBlock(
             strides: [nNoise * h * k, h * k, k, 1])
           let backAttention = ScaledDotProductAttention(
             scale: scale,
-            flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+            flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
           noisePieces.append(backAttention(qNoiseBack, keys, values))
         }
         outNoise = noisePieces.count == 1 ? noisePieces[0] : Concat(axis: 1)(noisePieces)
       } else {
         let noiseAttention = ScaledDotProductAttention(
           scale: scale,
-          flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         outNoise = noiseAttention(qNoise, keys, values)
       }
       outNoise.add(dependencies: [outRef, outCond])
@@ -296,20 +296,20 @@ private func LongCatAvatarBlock(
         [1, nCond, h, k], offset: [0, 0, 0, 0], strides: [n * h * k, h * k, k, 1])
       let condAttention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       let outCond = condAttention(qCond, kCond, vCond)
       let qNoise = queries.reshaped(
         [1, nNoise, h, k], offset: [0, nCond, 0, 0], strides: [n * h * k, h * k, k, 1])
       let noiseAttention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       let outNoise = noiseAttention(qNoise, keys, values)
       outNoise.add(dependencies: [outCond])
       out = Concat(axis: 1)(outCond, outNoise).reshaped([1, n, c])
     } else {
       let scaledDotProductAttention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       out = scaledDotProductAttention(queries, keys, values).reshaped([1, n, c])
     }
   } else {
@@ -521,7 +521,7 @@ private func LongCatAvatarBlock(
   if usesFlashAttention != .none {
     let crossAttention = ScaledDotProductAttention(
       scale: 1 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     crossOut = crossAttention(cQ, cK32, cV32).reshaped([1, nNoise, c])
   } else {
     let cKT = cK32.transposed(1, 2)
@@ -552,7 +552,7 @@ private func LongCatAvatarBlock(
   if usesFlashAttention != .none {
     let audioAttention = ScaledDotProductAttention(
       scale: 1 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     audioOut = audioAttention(aQ, aK32, aV32).reshaped([timeNoise, hw, c])
   } else {
     let aKT = aK32.transposed(1, 2)
@@ -795,7 +795,7 @@ private func LongCatAvatarBlockCleanKVFixed(
         [1, nRef, h, k], offset: [0, 0, 0, 0], strides: [n * h * k, h * k, k, 1])
       let refAttention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       let outRef = refAttention(qRef, kRef, vRef)
       let qCond = queries.reshaped(
         [1, nContinuationCond, h, k], offset: [0, nRef, 0, 0],
@@ -808,14 +808,14 @@ private func LongCatAvatarBlockCleanKVFixed(
         strides: [n * h * k, h * k, k, 1])
       let condAttention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       let outCond = condAttention(qCond, kCond, vCond)
       outCond.add(dependencies: [outRef])
       attnOut = Concat(axis: 1)([outRef, outCond]).reshaped([1, n, c])
     } else {
       let attention = ScaledDotProductAttention(
         scale: scale,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       attnOut = attention(queries, keys, values).reshaped([1, n, c])
     }
   } else {

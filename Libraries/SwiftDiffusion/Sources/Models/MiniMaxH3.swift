@@ -202,7 +202,7 @@ private func H3Attention(
   q = (1 / Float(128).squareRoot()) * q
   let attention = ScaledDotProductAttention(
     scale: 1, useHadamard: true,
-    flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+    flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
   let attentionOutput: Model.IO
   if let usesSolAttention {
     precondition(segments.isEmpty)
@@ -969,7 +969,7 @@ private func LoRAH3Attention(
   q = (1 / Float(128).squareRoot()) * q
   let attention = ScaledDotProductAttention(
     scale: 1, useHadamard: true,
-    flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+    flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
   let attentionOutput: Model.IO
   if let usesSolAttention {
     precondition(segments.isEmpty)

@@ -247,7 +247,7 @@ private func ZImageTransformerBlock(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     if segments.count > 1 {
       var offset = 0
       var outs = [Model.IO]()
@@ -985,11 +985,11 @@ private func LoRAZImageTransformerBlock(
     let scaledDotProductAttention: Model
     if configuration.testing {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+        scale: 1.0 / Float(k).squareRoot(), flags: [.Int8])
     } else {
       queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
       keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
-      scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Int8, .Float16])
+      scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Int8])
     }
     if segments.count > 1 {
       var offset = 0

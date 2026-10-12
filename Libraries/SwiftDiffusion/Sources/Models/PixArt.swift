@@ -170,7 +170,7 @@ private func CrossAttentionKeysAndValues(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
         out0 = ScaledDotProductAttention(
-          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
         )(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
@@ -188,7 +188,7 @@ private func CrossAttentionKeysAndValues(
           outs.append(
             ScaledDotProductAttention(
               scale: scale,
-              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+              flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
             )(
               queries0, keys0, values0
             ).reshaped([1, hw, h * k]))
@@ -206,7 +206,7 @@ private func CrossAttentionKeysAndValues(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
         out1 = ScaledDotProductAttention(
-          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
         )(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
@@ -226,7 +226,7 @@ private func CrossAttentionKeysAndValues(
           outs.append(
             ScaledDotProductAttention(
               scale: scale,
-              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+              flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
             )(
               queries1, keys1, values1
             ).reshaped([1, hw, h * k]))
@@ -449,7 +449,7 @@ private func LoRASelfAttention(
     }
     let values = tovalues(x).reshaped([b, t, h, k])
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     var out = scaledDotProductAttention(queries, keys, values).reshaped([b, t, k * h])
     let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "o")
     out = unifyheads(out)
@@ -515,7 +515,7 @@ private func LoRACrossAttentionKeysAndValues(
         scale = 1.0 / Float(k).squareRoot()
       }
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       var out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
       let unifyheads = LoRADense(count: k * h, configuration: configuration, name: "c_o")
       out = unifyheads(out)
@@ -556,7 +556,7 @@ private func LoRACrossAttentionKeysAndValues(
           [b0, t.0, h, k], offset: [0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
         out0 = ScaledDotProductAttention(
-          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
         )(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
@@ -574,7 +574,7 @@ private func LoRACrossAttentionKeysAndValues(
           outs.append(
             ScaledDotProductAttention(
               scale: scale,
-              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+              flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
             )(
               queries0, keys0, values0
             ).reshaped([1, hw, h * k]))
@@ -592,7 +592,7 @@ private func LoRACrossAttentionKeysAndValues(
           [b0, t.1, h, k], offset: [b0, 0, 0, 0], strides: [max(t.0, t.1) * h * k, h * k, k, 1]
         )
         out1 = ScaledDotProductAttention(
-          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
         )(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
@@ -612,7 +612,7 @@ private func LoRACrossAttentionKeysAndValues(
           outs.append(
             ScaledDotProductAttention(
               scale: scale,
-              flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+              flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
             )(
               queries1, keys1, values1
             ).reshaped([1, hw, h * k]))

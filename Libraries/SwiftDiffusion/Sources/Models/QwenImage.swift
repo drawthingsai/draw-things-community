@@ -359,7 +359,7 @@ private func JointTransformerBlock(
   case .scaleMerged, .quantized:
     out = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])(
         queries, keys, values
       ).reshaped([b, t + hw, h * k])
   }
@@ -1121,10 +1121,10 @@ private func LoRAJointTransformerBlock(
     let scaledDotProductAttention: Model
     if configuration.testing {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+        scale: 1.0 / Float(k).squareRoot(), flags: [.Int8])
     } else {
       queries = (1.0 / Float(k).squareRoot()) * queries
-      scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Int8, .Float16])
+      scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Int8])
     }
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, t + hw, h * k])
     scaledDotProductAttention.gradientCheckpointing = false

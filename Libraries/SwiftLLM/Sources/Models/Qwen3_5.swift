@@ -191,7 +191,7 @@ private func Qwen3_5FullAttention(
   var out = ScaledDotProductAttention(
     scale: 1.0 / Float(headDim).squareRoot(), isCausal: true,
     // MTP verifies up to two query rows; keep both draft and verification decoding in Float16.
-    useHadamard: queriesLength > 2, flags: queriesLength > 2 ? [.Int8] : [.Float16])(
+    useHadamard: queriesLength > 2, flags: queriesLength > 2 ? [.Int8, .Float16] : [.Float16])(
       queries, kIn, vIn
     )
   out.add(dependencies: [kOut, vOut])

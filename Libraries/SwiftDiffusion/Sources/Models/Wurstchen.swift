@@ -184,7 +184,7 @@ private func MultiHeadAttention(
       )
       let out0 = ScaledDotProductAttention(
         scale: 1.0 / Float(k).squareRoot(),
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])(
           queries0, keys0, values0
         ).reshaped([b0, hw, h * k])
       let keys1 = keys.reshaped(
@@ -199,7 +199,7 @@ private func MultiHeadAttention(
       )
       let out1 = ScaledDotProductAttention(
         scale: 1.0 / Float(k).squareRoot(),
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])(
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])(
           queries1, keys1, values1
         ).reshaped([b0, hw, h * k])
       var out = Functional.concat(axis: 0, out0, out1)

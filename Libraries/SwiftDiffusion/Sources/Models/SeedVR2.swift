@@ -539,7 +539,7 @@ private func SeedVR2DiTBlock(
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(headDim).squareRoot(), isVariableLength: true,
       maxSequenceLength: (query: maxSequenceLength, keyValue: maxSequenceLength),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     attn3D = scaledDotProductAttention([q, k, v, sequenceOffsets, sequenceOffsets]).reshaped([
       attentionLength, heads * headDim,
     ])

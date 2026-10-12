@@ -277,7 +277,7 @@ private func LTX2SelfAttention(
     out = scaledDotProductAttention(queries, keys, values)
   case .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+      scale: 1 / Float(k).squareRoot(), flags: [.Int8])
     out = scaledDotProductAttention(queries, keys, values)
   case .none:
     let transposedKeys = keys.transposed(1, 2)
@@ -389,7 +389,7 @@ private func LTX2CrossAttention(
     out = scaledDotProductAttention(queries, keys, values)
   case .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1 / Float(k.1).squareRoot(), flags: [.Int8, .Float16])
+      scale: 1 / Float(k.1).squareRoot(), flags: [.Int8])
     out = scaledDotProductAttention(queries, keys, values)
   case .none:
     let transposedKeys = keys.transposed(1, 2)
@@ -1436,7 +1436,7 @@ private func LoRALTX2SelfAttention(
     out = scaledDotProductAttention(queries, keys, values)
   case .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1 / Float(k).squareRoot(), flags: [.Int8, .Float16])
+      scale: 1 / Float(k).squareRoot(), flags: [.Int8])
     out = scaledDotProductAttention(queries, keys, values)
   case .none:
     let transposedKeys = keys.transposed(1, 2)
@@ -1556,7 +1556,7 @@ private func LoRALTX2CrossAttention(
     out = scaledDotProductAttention(queries, keys, values)
   case .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1 / Float(k.1).squareRoot(), flags: [.Int8, .Float16])
+      scale: 1 / Float(k.1).squareRoot(), flags: [.Int8])
     out = scaledDotProductAttention(queries, keys, values)
   case .none:
     let transposedKeys = keys.transposed(1, 2)

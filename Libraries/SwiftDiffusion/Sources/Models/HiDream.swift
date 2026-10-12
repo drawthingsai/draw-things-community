@@ -196,7 +196,7 @@ private func JointTransformerBlock(
   if usesFlashAttention != .none {
     out = ScaledDotProductAttention(
       scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
     )(
       queries, keys, values
     ).reshaped([b, t.0 + hw, h * k])
@@ -374,7 +374,7 @@ private func SingleTransformerBlock(
   if usesFlashAttention != .none {
     xOut = ScaledDotProductAttention(
       scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
     )(
       xQ, xK, xV
     ).reshaped([b, xLength, h * k])
@@ -890,7 +890,7 @@ private func LoRAJointTransformerBlock(
   if usesFlashAttention != .none {
     out = ScaledDotProductAttention(
       scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
     )(
       queries, keys, values
     ).reshaped([b, t.0 + hw, h * k])
@@ -1076,7 +1076,7 @@ private func LoRASingleTransformerBlock(
   if usesFlashAttention != .none {
     xOut = ScaledDotProductAttention(
       scale: usesFlashAttention == .scale1 ? 1 : (1.0 / Float(k).squareRoot()),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16]
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16]
     )(
       xQ, xK, xV
     ).reshaped([b, xLength, h * k])

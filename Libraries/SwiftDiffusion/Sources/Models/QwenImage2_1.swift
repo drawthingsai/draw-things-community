@@ -182,7 +182,7 @@ private func TransformerBlockFixed<T: TensorNumeric>(
       let attention = ScaledDotProductAttention(
         scale: 1 / Float(128).squareRoot(),
         isCausal: !segment.image,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       parts.append(attention(q, k, v).reshaped([batchSize, segment.length, channels]))
       start = end
     }
@@ -297,7 +297,7 @@ private func TransformerBlock<T: TensorNumeric>(
   case .scaleMerged, .quantized:
     let attention = ScaledDotProductAttention(
       scale: 1 / Float(128).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     attended = attention(queries, allKeys, allValues).reshaped([batchSize * count, channels])
   }
   let unifyHeads = Dense(count: channels, noBias: true, name: "x_o")
@@ -593,7 +593,7 @@ private func LoRATransformerBlockFixed<T: TensorNumeric>(
       let attention = ScaledDotProductAttention(
         scale: 1 / Float(128).squareRoot(),
         isCausal: !segment.image,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       parts.append(attention(q, k, v).reshaped([batchSize, segment.length, channels]))
       start = end
     }
@@ -719,7 +719,7 @@ private func LoRATransformerBlock<T: TensorNumeric>(
   case .scaleMerged, .quantized:
     let attention = ScaledDotProductAttention(
       scale: 1 / Float(128).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     attended = attention(queries, allKeys, allValues).reshaped([batchSize * count, channels])
   }
   let unifyHeads = LoRADense(

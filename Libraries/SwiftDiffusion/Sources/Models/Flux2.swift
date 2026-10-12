@@ -271,7 +271,7 @@ private func JointTransformerBlock(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
   let contextUnifyheads: Model?
@@ -488,7 +488,7 @@ private func SingleTransformerBlock(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
   var xIn: Model.IO = x
@@ -691,7 +691,7 @@ private func JointTransformerBlockImageOnly(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
   }
   let xUnifyheads = Dense(count: k * h, noBias: true, name: "x_o")
@@ -780,7 +780,7 @@ private func SingleTransformerBlockImageOnly(
     case .scaleMerged, .quantized:
       let scaledDotProductAttention = ScaledDotProductAttention(
         scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
     }
     let xUnifyheadsLocal = Dense(count: k * h, noBias: true, name: "x_o")
@@ -1196,7 +1196,7 @@ private func LoRAJointTransformerBlock(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
   let contextUnifyheads: Model?
@@ -1429,7 +1429,7 @@ private func LoRASingleTransformerBlock(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, querySequenceLength, k * h])
   }
   var xIn: Model.IO = x
@@ -1536,7 +1536,7 @@ private func LoRAJointTransformerBlockImageOnly(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
   }
   let xUnifyheads = LoRADense(
@@ -1632,7 +1632,7 @@ private func LoRASingleTransformerBlockImageOnly(
     case .scaleMerged, .quantized:
       let scaledDotProductAttention = ScaledDotProductAttention(
         scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       out = scaledDotProductAttention(queries, rotatedKeys, values).reshaped([b, -1, k * h])
     }
     let xUnifyheadsLocal = LoRADense(

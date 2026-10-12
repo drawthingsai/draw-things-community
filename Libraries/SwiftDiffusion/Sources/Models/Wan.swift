@@ -108,7 +108,7 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       let padFrames = hw / time * causalInference.pad
       for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
@@ -127,7 +127,7 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
       out = Concat(axis: 1)(outs).reshaped([b, hw, k * h])
     } else {
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
     }
   } else {
@@ -170,7 +170,7 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
   if usesFlashAttention != .none {
     let crossAttention = ScaledDotProductAttention(
       scale: 1 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
   } else {
     let cK = cK.transposed(1, 2)
@@ -192,7 +192,7 @@ private func WanAttentionBlock<FloatType: TensorNumeric & BinaryFloatingPoint>(
     if usesFlashAttention != .none {
       let crossAttentionImg = ScaledDotProductAttention(
         scale: 1 / Float(k).squareRoot(),
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
       crossOutImg.add(dependencies: [crossOut])
     } else {
@@ -757,7 +757,7 @@ private func LoRAWanAttentionBlock(
       let padFrames = hw / time * causalInference.pad
       for i in 0..<((time + causalInference.0 - 1) / causalInference.0) {
         let scaledDotProductAttention = ScaledDotProductAttention(
-          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+          scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
         let query = queries.reshaped(
           [b, min(hw - i * frames, frames), h, k], offset: [0, i * frames, 0, 0],
           strides: [hw * h * k, h * k, k, 1])
@@ -776,7 +776,7 @@ private func LoRAWanAttentionBlock(
       out = Concat(axis: 1)(outs).reshaped([b, hw, k * h])
     } else {
       let scaledDotProductAttention = ScaledDotProductAttention(
-        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        scale: scale, flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       out = scaledDotProductAttention(queries, keys, values).reshaped([b, hw, k * h])
     }
   } else {
@@ -821,7 +821,7 @@ private func LoRAWanAttentionBlock(
   if usesFlashAttention != .none {
     let crossAttention = ScaledDotProductAttention(
       scale: 1 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     crossOut = crossAttention(cQ, cK, cV).reshaped([b, hw, k * h])
   } else {
     let cK = cK.transposed(1, 2)
@@ -843,7 +843,7 @@ private func LoRAWanAttentionBlock(
     if usesFlashAttention != .none {
       let crossAttentionImg = ScaledDotProductAttention(
         scale: 1 / Float(k).squareRoot(),
-        flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+        flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
       crossOutImg = crossAttentionImg(cQ, cImgK, cImgV).reshaped([b, hw, k * h])
       crossOutImg.add(dependencies: [crossOut])
     } else {

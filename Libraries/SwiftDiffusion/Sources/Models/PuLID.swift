@@ -78,7 +78,7 @@ func PuLIDCrossAttentionKeysAndValues(
   case .scaleMerged, .quantized:
     let scaledDotProductAttention = ScaledDotProductAttention(
       scale: 1.0 / Float(k).squareRoot().squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8, .Float16] : [.Float16])
+      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
     out = scaledDotProductAttention(queries, keys, values).reshaped([b, t.1, k * h])
   }
   let unifyheads = Dense(count: outputDim, noBias: true, name: "\(name)_to_out")
