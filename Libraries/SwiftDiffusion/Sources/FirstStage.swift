@@ -667,6 +667,11 @@ extension FirstStage {
         decodingTileSize.height = startHeight
         decodingTileSize.depth = startDepth
       }
+      // Without flash attention, the mid-block materializes up to 3 frames of [hw, hw] scores.
+      let decoderUsesFlashAttention =
+        usesFlashAttention
+        && min(startDepth, 3) * startWidth * startHeight * startWidth * startHeight
+          >= 256 * 176 * 256 * 176
       decoder =
         existingDecoder
         ?? WanDecoderCausal3D(
@@ -675,6 +680,7 @@ extension FirstStage {
           wan22: false,
           outputChannels: alternativeDecoderVersion == .transparent ? 4 : 3,
           highPrecisionFinalNorm: alternativeDecoderVersion == .transparent,
+          usesFlashAttention: decoderUsesFlashAttention,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
@@ -770,12 +776,18 @@ extension FirstStage {
         decodingTileSize.height = startHeight
         decodingTileSize.depth = startDepth
       }
+      // Without flash attention, the mid-block materializes up to 3 frames of [hw, hw] scores.
+      let decoderUsesFlashAttention =
+        usesFlashAttention
+        && min(startDepth, 3) * startWidth * startHeight * startWidth * startHeight
+          >= 256 * 176 * 256 * 176
       decoder =
         existingDecoder
         ?? WanDecoderCausal3D(
           channels: [256, 512, 1024, 1024], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, paddingFinalConvLayer: true,
           wan22: true, outputChannels: 3, highPrecisionFinalNorm: false,
+          usesFlashAttention: decoderUsesFlashAttention,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingDecoder == nil {
@@ -1791,12 +1803,18 @@ extension FirstStage {
         encodingTileSize.height = startHeight
         encodingTileSize.depth = startDepth
       }
+      // Without flash attention, the mid-block materializes up to 3 frames of [hw, hw] scores.
+      let encoderUsesFlashAttention =
+        usesFlashAttention
+        && min(startDepth, 3) * startWidth * startHeight * startWidth * startHeight
+          >= 256 * 176 * 256 * 176
       encoder =
         existingEncoder
         ?? WanEncoderCausal3D(
           channels: [96, 192, 384, 384], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, wan22: false,
           inputChannels: alternativeDecoderVersion == .transparent ? 4 : 3,
+          usesFlashAttention: encoderUsesFlashAttention,
           format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingEncoder == nil {
@@ -1885,12 +1903,18 @@ extension FirstStage {
         encodingTileSize.height = startHeight
         encodingTileSize.depth = startDepth
       }
+      // Without flash attention, the mid-block materializes up to 3 frames of [hw, hw] scores.
+      let encoderUsesFlashAttention =
+        usesFlashAttention
+        && min(startDepth, 3) * startWidth * startHeight * startWidth * startHeight
+          >= 256 * 176 * 256 * 176
       encoder =
         existingEncoder
         ?? WanEncoderCausal3D(
           channels: [160, 320, 640, 640], numRepeat: 2, startWidth: startWidth,
           startHeight: startHeight, startDepth: startDepth, wan22: true,
-          inputChannels: 12, format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
+          inputChannels: 12, usesFlashAttention: encoderUsesFlashAttention,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW
         ).1
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)

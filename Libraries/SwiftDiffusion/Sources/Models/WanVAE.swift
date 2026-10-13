@@ -136,7 +136,8 @@ private struct NHWCAttnBlockCausal3D {
   private let tokeys: Model
   private let tovalues: Model
   private let projOut: Model
-  init(inChannels: Int) {
+  private let usesFlashAttention: Bool
+  init(inChannels: Int, usesFlashAttention: Bool) {
     norm = RMSNorm(epsilon: 1e-6, axis: [3], name: "attn_norm")
     tokeys = Convolution(
       groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
@@ -150,6 +151,7 @@ private struct NHWCAttnBlockCausal3D {
     projOut = Convolution(
       groups: 1, filters: inChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
       format: .OIHW, name: "proj_out")
+    self.usesFlashAttention = usesFlashAttention
   }
   func callAsFunction(
     prefix: String, inChannels: Int, depth: Int, height: Int, width: Int
@@ -159,17 +161,26 @@ private struct NHWCAttnBlockCausal3D {
     let x = Input()
     var out = norm(x.reshaped([depth, height, width, inChannels]))
     let hw = width * height
-    let k = tokeys(out).reshaped([depth, hw, inChannels])
-    let q = ((1.0 / Float(inChannels).squareRoot()) * toqueries(out)).reshaped([
-      depth, hw, inChannels,
-    ])
-    var dot =
-      Matmul(transposeB: (1, 2))(q, k)
-    dot = dot.reshaped([depth * hw, hw])
-    dot = dot.softmax()
-    dot = dot.reshaped([depth, hw, hw])
-    let v = tovalues(out).reshaped([depth, hw, inChannels])
-    out = dot * v
+    if usesFlashAttention {
+      // Materializing the [depth * hw, hw] attention breaks once it exceeds 2^31 elements (2048x2048
+      // is exactly 2^32): the MPS softmax returns NaN / garbage rows past that size.
+      let k = tokeys(out).reshaped([depth, hw, 1, inChannels])
+      let q = toqueries(out).reshaped([depth, hw, 1, inChannels])
+      let v = tovalues(out).reshaped([depth, hw, 1, inChannels])
+      out = ScaledDotProductAttention(scale: 1.0 / Float(inChannels).squareRoot())(q, k, v)
+    } else {
+      let k = tokeys(out).reshaped([depth, hw, inChannels])
+      let q = ((1.0 / Float(inChannels).squareRoot()) * toqueries(out)).reshaped([
+        depth, hw, inChannels,
+      ])
+      var dot =
+        Matmul(transposeB: (1, 2))(q, k)
+      dot = dot.reshaped([depth * hw, hw])
+      dot = dot.softmax()
+      dot = dot.reshaped([depth, hw, hw])
+      let v = tovalues(out).reshaped([depth, hw, inChannels])
+      out = dot * v
+    }
     out = x + projOut(out.reshaped([depth, height, width, inChannels]))
     let mapper: ModelWeightMapper = { [norm, toqueries, tokeys, tovalues, projOut] _ in
       var mapping = ModelWeightMapping()
@@ -195,7 +206,7 @@ private struct NHWCAttnBlockCausal3D {
 private func NHWCWanDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
   startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool, outputChannels: Int,
-  highPrecisionFinalNorm: Bool
+  highPrecisionFinalNorm: Bool, usesFlashAttention: Bool
 )
   -> (ModelWeightMapper, Model)
 {
@@ -235,7 +246,8 @@ private func NHWCWanDecoderCausal3D(
   var last: Model.IO? = nil
   var midBlock1Builder = NHWCResnetBlockCausal3D(
     outChannels: previousChannel, shortcut: false, startDepth: startDepth)
-  let midAttn1Builder = NHWCAttnBlockCausal3D(inChannels: previousChannel)
+  let midAttn1Builder = NHWCAttnBlockCausal3D(
+    inChannels: previousChannel, usesFlashAttention: usesFlashAttention)
   var midBlock2Builder = NHWCResnetBlockCausal3D(
     outChannels: previousChannel, shortcut: false, startDepth: startDepth)
   var upBlockBuilders = [NHWCResnetBlockCausal3D]()
@@ -454,13 +466,31 @@ private func NHWCWanDecoderCausal3D(
             depth = depth * 2
           }
         }
-        out = Upsample(.nearest, widthScale: 2, heightScale: 2)(
-          out.reshaped([depth, height, width, channel])
-        ).reshaped([depth, height * 2, width * 2, channel])
-        width *= 2
-        height *= 2
         let conv2d = upsampleConv2d[channels.count - i - 1]
-        out = conv2d(out)
+        // The convolution returns garbage once its input exceeds 2^31 elements (1080p video with 9
+        // frames is ~2^31.75), so upsample and convolve high-resolution video in frame groups.
+        let framesPerGroup = max(1, Int(Int32.max) / (height * 2 * width * 2 * channel))
+        if depth > framesPerGroup {
+          let input = out.reshaped([depth, height, width, channel])
+          out = Concat(axis: 0)(
+            stride(from: 0, to: depth, by: framesPerGroup).map { t in
+              let frames = min(framesPerGroup, depth - t)
+              return conv2d(
+                Upsample(.nearest, widthScale: 2, heightScale: 2)(
+                  input.reshaped(
+                    [frames, height, width, channel], offset: [t, 0, 0, 0],
+                    strides: [height * width * channel, width * channel, channel, 1])))
+            })
+          width *= 2
+          height *= 2
+        } else {
+          out = Upsample(.nearest, widthScale: 2, heightScale: 2)(
+            out.reshaped([depth, height, width, channel])
+          ).reshaped([depth, height * 2, width * 2, channel])
+          width *= 2
+          height *= 2
+          out = conv2d(out)
+        }
         if let upShortcut = upShortcut {
           out = upShortcut + out
         }
@@ -552,7 +582,7 @@ private func NHWCWanDecoderCausal3D(
 
 private func NHWCWanEncoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int, startDepth: Int, wan22: Bool,
-  inputChannels: Int
+  inputChannels: Int, usesFlashAttention: Bool
 )
   -> (ModelWeightMapper, Model)
 {
@@ -611,7 +641,8 @@ private func NHWCWanEncoderCausal3D(
   var timeInputs: [Model.IO?] = Array(repeating: nil, count: channels.count - 2)
   var midBlock1Builder = NHWCResnetBlockCausal3D(
     outChannels: previousChannel, shortcut: false, startDepth: startDepth)
-  let midAttn1Builder = NHWCAttnBlockCausal3D(inChannels: previousChannel)
+  let midAttn1Builder = NHWCAttnBlockCausal3D(
+    inChannels: previousChannel, usesFlashAttention: usesFlashAttention)
   var midBlock2Builder = NHWCResnetBlockCausal3D(
     outChannels: previousChannel, shortcut: false, startDepth: startDepth)
   let normOut = RMSNorm(epsilon: 1e-6, axis: [3], name: "norm_out")
@@ -1687,14 +1718,15 @@ private func NCHWWanEncoderCausal3D(
 func WanDecoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int,
   startDepth: Int, paddingFinalConvLayer: Bool, wan22: Bool, outputChannels: Int,
-  highPrecisionFinalNorm: Bool, format: TensorFormat
+  highPrecisionFinalNorm: Bool, usesFlashAttention: Bool, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCWanDecoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
       startDepth: startDepth, paddingFinalConvLayer: paddingFinalConvLayer, wan22: wan22,
-      outputChannels: outputChannels, highPrecisionFinalNorm: highPrecisionFinalNorm)
+      outputChannels: outputChannels, highPrecisionFinalNorm: highPrecisionFinalNorm,
+      usesFlashAttention: usesFlashAttention)
   case .NCHW:
     return NCHWWanDecoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
@@ -1707,13 +1739,14 @@ func WanDecoderCausal3D(
 
 func WanEncoderCausal3D(
   channels: [Int], numRepeat: Int, startWidth: Int, startHeight: Int, startDepth: Int,
-  wan22: Bool, inputChannels: Int, format: TensorFormat
+  wan22: Bool, inputChannels: Int, usesFlashAttention: Bool, format: TensorFormat
 ) -> (ModelWeightMapper, Model) {
   switch format {
   case .NHWC:
     return NHWCWanEncoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
-      startDepth: startDepth, wan22: wan22, inputChannels: inputChannels)
+      startDepth: startDepth, wan22: wan22, inputChannels: inputChannels,
+      usesFlashAttention: usesFlashAttention)
   case .NCHW:
     return NCHWWanEncoderCausal3D(
       channels: channels, numRepeat: numRepeat, startWidth: startWidth, startHeight: startHeight,
