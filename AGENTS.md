@@ -308,6 +308,9 @@
 ## Cloudflare user-accounts Deploy Tags
 - For `Cloudflare/user-accounts` deployment workflow, tag format, and other worker-specific instructions, use `Cloudflare/user-accounts/AGENTS.md` as the source of truth.
 
+## Cloudflare getlocalcode.app Deploy Tags
+- For `Cloudflare/getlocalcode.app` deployment workflow, tag format, and other worker-specific instructions, use `Cloudflare/getlocalcode.app/AGENTS.md` as the source of truth.
+
 ## Edit Video UI (Playback Slider + Audio Mute)
 - For the clip audio button in both `EditViewController.swift` and `EditViewControllerForiPad.swift`:
   - keep the button styled like `clipButton` and anchored to `zoomButton` with trailing `-16`.
