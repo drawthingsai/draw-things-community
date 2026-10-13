@@ -125,7 +125,9 @@ private func FeedForward(
   var out = w3(x)
   if scaleFactor.projUp > 1 {
     if scaleFactor.projDown != scaleFactor.projUp {
-      out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp), scale: Float(scaleFactor.projUp) / Float(scaleFactor.projDown))
+      out = Functional.swishMul(
+        value: out, gate: gate, beta: Float(scaleFactor.projUp),
+        scale: Float(scaleFactor.projUp) / Float(scaleFactor.projDown))
     } else {
       out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp))
     }
@@ -245,9 +247,12 @@ private func ZImageTransformerBlock(
       )
     }
   case .scaleMerged, .quantized:
+    // Z Image Base has text tokens with massive V activations that dominate the shared int8 V
+    // scale, wiping out the other text tokens. Keep PV in FP16 where activations are scaled.
     let scaledDotProductAttention = ScaledDotProductAttention(
-      scale: 1.0 / Float(k).squareRoot(),
-      flags: usesFlashAttention == .quantized ? [.Int8] : [.Float16])
+      scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
+      flags: usesFlashAttention == .quantized
+        ? (scaleFactor.0.qk > 1 ? [.Int8, .Float16] : [.Int8]) : [.Float16])
     if segments.count > 1 {
       var offset = 0
       var outs = [Model.IO]()
@@ -846,7 +851,9 @@ private func LoRAFeedForward(
   var out = w3(x)
   if scaleFactor.projUp > 1 {
     if scaleFactor.projDown != scaleFactor.projUp {
-      out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp), scale: Float(scaleFactor.projUp) / Float(scaleFactor.projDown))
+      out = Functional.swishMul(
+        value: out, gate: gate, beta: Float(scaleFactor.projUp),
+        scale: Float(scaleFactor.projUp) / Float(scaleFactor.projDown))
     } else {
       out = Functional.swishMul(value: out, gate: gate, beta: Float(scaleFactor.projUp))
     }
@@ -985,11 +992,13 @@ private func LoRAZImageTransformerBlock(
     let scaledDotProductAttention: Model
     if configuration.testing {
       scaledDotProductAttention = ScaledDotProductAttention(
-        scale: 1.0 / Float(k).squareRoot(), flags: [.Int8])
+        scale: 1.0 / Float(k).squareRoot(), useHadamard: true,
+        flags: scaleFactor.0.qk > 1 ? [.Int8, .Float16] : [.Int8])
     } else {
       queries = (1.0 / Float(k).squareRoot().squareRoot()) * queries
       keys = (1.0 / Float(k).squareRoot().squareRoot()) * keys
-      scaledDotProductAttention = ScaledDotProductAttention(scale: 1, flags: [.Int8])
+      scaledDotProductAttention = ScaledDotProductAttention(
+        scale: 1, useHadamard: true, flags: scaleFactor.0.qk > 1 ? [.Int8, .Float16] : [.Int8])
     }
     if segments.count > 1 {
       var offset = 0
