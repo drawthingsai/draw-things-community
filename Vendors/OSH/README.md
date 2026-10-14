@@ -13,6 +13,45 @@ pipeline stage clone mutable shell state, options, functions, and traps, then
 restore their working directory. A virtual child runs its own `EXIT` trap and
 cannot replace the parent's trap table.
 
+`osh_ios_run` takes a complete shell invocation. The `sh` and `bash` commands
+(also `/bin/sh` and `/bin/bash`, and the matching shebangs) pass their argv to
+OSH unchanged, so OSH parses options such as `-e`, `-u`, `-o pipefail`, and
+`-l`, as well as `-c` with its `$0`, a script operand, and positional
+parameters. With neither `-c` nor a script, the script is read from the
+command's input one line at a time, so `read` and external commands in it
+consume the input that follows, as with a native shell reading from a pipe.
+Input is treated like a seekable file. An external command consumes only what
+it reads, and the rest goes back to the shell. That applies whether the
+command reads through its stdin stream (`ftell`) or its descriptor. A streaming
+pipeline's first stage consumes what it reads from the descriptor, including
+stdio read-ahead. OSH still reads a shell's whole input before it starts. When
+that input is seekable, which it is for nested shells, it is moved back to just
+past what the shell used when it finishes. So `sh`, `bash`, and scripts inside
+a piped script consume only what they read.
+`bash` selects OSH's bash personality, which sets
+`BASH_VERSION`; it is OSH, not GNU Bash. Interactive shells (`-i`) return
+status 125, and OSH 0.37 rejects `-s`.
+
+Shells nest. `sh script`, `$(bash -c ...)`, and Python's `os.system` or
+`subprocess.run(["sh", ...])` start another evaluator on their own command
+thread while the enclosing one waits. They share the session's shell state,
+which is saved and restored like a stack. Stopping a shell job sets a
+session-wide cancellation flag before the foreground command is interrupted.
+Every evaluator checks that flag before its next command, so the whole job
+stops, nested shells included. A stop that arrives after an sh/bash command
+starts but before its shell is running is picked up when that shell starts.
+sh/bash command threads are never pthread-cancelled. Native callers such as
+awk's `system()` run on pthread-cancellable threads. `ios_system_osh` defers
+their cancellation until the shell finishes, then honours it.
+
+Shell recursion runs on the C stack of the host process, roughly 5 KiB per
+shell function call. Evaluators run on 16 MiB stacks: sh/bash command threads
+get one from the command registry, and `ios_system_osh` moves to a helper thread
+when its caller's stack is smaller, as with the Bash tool's queue threads and
+Python. Runaway recursion stops with `osh: maximum recursion depth exceeded`
+and status 2 while 256 KiB of stack remain, instead of overflowing the stack
+and crashing the host.
+
 External commands write directly to file-backed stdout/stderr targets, so a
 long-running command exposes readiness and progress before it exits. Command
 substitution still captures its output.

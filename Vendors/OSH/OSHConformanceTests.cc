@@ -1,6 +1,7 @@
 #include "Vendors/OSH/osh_ios.h"
 
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -179,6 +180,7 @@ struct Result {
   int status;
   std::string output;
   std::string error;
+  long input_position;
 };
 
 std::string Read(FILE* file) {
@@ -195,8 +197,8 @@ std::string Read(FILE* file) {
   return result;
 }
 
-Result Run(const char* command, const char* input_contents = "",
-           bool cancelled = false) {
+Result RunInvocation(const std::vector<const char*>& argv,
+                     const char* input_contents = "", bool cancelled = false) {
   FILE* input = tmpfile();
   FILE* output = tmpfile();
   FILE* error = tmpfile();
@@ -207,18 +209,23 @@ Result Run(const char* command, const char* input_contents = "",
   osh_ios_config config = {RunExternal, IsCancelled, SendSignal,
                             SetSignalHandler, GetProcessId, nullptr, 1, environment,
                             &context, RunPipeline, nullptr};
-  int status = osh_ios_run(command, input, output, error, &config);
-  Result result = {status, Read(output), Read(error)};
+  int status = osh_ios_run(static_cast<int>(argv.size()), argv.data(), input,
+                           output, error, &config);
+  long input_position = ftell(input);
+  Result result = {status, Read(output), Read(error), input_position};
   fclose(input);
   fclose(output);
   fclose(error);
   return result;
 }
 
-void Expect(const char* name, const char* command, int expected_status,
-            const char* expected_output, const char* expected_error = "",
-            const char* input_contents = "", bool cancelled = false) {
-  Result result = Run(command, input_contents, cancelled);
+Result Run(const char* command, const char* input_contents = "",
+           bool cancelled = false) {
+  return RunInvocation({"osh", "-c", command}, input_contents, cancelled);
+}
+
+void ExpectResult(const char* name, const Result& result, int expected_status,
+                  const char* expected_output, const char* expected_error) {
   if (result.status != expected_status || result.output != expected_output ||
       result.error.find(expected_error) == std::string::npos) {
     fprintf(stderr,
@@ -227,6 +234,21 @@ void Expect(const char* name, const char* command, int expected_status,
             result.error.c_str());
     exit(1);
   }
+}
+
+void Expect(const char* name, const char* command, int expected_status,
+            const char* expected_output, const char* expected_error = "",
+            const char* input_contents = "", bool cancelled = false) {
+  ExpectResult(name, Run(command, input_contents, cancelled), expected_status,
+               expected_output, expected_error);
+}
+
+void ExpectInvocation(const char* name, const std::vector<const char*>& argv,
+                      int expected_status, const char* expected_output,
+                      const char* expected_error = "",
+                      const char* input_contents = "") {
+  ExpectResult(name, RunInvocation(argv, input_contents), expected_status,
+               expected_output, expected_error);
 }
 
 }  // namespace
@@ -363,6 +385,90 @@ int main() {
          "echo \"$? ${PIPESTATUS[*]}\"", 0,
          "osh: osh-ios-missing-input: No such file or directory\n0 1 0\n");
 
+  ExpectInvocation("-c name and arguments",
+                   {"sh", "-c", "printf '%s|%s|%s\\n' \"$#\" \"$0\" \"$1\"",
+                    "probe", "hello"},
+                   0, "1|probe|hello\n");
+  ExpectInvocation("-c default $0", {"sh", "-c", "echo \"$0 $#\""}, 0,
+                   "sh 0\n");
+  ExpectInvocation("-c empty arguments",
+                   {"sh", "-c", "printf '[%s]' \"$@\"; echo", "name", "", "a b"},
+                   0, "[][a b]\n");
+  ExpectInvocation("options before -c", {"sh", "-eu", "-c", "echo ok"}, 0,
+                   "ok\n");
+  ExpectInvocation("errexit option", {"sh", "-e", "-c", "false; echo no"}, 1,
+                   "");
+  ExpectInvocation("pipefail option",
+                   {"sh", "-o", "pipefail", "-c", "false | true"}, 1, "");
+  ExpectInvocation("-c exit status", {"sh", "-c", "exit 7"}, 7, "");
+  Expect("script fixture",
+         "printf '%s\\n' 'printf \"%s:%s:%s\\n\" \"$0\" \"$#\" \"$1\"' "
+         ">osh-ios-test-script",
+         0, "");
+  ExpectInvocation("script operand and arguments",
+                   {"sh", "osh-ios-test-script", "x y", "z"}, 0,
+                   "osh-ios-test-script:2:x y\n");
+  ExpectInvocation("script from input", {"sh"}, 0, "from input\n", "",
+                   "echo from input\n");
+  // The script and its commands share the input, as with a native shell
+  // reading its script from a pipe.
+  ExpectInvocation("script input shared with read", {"sh"}, 0, "word=hello\n",
+                   "", "read word\nhello\necho \"word=$word\"\n");
+  ExpectInvocation("script input shared with external command", {"sh"}, 0,
+                   "hello\n", "", "cat\nhello\n");
+  ExpectInvocation("script input left unread by external command", {"sh"}, 0,
+                   "[x]\nafter\n", "", "showargv x\necho after\n");
+  ExpectInvocation("script input partly read by external command", {"sh"}, 0,
+                   "Xafter\n", "", "takebyte\nXecho after\n");
+  ExpectInvocation("script input left unread by pipeline", {"sh"}, 0,
+                   "[a]\nafter\n", "", "showargv a | cat\necho after\n");
+  // A seekable input is left just past what the shell consumed, so an
+  // enclosing shell reading the same input continues after it.
+  for (const auto& [command, position] :
+       std::vector<std::pair<const char*, long>>{
+           {"read x", 6}, {"true", 0}, {"cat >/dev/null", 13}}) {
+    Result result = RunInvocation({"sh", "-c", command}, "first\nsecond\n");
+    if (result.status != 0 || result.input_position != position) {
+      fprintf(stderr, "sh -c '%s' left its input at %ld (expected %ld)\n",
+              command, result.input_position, position);
+      return 1;
+    }
+  }
+  ExpectInvocation("bash personality",
+                   {"bash", "-c", "[[ -n $BASH_VERSION ]] && echo bash"}, 0,
+                   "bash\n");
+  ExpectInvocation("sh personality",
+                   {"sh", "-c", "echo \"${BASH_VERSION:-none}\""}, 0,
+                   "none\n");
+  ExpectInvocation("bash login flag", {"bash", "-lc", "echo login"}, 0,
+                   "login\n");
+  ExpectInvocation("interactive shell unsupported",
+                   {"sh", "-i", "-c", "echo no"}, OSH_IOS_STATUS_UNSUPPORTED,
+                   "", "unsupported in Local Code: interactive shell");
+
+  // Shell recursion runs on the C stack. Bounded recursion works, and runaway
+  // recursion fails the shell before the stack overflows, whatever its size.
+  Expect("bounded recursion",
+         "f() { if (( $1 > 0 )); then f $(($1-1)); fi; }; f 1000; echo done", 0,
+         "done\n");
+  Expect("runaway recursion", "f() { f; }; f; echo no", 2, "",
+         "maximum recursion depth exceeded");
+  {
+    pthread_attr_t attributes;
+    pthread_attr_init(&attributes);
+    pthread_attr_setstacksize(&attributes, 512 * 1024);
+    pthread_t thread;
+    Result result = {};
+    pthread_create(&thread, &attributes, [](void* result) -> void* {
+      *static_cast<Result*>(result) = Run("f() { f; }; f; echo no");
+      return nullptr;
+    }, &result);
+    pthread_attr_destroy(&attributes);
+    pthread_join(thread, nullptr);
+    ExpectResult("runaway recursion on a 512 KiB stack", result, 2, "",
+                 "maximum recursion depth exceeded");
+  }
+
   {
     // When the disk is full, reporting a failed stdout write to stderr fails
     // too. The error must become a status instead of escaping into the host.
@@ -372,7 +478,8 @@ int main() {
     osh_ios_config config = {RunExternal, IsCancelled, SendSignal,
                               SetSignalHandler, GetProcessId, nullptr, 0, nullptr,
                               &context, RunPipeline, nullptr};
-    int status = osh_ios_run("echo no", input, unwritable, unwritable, &config);
+    const char* argv[] = {"osh", "-c", "echo no"};
+    int status = osh_ios_run(3, argv, input, unwritable, unwritable, &config);
     fclose(input);
     fclose(unwritable);
     if (status != 2) {

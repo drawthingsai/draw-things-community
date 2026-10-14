@@ -61,8 +61,13 @@ typedef struct osh_ios_config {
   int (*can_run_pipeline)(int count, const char* const names[], void* context);
 } osh_ios_config;
 
-int osh_ios_run(const char* command, FILE* input, FILE* output, FILE* error,
-                 const osh_ios_config* config);
+/* argv is a complete shell invocation, such as {"sh", "-c", "echo $1", "name",
+ * "arg"} or {"bash", "script.sh", "arg"}. OSH parses the options, script
+ * operand, $0, and positional parameters; argv[0] selects the sh or bash
+ * personality. Without -c or a script operand, the script is read from input.
+ * Interactive shells (-i) are unsupported. */
+int osh_ios_run(int argc, const char* const argv[], FILE* input, FILE* output,
+                 FILE* error, const osh_ios_config* config);
 
 #ifdef __cplusplus
 }
