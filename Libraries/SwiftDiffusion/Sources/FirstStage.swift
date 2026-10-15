@@ -618,7 +618,8 @@ extension FirstStage {
         ?? QwenImage2_1Decoder(
           channels: [1152, 1152, 576, 288, 144], height: height, width: width,
           highPrecisionKeysAndValues: highPrecisionKeysAndValues,
-          usesFlashAttention: decoderUsesFlashAttention)
+          usesFlashAttention: decoderUsesFlashAttention,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW)
       if existingDecoder == nil {
         decoder.maxConcurrency = .limit(1)
         if highPrecision {
@@ -1745,7 +1746,8 @@ extension FirstStage {
         existingEncoder
         ?? QwenImage2_1Encoder(
           channels: [96, 192, 384, 768, 768], height: height, width: width,
-          usesFlashAttention: encoderUsesFlashAttention)
+          usesFlashAttention: encoderUsesFlashAttention,
+          format: deviceProperties.isNHWCPreferred ? .NHWC : .NCHW)
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(1)
         if highPrecision {

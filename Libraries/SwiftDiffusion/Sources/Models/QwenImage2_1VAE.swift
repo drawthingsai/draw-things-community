@@ -105,7 +105,7 @@ private func NHWCUpsampleShortcut(
 }
 
 // Single-image specialization: temporal resampling convolutions are inactive for the first frame.
-public func QwenImage2_1Encoder(
+private func NHWCQwenImage2_1Encoder(
   channels: [Int], height: Int, width: Int, usesFlashAttention: Bool
 ) -> Model {
   let x = Input()
@@ -161,7 +161,7 @@ public func QwenImage2_1Encoder(
   return Model([x], [out])
 }
 
-public func QwenImage2_1Decoder(
+private func NHWCQwenImage2_1Decoder(
   channels: [Int], height: Int, width: Int, highPrecisionKeysAndValues: Bool,
   usesFlashAttention: Bool
 ) -> Model {
@@ -221,4 +221,242 @@ public func QwenImage2_1Decoder(
     format: .OIHW, name: "decoder_conv_out")
   out = convOut(normOut(out).to(of: x).swish())
   return Model([x], [out])
+}
+
+private func NCHWResnetBlock(inChannels: Int, outChannels: Int, prefix: String) -> Model {
+  let x = Input()
+  let norm1 = RMSNorm(epsilon: 1e-12, axis: [1], name: "\(prefix)_norm1")
+  let conv1 = Convolution(
+    groups: 1, filters: outChannels, filterSize: [3, 3],
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+    format: .OIHW, name: "\(prefix)_conv1")
+  let norm2 = RMSNorm(epsilon: 1e-12, axis: [1], name: "\(prefix)_norm2")
+  let conv2 = Convolution(
+    groups: 1, filters: outChannels, filterSize: [3, 3],
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+    format: .OIHW, name: "\(prefix)_conv2")
+  var out = conv2(norm2(conv1(norm1(x).swish())).swish())
+  if inChannels != outChannels {
+    let shortcut = Convolution(
+      groups: 1, filters: outChannels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+      format: .OIHW, name: "\(prefix)_conv_shortcut")
+    out = out + shortcut(x)
+  } else {
+    out = out + x
+  }
+  return Model([x], [out])
+}
+
+private func NCHWAttnBlock(channels: Int, height: Int, width: Int, prefix: String) -> Model {
+  let x = Input()
+  let norm = RMSNorm(epsilon: 1e-12, axis: [1], name: "\(prefix)_norm")
+  let toQKV = Convolution(
+    groups: 1, filters: channels * 3, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+    format: .OIHW, name: "\(prefix)_to_qkv")
+  let hw = height * width
+  let qkv = toQKV(norm(x)).reshaped([channels * 3, hw])
+  let q = qkv.reshaped([channels, hw], strides: [hw, 1])
+  let k = qkv.reshaped([channels, hw], offset: [channels, 0], strides: [hw, 1])
+  let v = qkv.reshaped([channels, hw], offset: [channels * 2, 0], strides: [hw, 1])
+  let scores = Matmul(transposeA: (0, 1))(q, k) * (1 / Float(channels).squareRoot())
+  let attended = Matmul(transposeB: (0, 1))(v, scores.softmax()).reshaped([
+    1, channels, height, width,
+  ])
+  let projOut = Convolution(
+    groups: 1, filters: channels, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+    format: .OIHW, name: "\(prefix)_proj")
+  return Model([x], [x + projOut(attended)])
+}
+
+private func NCHWDownsampleShortcut(
+  inChannels: Int, outChannels: Int, height: Int, width: Int, temporal: Int, spatial: Int
+) -> Model {
+  let x = Input()
+  if temporal == 1 && inChannels == outChannels {
+    let out = AveragePool(filterSize: [spatial, spatial], hint: Hint(stride: [spatial, spatial]))(x)
+    return Model([x], [out])
+  }
+  let h = height / spatial
+  let w = width / spatial
+  var out = x.reshaped([inChannels, h, spatial, w, spatial]).permuted(0, 2, 4, 1, 3).copied()
+    .reshaped([inChannels, 1, spatial * spatial * h * w])
+  if temporal == 2 {
+    out = out.padded(.zero, begin: [0, 1, 0], end: [0, 0, 0])
+  }
+  let group = inChannels * temporal * spatial * spatial / outChannels
+  out = out.reshaped([outChannels, group, h * w]).reduced(.mean, axis: [1])
+    .reshaped([1, outChannels, h, w])
+  return Model([x], [out])
+}
+
+private func NCHWUpsampleShortcut(
+  inChannels: Int, outChannels: Int, height: Int, width: Int, temporal: Int
+) -> Model {
+  let x = Input()
+  let out: Model.IO
+  if inChannels == outChannels {
+    out = Upsample(.nearest, widthScale: 2, heightScale: 2)(x)
+  } else if temporal == 2 {
+    // The retained temporal slice contains the odd input channels.
+    let selected = x.reshaped(
+      [outChannels, 1, height, width], offset: [0, 1, 0, 0],
+      strides: [2 * height * width, height * width, width, 1]
+    ).contiguous().reshaped([1, outChannels, height, width])
+    out = Upsample(.nearest, widthScale: 2, heightScale: 2)(selected)
+  } else {
+    // Each channel pair supplies the top and bottom rows of a spatial 2x2 block.
+    let rows = x.reshaped([outChannels, 2, height, width]).permuted(0, 2, 1, 3)
+      .contiguous().reshaped([1, outChannels, height * 2, width])
+    out = Upsample(.nearest, widthScale: 2, heightScale: 1)(rows)
+  }
+  return Model([x], [out])
+}
+
+private func NCHWQwenImage2_1Encoder(channels: [Int], height: Int, width: Int) -> Model {
+  let x = Input()
+  let convIn = Convolution(
+    groups: 1, filters: channels[0], filterSize: [3, 3],
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+    format: .OIHW, name: "encoder_conv_in")
+  var out = convIn(x.permuted(0, 3, 1, 2).contiguous().reshaped(.NCHW(1, 4, height, width)))
+  var previousChannel = channels[0]
+  var h = height
+  var w = width
+  for (i, channel) in channels.enumerated() {
+    let downsample = i < channels.count - 1
+    let shortcut = NCHWDownsampleShortcut(
+      inChannels: previousChannel, outChannels: channel, height: h, width: w,
+      temporal: i > 0 && downsample ? 2 : 1, spatial: downsample ? 2 : 1)(out)
+    for j in 0..<2 {
+      let block = NCHWResnetBlock(
+        inChannels: j == 0 ? previousChannel : channel, outChannels: channel,
+        prefix: "encoder_down_blocks_\(i)_resnets_\(j)")
+      out = block(out)
+    }
+    if downsample {
+      let conv = Convolution(
+        groups: 1, filters: channel, filterSize: [3, 3], hint: Hint(stride: [2, 2]),
+        format: .OIHW, name: "encoder_down_blocks_\(i)_downsampler_resample_1")
+      out = conv(out.padded(.zero, begin: [0, 0, 0, 0], end: [0, 0, 1, 1]))
+      h /= 2
+      w /= 2
+    }
+    out = out + shortcut
+    previousChannel = channel
+  }
+  let midBlock1 = NCHWResnetBlock(
+    inChannels: previousChannel, outChannels: previousChannel, prefix: "encoder_mid_block_resnets_0"
+  )
+  let midAttention = NCHWAttnBlock(
+    channels: previousChannel, height: h, width: w, prefix: "encoder_mid_block_attentions_0")
+  let midBlock2 = NCHWResnetBlock(
+    inChannels: previousChannel, outChannels: previousChannel, prefix: "encoder_mid_block_resnets_1"
+  )
+  out = midBlock2(midAttention(midBlock1(out)))
+  let normOut = RMSNorm(epsilon: 1e-12, axis: [1], name: "encoder_norm_out")
+  let convOut = Convolution(
+    groups: 1, filters: 128, filterSize: [3, 3],
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+    format: .OIHW, name: "encoder_conv_out")
+  let quantConv = Convolution(
+    groups: 1, filters: 128, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+    format: .OIHW, name: "quant_conv")
+  out = quantConv(convOut(normOut(out).swish())).permuted(0, 2, 3, 1).contiguous().reshaped(
+    .NHWC(1, h, w, 128))
+  return Model([x], [out])
+}
+
+private func NCHWQwenImage2_1Decoder(
+  channels: [Int], height: Int, width: Int, highPrecisionKeysAndValues: Bool
+) -> Model {
+  let x = Input()
+  let postQuantConv = Convolution(
+    groups: 1, filters: 64, filterSize: [1, 1], hint: Hint(stride: [1, 1]),
+    format: .OIHW, name: "post_quant_conv")
+  let convIn = Convolution(
+    groups: 1, filters: channels[0], filterSize: [3, 3],
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+    format: .OIHW, name: "decoder_conv_in")
+  var out = convIn(
+    postQuantConv(x.permuted(0, 3, 1, 2).contiguous().reshaped(.NCHW(1, 64, height, width))))
+  let midBlock1 = NCHWResnetBlock(
+    inChannels: channels[0], outChannels: channels[0], prefix: "decoder_mid_block_resnets_0")
+  let midAttention = NCHWAttnBlock(
+    channels: channels[0], height: height, width: width, prefix: "decoder_mid_block_attentions_0")
+  let midBlock2 = NCHWResnetBlock(
+    inChannels: channels[0], outChannels: channels[0], prefix: "decoder_mid_block_resnets_1")
+  out = midBlock2(midAttention(midBlock1(out)))
+  var previousChannel = channels[0]
+  var h = height
+  var w = width
+  for (i, channel) in channels.enumerated() {
+    let upsample = i < channels.count - 1
+    let shortcut =
+      upsample
+      ? NCHWUpsampleShortcut(
+        inChannels: previousChannel, outChannels: channel, height: h, width: w,
+        temporal: i < 3 ? 2 : 1)(out) : nil
+    for j in 0..<3 {
+      let block = NCHWResnetBlock(
+        inChannels: j == 0 ? previousChannel : channel, outChannels: channel,
+        prefix: "decoder_up_blocks_\(i)_resnets_\(j)")
+      out = block(out)
+    }
+    if let shortcut = shortcut {
+      let conv = Convolution(
+        groups: 1, filters: channel, filterSize: [3, 3],
+        hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+        format: .OIHW, name: "decoder_up_blocks_\(i)_upsampler_resample_1")
+      // The final two upsamplers and residual stages can exceed FP16 range.
+      // Return to input precision after the final normalization.
+      out = conv(Upsample(.nearest, widthScale: 2, heightScale: 2)(out)) + shortcut
+      if i == channels.count - 4, !highPrecisionKeysAndValues {
+        out = out.to(.Float32)
+      }
+      h *= 2
+      w *= 2
+    }
+    previousChannel = channel
+  }
+  let normOut = RMSNorm(epsilon: 1e-12, axis: [1], name: "decoder_norm_out")
+  let convOut = Convolution(
+    groups: 1, filters: 4, filterSize: [3, 3],
+    hint: Hint(stride: [1, 1], border: Hint.Border(begin: [1, 1], end: [1, 1])),
+    format: .OIHW, name: "decoder_conv_out")
+  out = convOut(normOut(out).to(of: x).swish()).permuted(0, 2, 3, 1).contiguous().reshaped(
+    .NHWC(1, h, w, 4))
+  return Model([x], [out])
+}
+
+public func QwenImage2_1Encoder(
+  channels: [Int], height: Int, width: Int, usesFlashAttention: Bool, format: TensorFormat
+) -> Model {
+  switch format {
+  case .NHWC:
+    return NHWCQwenImage2_1Encoder(
+      channels: channels, height: height, width: width, usesFlashAttention: usesFlashAttention)
+  case .NCHW:
+    return NCHWQwenImage2_1Encoder(channels: channels, height: height, width: width)
+  case .CHWN:
+    fatalError()
+  }
+}
+
+public func QwenImage2_1Decoder(
+  channels: [Int], height: Int, width: Int, highPrecisionKeysAndValues: Bool,
+  usesFlashAttention: Bool, format: TensorFormat
+) -> Model {
+  switch format {
+  case .NHWC:
+    return NHWCQwenImage2_1Decoder(
+      channels: channels, height: height, width: width,
+      highPrecisionKeysAndValues: highPrecisionKeysAndValues,
+      usesFlashAttention: usesFlashAttention)
+  case .NCHW:
+    return NCHWQwenImage2_1Decoder(
+      channels: channels, height: height, width: width,
+      highPrecisionKeysAndValues: highPrecisionKeysAndValues)
+  case .CHWN:
+    fatalError()
+  }
 }

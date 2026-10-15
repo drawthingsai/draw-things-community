@@ -14,23 +14,23 @@ final class QwenImage2_1Tests: XCTestCase {
     graph.withNoGrad {
       for size in [512, 1024, 2048] {
         for decode in [false, true] {
-          for flash in [false, true] {
+          for (format, flash) in [(TensorFormat.NHWC, false), (.NHWC, true), (.NCHW, false)] {
             let input = graph.variable(
               .GPU(0),
               decode ? .NHWC(1, size / 16, size / 16, 64) : .NHWC(1, size, size, 4),
               of: Float16.self)
             input.full(0.25)
-            print("VAE_BENCH_START size=\(size) decode=\(decode) flash=\(flash)")
+            print("VAE_BENCH_START size=\(size) decode=\(decode) format=\(format) flash=\(flash)")
             fflush(stdout)
             let buildStart = Date.timeIntervalSinceReferenceDate
             let model =
               decode
               ? QwenImage2_1Decoder(
                 channels: [1152, 1152, 576, 288, 144], height: size / 16, width: size / 16,
-                highPrecisionKeysAndValues: false, usesFlashAttention: flash)
+                highPrecisionKeysAndValues: false, usesFlashAttention: flash, format: format)
               : QwenImage2_1Encoder(
                 channels: [96, 192, 384, 768, 768], height: size, width: size,
-                usesFlashAttention: flash)
+                usesFlashAttention: flash, format: format)
             model.maxConcurrency = .limit(1)
             model.compile(inputs: input)
             let buildTime = Date.timeIntervalSinceReferenceDate - buildStart
@@ -57,7 +57,7 @@ final class QwenImage2_1Tests: XCTestCase {
               }
             }
             print(
-              "VAE_BENCH size=\(size) decode=\(decode) flash=\(flash) build=\(buildTime) load=\(loadTime) first=\(times[0]) warm=\(Array(times.dropFirst())) nonfinite=\(nonfinite)"
+              "VAE_BENCH size=\(size) decode=\(decode) format=\(format) flash=\(flash) build=\(buildTime) load=\(loadTime) first=\(times[0]) warm=\(Array(times.dropFirst())) nonfinite=\(nonfinite)"
             )
             fflush(stdout)
             XCTAssertEqual(nonfinite, 0)
@@ -183,7 +183,7 @@ final class QwenImage2_1Tests: XCTestCase {
         for (useFloat16, flash) in [(false, false), (true, false), (true, true)] {
           let model = QwenImage2_1Decoder(
             channels: [1152, 1152, 576, 288, 144], height: height, width: width,
-            highPrecisionKeysAndValues: false, usesFlashAttention: flash)
+            highPrecisionKeysAndValues: false, usesFlashAttention: flash, format: .NHWC)
           let x: DynamicGraph.AnyTensor =
             useFloat16 ? input : DynamicGraph.Tensor<Float>(from: input)
           model.maxConcurrency = .limit(1)
@@ -413,85 +413,87 @@ final class QwenImage2_1Tests: XCTestCase {
     }
   }
 
-  func testNHWCVAEParity() throws {
+  func testVAEParity() throws {
     guard let path = ProcessInfo.processInfo.environment["QWEN_IMAGE_2_1_VAE_CHECKPOINT"] else {
       throw XCTSkip("Set QWEN_IMAGE_2_1_VAE_CHECKPOINT to the converted f16 VAE checkpoint")
     }
-    for (encoder, useFloat16, flash) in [
-      (true, false, false), (false, false, false), (true, true, false), (false, true, false),
-      (true, false, true), (false, false, true), (true, true, true), (false, true, true),
-    ] {
-      let graph = DynamicGraph()
-      graph.withNoGrad {
-        let height = encoder ? 32 : 2
-        let width = encoder ? 48 : 3
-        let channels = encoder ? 4 : 64
-        var input = Tensor<Float>(.CPU, .NHWC(1, height, width, channels))
-        for y in 0..<height {
-          for x in 0..<width {
-            for c in 0..<channels {
-              input[0, y, x, c] = sin(Float(y * width * channels + x * channels + c) * 0.03)
+    for format in [TensorFormat.NHWC, .NCHW] {
+      for (encoder, useFloat16, flash) in [
+        (true, false, false), (false, false, false), (true, true, false), (false, true, false),
+        (true, false, true), (false, false, true), (true, true, true), (false, true, true),
+      ] where format == .NHWC || !flash {
+        let graph = DynamicGraph()
+        graph.withNoGrad {
+          let height = encoder ? 32 : 2
+          let width = encoder ? 48 : 3
+          let channels = encoder ? 4 : 64
+          var input = Tensor<Float>(.CPU, .NHWC(1, height, width, channels))
+          for y in 0..<height {
+            for x in 0..<width {
+              for c in 0..<channels {
+                input[0, y, x, c] = sin(Float(y * width * channels + x * channels + c) * 0.03)
+              }
             }
           }
-        }
-        let model =
-          encoder
-          ? QwenImage2_1Encoder(
-            channels: [96, 192, 384, 768, 768], height: height, width: width,
-            usesFlashAttention: flash)
-          : QwenImage2_1Decoder(
-            channels: [1152, 1152, 576, 288, 144], height: height, width: width,
-            highPrecisionKeysAndValues: false, usesFlashAttention: flash)
-        let baseline = QwenImage2_1VAEReference(encoder: encoder, height: height, width: width).0
-        let x: DynamicGraph.AnyTensor =
-          useFloat16
-          ? graph.variable(Tensor<Float16>(from: input).toGPU(0)) : graph.variable(input.toGPU(0))
-        model.maxConcurrency = .limit(1)
-        baseline.maxConcurrency = .limit(1)
-        model.compile(inputs: x)
-        baseline.compile(inputs: x)
-        graph.openStore(
-          path, flags: .readOnly, externalStore: TensorData.externalStore(filePath: path)
-        ) {
-          try! $0.read(
-            encoder ? "encoder" : "decoder", model: model, strict: true,
-            codec: [.externalData(.mmap)])
-          try! $0.read(
-            encoder ? "encoder" : "decoder", model: baseline, strict: true,
-            codec: [.externalData(.mmap)])
-        }
-        let actualOutput = model(inputs: x)[0]
-        let expectedOutput = baseline(inputs: x)[0]
-        let actual =
-          useFloat16
-          ? Tensor<Float>(from: actualOutput.as(of: Float16.self).rawValue.toCPU())
-          : actualOutput.as(of: Float.self).rawValue.toCPU()
-        let expected =
-          useFloat16
-          ? Tensor<Float>(from: expectedOutput.as(of: Float16.self).rawValue.toCPU())
-          : expectedOutput.as(of: Float.self).rawValue.toCPU()
-        XCTAssertEqual(Array(actual.shape), Array(expected.shape))
-        var squaredError: Double = 0
-        var squaredSignal: Double = 0
-        var maximum: Float = 0
-        for y in 0..<actual.shape[1] {
-          for x in 0..<actual.shape[2] {
-            for c in 0..<actual.shape[3] {
-              let a = actual[0, y, x, c]
-              let b = expected[0, y, x, c]
-              XCTAssertTrue(a.isFinite)
-              maximum = max(maximum, abs(a - b))
-              squaredError += Double((a - b) * (a - b))
-              squaredSignal += Double(b * b)
+          let model =
+            encoder
+            ? QwenImage2_1Encoder(
+              channels: [96, 192, 384, 768, 768], height: height, width: width,
+              usesFlashAttention: flash, format: format)
+            : QwenImage2_1Decoder(
+              channels: [1152, 1152, 576, 288, 144], height: height, width: width,
+              highPrecisionKeysAndValues: false, usesFlashAttention: flash, format: format)
+          let baseline = QwenImage2_1VAEReference(encoder: encoder, height: height, width: width).0
+          let x: DynamicGraph.AnyTensor =
+            useFloat16
+            ? graph.variable(Tensor<Float16>(from: input).toGPU(0)) : graph.variable(input.toGPU(0))
+          model.maxConcurrency = .limit(1)
+          baseline.maxConcurrency = .limit(1)
+          model.compile(inputs: x)
+          baseline.compile(inputs: x)
+          graph.openStore(
+            path, flags: .readOnly, externalStore: TensorData.externalStore(filePath: path)
+          ) {
+            try! $0.read(
+              encoder ? "encoder" : "decoder", model: model, strict: true,
+              codec: [.externalData(.mmap)])
+            try! $0.read(
+              encoder ? "encoder" : "decoder", model: baseline, strict: true,
+              codec: [.externalData(.mmap)])
+          }
+          let actualOutput = model(inputs: x)[0]
+          let expectedOutput = baseline(inputs: x)[0]
+          let actual =
+            useFloat16
+            ? Tensor<Float>(from: actualOutput.as(of: Float16.self).rawValue.toCPU())
+            : actualOutput.as(of: Float.self).rawValue.toCPU()
+          let expected =
+            useFloat16
+            ? Tensor<Float>(from: expectedOutput.as(of: Float16.self).rawValue.toCPU())
+            : expectedOutput.as(of: Float.self).rawValue.toCPU()
+          XCTAssertEqual(Array(actual.shape), Array(expected.shape))
+          var squaredError: Double = 0
+          var squaredSignal: Double = 0
+          var maximum: Float = 0
+          for y in 0..<actual.shape[1] {
+            for x in 0..<actual.shape[2] {
+              for c in 0..<actual.shape[3] {
+                let a = actual[0, y, x, c]
+                let b = expected[0, y, x, c]
+                XCTAssertTrue(a.isFinite)
+                maximum = max(maximum, abs(a - b))
+                squaredError += Double((a - b) * (a - b))
+                squaredSignal += Double(b * b)
+              }
             }
           }
+          let relative = sqrt(squaredError / max(squaredSignal, 1e-12))
+          print(
+            "Qwen2.1 VAE parity format=\(format) encoder=\(encoder) fp16=\(useFloat16) flash=\(flash): relative RMS=\(relative), max=\(maximum)"
+          )
+          XCTAssertLessThan(relative, useFloat16 ? 0.01 : 0.001)
+          XCTAssertLessThan(maximum, useFloat16 ? 0.1 : 0.01)
         }
-        let relative = sqrt(squaredError / max(squaredSignal, 1e-12))
-        print(
-          "Qwen2.1 VAE parity encoder=\(encoder) fp16=\(useFloat16) flash=\(flash): relative RMS=\(relative), max=\(maximum)"
-        )
-        XCTAssertLessThan(relative, useFloat16 ? 0.01 : 0.001)
-        XCTAssertLessThan(maximum, useFloat16 ? 0.1 : 0.01)
       }
     }
   }

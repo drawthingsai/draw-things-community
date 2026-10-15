@@ -100,6 +100,7 @@ Fixed-prefix validation on 2026-09-21:
 - Separate VAE encoder/decoder builders keep activations NHWC, including attention and resampling shortcuts. The downsampling shortcut follows WanVAE's explicit permutation/copy before channel grouping.
 - Eight checkpoint-backed DiT comparisons against the frozen full-sequence implementation pass with relative RMS error 0.107–0.221%, maximum absolute error 0.01465, and unchanged checkpoint parameter names.
 - The NHWC encoder and decoder match the frozen NCHW implementation on rectangular inputs with relative RMS errors 0.00359% and 0.00712%, respectively. Maximum absolute errors are 0.001606 and 0.000419. Both load the existing VAE checkpoint strictly.
+- The VAE builders also take a `format`; FirstStage selects NCHW when the device does not prefer NHWC. The NCHW graph normalizes over the channel axis, has no Flash Attention path (like the other NCHW VAEs), and keeps NHWC input and output. `testVAEParity` covers both formats. NCHW encoder and decoder relative RMS errors are 0.0038% and 0.0021% in FP32, 0.045% and 0.082% in FP16. With NCHW forced in FirstStage, a 1024x768 CLI decode matched NHWC within 2/255 per channel.
 
 To include VAE parity in the checkpoint test, add:
 
