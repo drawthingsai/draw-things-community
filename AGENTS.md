@@ -69,6 +69,15 @@
 - Do not introduce `DispatchQueue`, `DispatchGroup`, or `DispatchSemaphore` in utility functions to simulate sync/async behavior unless absolutely necessary.
 - Keep utility functions thread-agnostic and leave threading/queue decisions to upper-level call sites.
 
+## In-App Coordination (No NotificationCenter)
+- Do not use `NotificationCenter` to coordinate between our own types inside the app. Observing system notifications (UIKit, AppKit, AVFoundation) is fine.
+- Reach an owner through its `XDelegate` protocol. For shared state that several owners watch, such as a process-wide registry, expose it as a Combine `CurrentValueSubject`:
+  - send the full current state on every change, not deltas; subscribers re-read the whole value.
+  - `.value` is the snapshot, and a late subscriber receives the current value on subscribe, so there is no separate snapshot API or change notification.
+  - compute and send under the lock that guards the state, so changes on different threads publish in order and the last value sent is current.
+  - subscribe with `.receive(on: DispatchQueue.main)` before touching UI or calling back into the publisher's owner.
+- Subscribe in the workflow that uses the state, not in a parent that forwards it. Example: `SettingsWorkflow` subscribes to `BashJobRegistry.runningJobs` for the Activities Processes section.
+
 ## Inline Logic vs Helpers
 - Prefer in-place logic for small, local behavior changes, especially in UI workflows and short persistence paths.
 - Do not introduce one-off private helpers for a few lines of straightforward code unless the logic is reused or the extracted name captures a real domain concept.
