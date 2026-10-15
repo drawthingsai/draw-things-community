@@ -342,6 +342,59 @@ public struct DeviceCapability {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
     return physicalMemory >= 128 * 1_024 * 1_024 * 1_024
   }()
+  // Apple's GPU driver publishes its core count in the I/O Registry. IOKit has no Swift module on
+  // iOS, so its public calls are looked up by name. Nil when the registry can't be read.
+  public static let numberOfGPUCores: Int? = {
+    #if !canImport(Metal)
+      return nil
+    #else
+      typealias ServiceMatching = @convention(c) (UnsafePointer<CChar>) -> Unmanaged<
+        CFMutableDictionary
+      >?
+      typealias GetMatchingService = @convention(c) (
+        mach_port_t, Unmanaged<CFMutableDictionary>?
+      ) -> mach_port_t
+      typealias CreateCFProperty = @convention(c) (
+        mach_port_t, Unmanaged<CFString>, Unmanaged<CFAllocator>?, UInt32
+      ) -> Unmanaged<AnyObject>?
+      typealias ObjectRelease = @convention(c) (mach_port_t) -> Int32
+      guard let handle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY),
+        let serviceMatching = dlsym(handle, "IOServiceMatching"),
+        let getMatchingService = dlsym(handle, "IOServiceGetMatchingService"),
+        let createCFProperty = dlsym(handle, "IORegistryEntryCreateCFProperty"),
+        let objectRelease = dlsym(handle, "IOObjectRelease")
+      else { return nil }
+      // The matching dictionary is consumed by the lookup; the main port defaults to the null port.
+      let matching = unsafeBitCast(serviceMatching, to: ServiceMatching.self)("AGXAccelerator")
+      let service = unsafeBitCast(getMatchingService, to: GetMatchingService.self)(0, matching)
+      guard service != 0 else { return nil }
+      defer { _ = unsafeBitCast(objectRelease, to: ObjectRelease.self)(service) }
+      let key = "gpu-core-count" as CFString
+      let property = withExtendedLifetime(key) {
+        unsafeBitCast(createCFProperty, to: CreateCFProperty.self)(
+          service, Unmanaged.passUnretained(key), nil, 0)
+      }
+      return property?.takeRetainedValue() as? Int
+    #endif
+  }()
+  // Prefill saturates an Apple10 GPU at about 100 tokens per core, so only its Ultra chips (more
+  // than 40 cores) gain from 8,192-token chunks. Smaller GPUs keep 4,096 because larger chunks still
+  // amortize streamed expert weights. Each chunk's activations grow with its length, so RAM caps it.
+  public static let chunkedPrefillMaxLength: Int = {
+    guard !shouldConserveMemoryForSmallLLM else { return 2_048 }
+    #if canImport(Metal)
+      if #available(iOS 26, macOS 26, macCatalyst 26, *) {
+        let physicalMemory = ProcessInfo.processInfo.physicalMemory
+        if physicalMemory >= 67_645_734_912,  // This is 63 * 1024 * 1024 * 1024.
+          let numberOfGPUCores, numberOfGPUCores > 40,
+          let device = MTLCreateSystemDefaultDevice(), device.supportsFamily(.apple10)
+        {
+          return 8_192
+        }
+      }
+    #endif
+    return 4_096
+  }()
   public static var memoryCapacity: MemoryCapacity = {
     let physicalMemory = ProcessInfo.processInfo.physicalMemory
     if physicalMemory >= 33_285_996_544 {  // This is 31 * 1024 * 1024 * 1024.
