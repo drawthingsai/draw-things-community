@@ -39,9 +39,8 @@ public struct WebFetch {
     request.httpMethod = "GET"
     request.timeoutInterval = options.timeout
     let userAgent = options.userAgent.trimmingCharacters(in: .whitespacesAndNewlines)
-    request.setValue(
-      userAgent.isEmpty ? WebSearchDefaultUserAgent : userAgent, forHTTPHeaderField: "User-Agent")
-    request.setValue(options.format.acceptHeader, forHTTPHeaderField: "Accept")
+    request.setSafariNavigationHeaders(
+      userAgent: userAgent.isEmpty ? WebSearchDefaultUserAgent : userAgent)
 
     let start = Date()
     httpTransport.data(for: request) { result in

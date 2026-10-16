@@ -60,6 +60,8 @@
           webView.onLoad = { [weak webView] request in
             loads += 1
             XCTAssertNil(request.value(forHTTPHeaderField: "User-Agent"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "Accept"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "Sec-Fetch-Mode"))
             XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
             if loads == 2 { webView?.html = self.results }
           }

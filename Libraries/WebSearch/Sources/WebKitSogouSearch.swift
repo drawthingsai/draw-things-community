@@ -97,14 +97,12 @@
             endpoint: URL(string: "https://www.sogou.com/web")!, query: query, page: 1,
             options: options)
           // Use WebKit's native user agent, cookie handling and navigation headers.
-          request.setValue(nil, forHTTPHeaderField: "User-Agent")
+          request.removeSafariNavigationHeaders()
           request.cachePolicy = .reloadIgnoringLocalCacheData
           initialRequest = request
           let configuration = WKWebViewConfiguration()
           configuration.websiteDataStore = .default()
-          #if os(iOS)
-            configuration.defaultWebpagePreferences.preferredContentMode = .desktop
-          #endif
+          SafariUserAgent.apply(to: configuration, desktop: true)
           let webView = makeWebView(configuration)
           self.webView = webView
           webView.navigationDelegate = self
@@ -208,7 +206,7 @@
             var request = try SogouSearch.makeRequest(
               endpoint: URL(string: "https://www.sogou.com/web")!, query: self.query,
               page: self.page, options: self.options)
-            request.setValue(nil, forHTTPHeaderField: "User-Agent")
+            request.removeSafariNavigationHeaders()
             request.cachePolicy = .reloadIgnoringLocalCacheData
             self.deadline = Date().addingTimeInterval(max(1, self.options.timeout))
             self.didCommit = false

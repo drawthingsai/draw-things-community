@@ -1,9 +1,8 @@
 import Foundation
 
-/// Browser-style user agent used by default for web search and fetch requests.
-public let WebSearchDefaultUserAgent =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/537.36 "
-  + "(KHTML, like Gecko) Chrome/135.0.7049.95 Safari/537.36"
+/// User agent used by default for web search and fetch requests: Safari's, since URLSession
+/// shares Safari's network stack and so presents Safari's TLS and HTTP/2 behavior.
+public let WebSearchDefaultUserAgent = SafariUserAgent.desktop
 
 /// Search provider used for web search requests.
 public enum WebSearchProvider: CaseIterable, Equatable {
@@ -256,15 +255,6 @@ public enum WebFetchFormat: String, Codable {
   case text
   /// Return decoded response text without conversion.
   case html
-
-  var acceptHeader: String {
-    switch self {
-    case .markdown, .text:
-      return "text/html,application/xhtml+xml,text/plain,*/*;q=0.8"
-    case .html:
-      return "text/html,application/xhtml+xml,*/*;q=0.8"
-    }
-  }
 }
 
 /// Options for fetching one URL directly.

@@ -183,8 +183,7 @@ public struct DuckDuckGoSearch {
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
     request.timeoutInterval = options.timeout
-    request.setValue(options.userAgent, forHTTPHeaderField: "User-Agent")
-    request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+    request.setSafariNavigationHeaders(userAgent: options.userAgent)
     return request
   }
 
@@ -194,8 +193,9 @@ public struct DuckDuckGoSearch {
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
     request.timeoutInterval = options.timeout
-    request.setValue(options.userAgent, forHTTPHeaderField: "User-Agent")
-    request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+    // The next-page form posts from the results page, whose referrer policy is origin.
+    request.setSafariNavigationHeaders(
+      userAgent: options.userAgent, referrer: URL(string: "/", relativeTo: endpoint)?.absoluteURL)
     request.setValue(
       "application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
     request.httpBody = Self.formURLEncodedData(parameters)

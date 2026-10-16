@@ -61,6 +61,10 @@
           XCTAssertEqual(items.first(where: { $0.name == "query" })?.value, "C++ 搜索")
           XCTAssertEqual(items.first(where: { $0.name == "tsn" })?.value, "2")
           XCTAssertNil(request.value(forHTTPHeaderField: "User-Agent"))
+          XCTAssertNil(request.value(forHTTPHeaderField: "Accept"))
+          XCTAssertNil(request.value(forHTTPHeaderField: "Sec-Fetch-Mode"))
+          XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Accept-Language"), "zh-CN,zh;q=0.9,en;q=0.8")
           XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
           webView?.html = self.results
           if page == "2" {

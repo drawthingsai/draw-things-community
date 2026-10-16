@@ -172,8 +172,7 @@ public struct SogouSearch {
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
     request.timeoutInterval = options.timeout
-    request.setValue(options.userAgent, forHTTPHeaderField: "User-Agent")
-    request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+    request.setSafariNavigationHeaders(userAgent: options.userAgent)
     request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
     return request
   }

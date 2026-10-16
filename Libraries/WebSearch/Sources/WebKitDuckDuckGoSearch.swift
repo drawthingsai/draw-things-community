@@ -95,11 +95,12 @@
           var request = try DuckDuckGoSearch.makeInitialRequest(
             endpoint: URL(string: "https://duckduckgo.com/")!, query: query, options: options)
           // Use WebKit's native user agent, cookie handling and navigation headers.
-          request.setValue(nil, forHTTPHeaderField: "User-Agent")
+          request.removeSafariNavigationHeaders()
           request.cachePolicy = .reloadIgnoringLocalCacheData
           initialRequest = request
           let configuration = WKWebViewConfiguration()
           configuration.websiteDataStore = .default()
+          SafariUserAgent.apply(to: configuration)
           let webView = makeWebView(configuration)
           self.webView = webView
           webView.navigationDelegate = self

@@ -86,8 +86,31 @@ final class WebSearchTests: XCTestCase {
     XCTAssertEqual(queryItems["kp"], "-2")
     XCTAssertEqual(queryItems["df"], "w")
     XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
-    XCTAssertTrue(request.value(forHTTPHeaderField: "User-Agent")?.contains("Mozilla/5.0") == true)
-    XCTAssertTrue(request.value(forHTTPHeaderField: "User-Agent")?.contains("Chrome/") == true)
+    XCTAssertTrue(
+      request.value(forHTTPHeaderField: "User-Agent")?.hasSuffix(
+        "(KHTML, like Gecko) Version/\(SafariUserAgent.version) Safari/605.1.15") == true)
+    XCTAssertEqual(
+      request.value(forHTTPHeaderField: "Accept"),
+      "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Sec-Fetch-Site"), "none")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Sec-Fetch-Mode"), "navigate")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Sec-Fetch-Dest"), "document")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Priority"), "u=0, i")
+    XCTAssertNil(request.value(forHTTPHeaderField: "Referer"))
+    XCTAssertNil(request.value(forHTTPHeaderField: "Origin"))
+  }
+
+  func testDuckDuckGoNextPagePostsFromResultsPage() {
+    let request = DuckDuckGoSearch.makeNextRequest(
+      endpoint: URL(string: "https://html.duckduckgo.com/html/")!, parameters: [("s", "10")],
+      options: DuckDuckGoSearchOptions())
+    XCTAssertEqual(request.httpMethod, "POST")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Sec-Fetch-Site"), "same-origin")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Origin"), "https://html.duckduckgo.com")
+    XCTAssertEqual(request.value(forHTTPHeaderField: "Referer"), "https://html.duckduckgo.com/")
+    XCTAssertEqual(
+      request.value(forHTTPHeaderField: "Content-Type"),
+      "application/x-www-form-urlencoded; charset=utf-8")
   }
 
   func testDuckDuckGoAccessChallengeDetection() async throws {
@@ -757,7 +780,8 @@ final class WebSearchTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), WebSearchDefaultUserAgent)
         XCTAssertEqual(
           request.value(forHTTPHeaderField: "Accept"),
-          WebFetchFormat.markdown.acceptHeader)
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Sec-Fetch-Mode"), "navigate")
         return .success((Data(html.utf8), response))
       })
 
