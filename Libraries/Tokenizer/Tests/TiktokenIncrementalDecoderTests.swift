@@ -104,11 +104,41 @@ final class TiktokenIncrementalDecoderTests: XCTestCase {
       ).0,
       [0, 11_932, 1])
     XCTAssertEqual(tokenizer.tokenize(text: "\u{200b}\u{0000}").0, [35_020, 191])
+    // Digits and CJK are split out before the main regex, so the spaces before them stay one
+    // piece and "Swift" is not merged with the following CJK. Ids are from Hugging Face.
+    XCTAssertEqual(
+      tokenizer.tokenize(text: "        0,\n使用Swift编写  中文\r\ne\u{301}").0,
+      [385, 18, 989, 2_541, 101_988, 32_000, 262, 21_134, 204, 201, 71, 17_793])
     for text in [
       "\u{200b}\u{0000}text", "text\u{200b}\u{0000}", "a\u{200b}\u{0000}b",
       "\u{200b}<｜begin▁of▁sentence｜>\u{0000}<｜end▁of▁sentence｜>\u{200b}",
     ] {
       XCTAssertEqual(tokenizer.decode(tokenizer.tokenize(text: text).0), text)
     }
+  }
+
+  // Expected ids come from Hugging Face tokenizers with Qwen/Qwen3.5-27B tokenizer.json.
+  func testQwen3_5PretokenizationMatchesHuggingFace() {
+    let tokenizer = TiktokenTokenizer(
+      vocabulary: BinaryResources.vocab_qwen3_5_json,
+      merges: BinaryResources.merges_qwen3_5_txt,
+      specialTokens: ["<|endoftext|>": 248_044, "<|im_start|>": 248_045, "<|im_end|>": 248_046],
+      unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|im_end|>",
+      pretokenizer: .qwen3_5)
+
+    // Indentation and repeated spaces are preserved; the rank-0 merge "Ġ Ġ" is loaded.
+    let code = "    if x  == 1:\n        return  y \n"
+    XCTAssertEqual(
+      tokenizer.tokenize(text: code).0,
+      [262, 413, 830, 220, 606, 220, 16, 25, 198, 285, 460, 220, 374, 695])
+    XCTAssertEqual(tokenizer.decode(tokenizer.tokenize(text: code).0), code)
+    // Single digits, NFC, "\r\n" and combining marks.
+    XCTAssertEqual(
+      tokenizer.tokenize(text: "v12345 cafe\u{301} caf\u{e9}\r\nक्षत्रिय").0,
+      [85, 16, 17, 18, 19, 20, 50_203, 50_203, 317, 151_858, 150_422, 153_503])
+    // A special token followed by a combining mark.
+    XCTAssertEqual(
+      tokenizer.tokenize(text: "<|im_start|>a  b<|im_end|>\u{338}").0,
+      [248_045, 64, 220, 292, 248_046, 136, 116])
   }
 }

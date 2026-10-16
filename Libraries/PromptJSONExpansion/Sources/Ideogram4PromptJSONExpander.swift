@@ -94,7 +94,7 @@ public struct Ideogram4PromptJSONExpander {
     vocabulary: BinaryResources.vocab_qwen3_5_json,
     merges: BinaryResources.merges_qwen3_5_txt,
     specialTokens: specialTokens, unknownToken: "<|endoftext|>",
-    startToken: "<|endoftext|>", endToken: "<|im_end|>")
+    startToken: "<|endoftext|>", endToken: "<|im_end|>", pretokenizer: .qwen3_5)
 
   public let model: Model
   public let modelFilePath: String

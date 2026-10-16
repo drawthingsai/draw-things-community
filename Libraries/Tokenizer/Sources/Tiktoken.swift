@@ -2,8 +2,12 @@ import Foundation
 
 public struct TiktokenTokenizer {
   public enum Pretokenizer: Equatable {
+    // Collapses runs of spaces before splitting, which is fine for image prompts but not code.
     case llama3
+    // The following match Hugging Face tokenizer.json exactly and preserve whitespace.
     case joyAI
+    case glm5
+    case qwen3_5
   }
 
   private struct Pair: Hashable, Equatable {
@@ -24,11 +28,15 @@ public struct TiktokenTokenizer {
   public let endToken: Int32
   private let specialTokensRegex: Any?
   private let pretokenizer: Pretokenizer
+  private let ignoreMerges: Bool
 
+  // `ignoreMerges` mirrors tokenizer.json `model.ignore_merges`: a pretoken found in the
+  // vocabulary is emitted as one token without running BPE merges.
   public init(
     vocabulary: Data, merges: Data, specialTokens: [String: Int32] = [:],
     unknownToken: String = "<|endoftext|>", startToken: String = "<|endoftext|>",
-    endToken: String = "<|endoftext|>", pretokenizer: Pretokenizer = .llama3
+    endToken: String = "<|endoftext|>", pretokenizer: Pretokenizer = .llama3,
+    ignoreMerges: Bool = false
   ) {
     let jsonVocabulary = try! JSONDecoder().decode([String: Int32].self, from: vocabulary)
     var decoder = [Int32: Data]()
@@ -49,9 +57,11 @@ public struct TiktokenTokenizer {
     ) { a, _ in a }
     self.vocabulary = vocabulary
     self.decoder = decoder
+    // Skip only the "#version" header: merges_qwen3.5.txt and merges_llama3.txt start with
+    // their rank-0 merge ("Ġ Ġ") instead.
     let bpeMerges = (String(data: merges, encoding: .utf8) ?? "")
-      .trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\n")[
-        1...]
+      .trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\n")
+      .drop { $0.hasPrefix("#version") }
     var bpeRanks = [Pair: Int]()
     for (i, merge) in bpeMerges.enumerated() {
       let splits = merge.split(separator: " ", maxSplits: 2)
@@ -65,7 +75,14 @@ public struct TiktokenTokenizer {
       specialTokensRegex = nil
     } else {
       if #available(iOS 16.0, macOS 13.0, *) {
-        specialTokensRegex = try? Regex(Self.specialTokensPattern(Array(specialTokens.keys)))
+        let regex = try? Regex(Self.specialTokensPattern(Array(specialTokens.keys)))
+        switch pretokenizer {
+        case .llama3:
+          specialTokensRegex = regex
+        case .joyAI, .glm5, .qwen3_5:
+          // Hugging Face matches added tokens on raw text, even when a combining mark follows.
+          specialTokensRegex = regex?.matchingSemantics(.unicodeScalar)
+        }
       } else {
         specialTokensRegex = nil
       }
@@ -90,6 +107,7 @@ public struct TiktokenTokenizer {
     specialTokens.insert(endToken)
     self.specialTokens = Array(specialTokens)
     self.pretokenizer = pretokenizer
+    self.ignoreMerges = ignoreMerges
   }
 
   static func specialTokensPattern(_ tokens: [String]) -> String {
@@ -350,46 +368,83 @@ public struct TiktokenTokenizer {
     return tokens
   }
 
+  private static let llama3TokenPattern =
+    #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"#
+
   private static let llama3TokenRegex: Any? = {
     if #available(iOS 16.0, macOS 13.0, *) {
-      return try? Regex(
-        #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"#
-      )
+      return try? Regex(llama3TokenPattern)
     }
     return nil
   }()
 
-  private static let joyAITokenRegex: Any? = {
+  // Hugging Face regexes run on Unicode scalars, so "\r\n" and combining marks are not grouped
+  // into one Character.
+  private static let glm5TokenRegex: Any? = {
     if #available(iOS 16.0, macOS 13.0, *) {
-      return try? Regex(
-        ##"\p{N}{1,3}|[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+|[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"##
-      )
+      return try? Regex(llama3TokenPattern).matchingSemantics(.unicodeScalar)
     }
     return nil
   }()
+
+  private static let qwen3_5TokenRegex: Any? = {
+    if #available(iOS 16.0, macOS 13.0, *) {
+      return try? Regex(
+        #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"#
+      ).matchingSemantics(.unicodeScalar)
+    }
+    return nil
+  }()
+
+  // tokenizer.json applies these splits in sequence, which one alternation does not reproduce:
+  // spaces before digits or CJK stay one piece, and "Hello\u4e16\u754c" splits before "\u4e16\u754c".
+  private static let joyAITokenRegexes: [Any?] = [
+    #"\p{N}{1,3}"#, #"[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+"#,
+    ##"[!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"##,
+  ].map { pattern -> Any? in
+    if #available(iOS 16.0, macOS 13.0, *) {
+      return try? Regex(pattern).matchingSemantics(.unicodeScalar)
+    }
+    return nil
+  }
 
   private func pretokenize(_ text: String) -> [Substring] {
     if #available(iOS 16.0, macOS 13.0, *) {
-      let tokenRegex: Any?
+      let tokenRegexes: [Any?]
       switch pretokenizer {
       case .llama3:
-        tokenRegex = Self.llama3TokenRegex
+        tokenRegexes = [Self.llama3TokenRegex]
       case .joyAI:
-        tokenRegex = Self.joyAITokenRegex
+        tokenRegexes = Self.joyAITokenRegexes
+      case .glm5:
+        tokenRegexes = [Self.glm5TokenRegex]
+      case .qwen3_5:
+        tokenRegexes = [Self.qwen3_5TokenRegex]
       }
-      if let tokenRegex = tokenRegex as? Regex<AnyRegexOutput> {
+      let regexes = tokenRegexes.compactMap { $0 as? Regex<AnyRegexOutput> }
+      if !regexes.isEmpty && regexes.count == tokenRegexes.count {
         func split(_ text: Substring) -> [Substring] {
+          // Qwen3.5 normalizes to NFC. Like Hugging Face, this skips special tokens, which are
+          // split out before this.
+          let text =
+            pretokenizer == .qwen3_5 ? Substring(text.precomposedStringWithCanonicalMapping) : text
+          return regexes.reduce([text]) { pieces, regex in
+            pieces.flatMap { split($0, by: regex) }
+          }
+        }
+        func split(_ text: Substring, by tokenRegex: Regex<AnyRegexOutput>) -> [Substring] {
           var tokens = [Substring]()
           var lastIndex = text.startIndex
           for match in text.matches(of: tokenRegex) {
-            // JoyAI isolates regex matches and preserves unmatched text, including controls.
-            if pretokenizer == .joyAI && lastIndex < match.range.lowerBound {
+            // Except for llama3, regex matches are isolated and unmatched text, including
+            // controls, is preserved.
+            if pretokenizer != .llama3 && lastIndex < match.range.lowerBound {
               tokens.append(text[lastIndex..<match.range.lowerBound])
             }
             tokens.append(text[match.range])
             lastIndex = match.range.upperBound
           }
-          if pretokenizer == .joyAI && lastIndex < text.endIndex {
+          if pretokenizer != .llama3 && lastIndex < text.endIndex {
             tokens.append(text[lastIndex..<text.endIndex])
           }
           return tokens
@@ -432,7 +487,7 @@ public struct TiktokenTokenizer {
         normalizedText += " "
       }
       tokenizableText = normalizedText
-    case .joyAI:
+    case .joyAI, .glm5, .qwen3_5:
       tokenizableText = text
     }
     // Logic for r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+\r?\n*|\s*\r?\n+|\s+(?!\S)|\s+"""
@@ -442,6 +497,9 @@ public struct TiktokenTokenizer {
     let bpeTokens = tokens.flatMap { token -> [Data] in
       guard let token = token.data(using: .utf8) else { return [] }
       guard !specialTokens.contains(token) else {
+        return [token]
+      }
+      if ignoreMerges && vocabulary[token] != nil {
         return [token]
       }
       return bpe(token: token)
