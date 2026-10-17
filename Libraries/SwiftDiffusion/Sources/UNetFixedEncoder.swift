@@ -57,7 +57,8 @@ extension UNetFixedEncoder {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
+      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       return true
     case .v1, .v2, .kandinsky21:
@@ -202,7 +203,8 @@ extension UNetFixedEncoder {
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-      .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .ideogram4,
       .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return []
     case .v1, .v2, .kandinsky21:
@@ -1212,7 +1214,8 @@ extension UNetFixedEncoder {
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
       }
@@ -2894,6 +2897,162 @@ extension UNetFixedEncoder {
         ]
       }
       return (rotaryEmbeddings + conditions, nil)
+    case .flux3_5b:
+      let c0 = textEncoding[0]
+      let cBatchSize = c0.shape[0]
+      let textLength = c0.shape[1]
+      let h = startHeight / 2
+      let w = startWidth / 2
+      precondition(timesteps.count > 0)
+      // The last row is timestep 0, which is used by text and references.
+      var timeEmbeds = graph.variable(
+        .GPU(0), .HWC(timesteps.count + 1, 1, 256), of: FloatType.self)
+      // FLUX.3 [klein] is a flow map model, every step is also conditioned on the next timestep.
+      // The base model is not, and doesn't have the next timestep embedder.
+      let isFlowMap =
+        (try?
+          (graph.openStore(
+            filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+          ) {
+            return $0.read(like: "__dit__[t-next_time_embedder_0-0-0]") != nil
+          }).get()) ?? false
+      var nextTimeEmbeds: DynamicGraph.Tensor<FloatType>? =
+        isFlowMap
+        ? graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self) : nil
+      for i in 0..<(timesteps.count + 1) {
+        let timeEmbed = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: i < timesteps.count ? timesteps[i] : 0, batchSize: 1, embeddingSize: 256,
+              maxPeriod: 10_000)
+          ).toGPU(0))
+        timeEmbeds[i..<(i + 1), 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
+        if i > 0 {
+          nextTimeEmbeds?[(i - 1)..<i, 0..<1, 0..<256] = timeEmbed.reshaped(.HWC(1, 1, 256))
+        }
+      }
+      let referenceSizes = referenceImages.map {
+        let shape = $0.shape
+        return (height: shape[1], width: shape[2])
+      }
+      let unetFixed: Model
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        let keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        configuration.keys = keys
+        (_, unetFixed) = LoRAFlux3Fixed(
+          timesteps: timesteps.count, channels: 3_072, referenceSizes: referenceSizes,
+          flowMap: isFlowMap, LoRAConfiguration: configuration)
+      } else {
+        (_, unetFixed) = Flux3Fixed(
+          timesteps: timesteps.count, channels: 3_072, referenceSizes: referenceSizes,
+          flowMap: isFlowMap)
+      }
+      unetFixed.maxConcurrency = .limit(4)
+      let timeInputs = [timeEmbeds] + (nextTimeEmbeds.map { [$0] } ?? [])
+      unetFixed.compile(inputs: [c0] + referenceImages + timeInputs)
+      var suffix = ""
+      // If we have reference image, we need to load ref_embedder weights, differentiate that.
+      if referenceImages.count > 0 {
+        suffix += ":ref"
+      }
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]\(suffix)", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !lora.isEmpty {
+          if shouldRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<28).map {
+                return ($0, $0)
+              })
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+              ) {
+                name, dataType, format, shape in
+                let result: DynamicGraph.Store.ModelReaderResult
+                if dataType == .Float32 {
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape,
+                    of: Float32.self)
+                } else {
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape,
+                    of: FloatType.self)
+                }
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Don't need to load.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+              ) {
+                name, dataType, _, shape in
+                if dataType == .Float32 {
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: Float32.self)
+                } else {
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: FloatType.self)
+                }
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      var conditions: [DynamicGraph.AnyTensor] = unetFixed(
+        inputs: c0, referenceImages + timeInputs)
+      weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      if referenceImages.count > 0 {
+        let refLatents = conditions[0..<referenceImages.count].map {
+          DynamicGraph.Tensor<FloatType>($0)
+        }
+        let sequenceLength = refLatents.reduce(0) { $0 + $1.shape[1] }
+        var reference = graph.variable(
+          .GPU(0), .HWC(cBatchSize, sequenceLength, 3_072), of: FloatType.self)
+        for i in 0..<cBatchSize {
+          var index = 0
+          for refLatent in refLatents {
+            let length = refLatent.shape[1]
+            reference[i..<(i + 1), index..<(index + length), 0..<3_072] = refLatent
+            index += length
+          }
+        }
+        conditions = [reference] + conditions[referenceImages.count...]
+      }
+      let rotaryEmbedding = Tensor<FloatType>(
+        from: Flux3RotaryPositionEmbedding(
+          height: h, width: w, tokenLength: textLength,
+          referenceSizes: referenceSizes.map { (height: $0.height / 2, width: $0.width / 2) },
+          channels: 128)
+      ).toGPU(0)
+      return ([graph.variable(rotaryEmbedding)] + conditions, nil)
     case .flux2, .flux2_9b, .flux2_4b:
       let c0 = textEncoding[0]
       let cBatchSize = c0.shape[0]

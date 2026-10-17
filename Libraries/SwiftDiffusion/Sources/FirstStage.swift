@@ -195,7 +195,8 @@ extension FirstStage {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2,
+      .seedvr2_3b,
       .seedvr2_7b, .longcatVideoAvatar1_5:
       z = x
       audioZ = nil
@@ -211,6 +212,7 @@ extension FirstStage {
           latentsStd.map { FloatType($0 / scalingFactor) }, .GPU(0),
           .NHWC(1, 1, 1, latentsStd.count)))
       if version == .ernieImage || version == .flux2 || version == .flux2_9b || version == .flux2_4b
+        || version == .flux3_5b
         || version == .ideogram4
       {
         // FLUX.2 is different, it needs to first reshape x and then apply the scaling.
@@ -260,6 +262,7 @@ extension FirstStage {
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .flux3_5b,
       .ideogram4:
       scaleFactor = 8
       scaleFactorZ = 1
@@ -483,7 +486,7 @@ extension FirstStage {
       }
       outputChannels = 3
       causalAttentionMask = nil
-    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
+    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ideogram4:
       let startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       let startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let decoderUsesFlashAttention =
@@ -1109,7 +1112,8 @@ extension FirstStage {
         case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
           .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
           .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .seedvr2_3b,
+          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2,
+          .seedvr2_3b,
           .seedvr2_7b, .longcatVideoAvatar1_5:
           audio = nil
         }
@@ -1243,7 +1247,8 @@ extension FirstStage {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
         .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2,
+        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2,
+        .ltx2,
         .ltx2_3, .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
         return result
       }
@@ -1405,6 +1410,7 @@ extension FirstStage {
           latentsStd.map { FloatType(scalingFactor / $0) }, .GPU(0),
           .NHWC(1, 1, 1, latentsStd.count)))
       if version == .ernieImage || version == .flux2 || version == .flux2_9b || version == .flux2_4b
+        || version == .flux3_5b
         || version == .ideogram4
       {
         // FLUX.2 is different, it needs to first reshape x and then apply the scaling.
@@ -1490,6 +1496,7 @@ extension FirstStage {
     switch version {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .hiDreamI1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .flux3_5b,
       .ideogram4:
       scaleFactor = 8
       scaleFactorZ = 1
@@ -1639,7 +1646,7 @@ extension FirstStage {
     case .hiDreamO1:
       // No need to initialize anything.
       return (hiDreamO1Patchify(x), nil)
-    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
+    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ideogram4:
       let startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       let startHeight = tiledEncoding ? encodingTileSize.height : startHeight
       let encoderUsesFlashAttention = usesFlashAttention && startWidth * startHeight >= 256 * 176

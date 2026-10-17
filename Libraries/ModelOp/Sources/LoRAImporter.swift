@@ -221,6 +221,13 @@ public enum LoRAImporter {
         timesteps: 1,
         channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
         usesFlashAttention: .scale1, kvCache: false)
+    case .flux3_5b:
+      // Build with a reference image so the reference embedder, refiner and modulations are mapped.
+      (unetMapper, unet) = Flux3(
+        batchSize: 1, tokenLength: 512, referenceSequenceLength: 256, height: 64, width: 64,
+        channels: 3072, layers: (5, 28), usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = Flux3Fixed(
+        timesteps: 1, channels: 3072, referenceSizes: [(height: 32, width: 32)], flowMap: true)
     case .ernieImage:
       (unetMapper, unet) = ErnieImage(
         batchSize: 1, height: 64, width: 64, textLength: 512, layers: 36, channels: 4_096,
@@ -342,6 +349,9 @@ public enum LoRAImporter {
       case .flux2_4b:
         inputDim = 32
         conditionalLength = 7680
+      case .flux3_5b:
+        inputDim = 32
+        conditionalLength = 20480
       case .ernieImage:
         inputDim = 32
         conditionalLength = 4096
@@ -523,6 +533,16 @@ public enum LoRAImporter {
           graph.variable(.CPU, .HWC(1, 512, 7680), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .flux3_5b:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 20480), of: FloatType.self),
+          graph.variable(.CPU, .NHWC(1, 32, 32, 32), of: FloatType.self),
+          graph.variable(.CPU, .HWC(2, 1, 256), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 256), of: FloatType.self),
         ]
         tEmb = nil
       case .ernieImage:
@@ -747,7 +767,7 @@ public enum LoRAImporter {
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
         .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
-        .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
+        .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3,
         .cosmos2_5_2b, .ideogram4, .krea2, .minimaxH3:
         vectors = []
       case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
@@ -935,6 +955,21 @@ public enum LoRAImporter {
           ]
           + Flux2FixedOutputShapes(
             tokenLength: 512, channels: 3072
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .flux3_5b:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux3RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 512,
+                  referenceSizes: [(height: 16, width: 16)],
+                  channels: 128)))
+          ]
+          + Flux3FixedOutputShapes(
+            tokenLength: 512, referenceSequenceLength: 256, channels: 3072
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
@@ -1412,6 +1447,10 @@ public enum LoRAImporter {
           || $0.contains("layers.35.mlp.linear_fc2.")
           || $0.contains("layers_35_mlp_linear_fc2")
       }
+      let isFlux3 = stateDict.keys.contains {
+        $0.contains("txt_mode_blocks.") || $0.contains("txt_mode_blocks_")
+          || $0.contains("content_mode_blocks.") || $0.contains("content_mode_blocks_")
+      }
       let isCosmosAnima = stateDict.keys.contains {
         $0.contains("patch_embed.proj.") || $0.contains("patch_embed_proj")
           || $0.contains("blocks.5.self_attn.q_proj.")
@@ -1459,6 +1498,9 @@ public enum LoRAImporter {
       }
       if isCosmosAnima {
         return forceVersionOr(.cosmos2_5_2b)
+      }
+      if isFlux3 {
+        return forceVersionOr(.flux3_5b)
       }
       // Only confident about these if it is SD or SDXL. In any other cases, prefer the force version.
       switch (
@@ -1629,7 +1671,7 @@ public enum LoRAImporter {
     case .zImage:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
@@ -2003,7 +2045,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
         if let tensorDescMistral3 = stateDict["mistral3"] {
           try archive.with(tensorDescMistral3) {
             let tensor = Tensor<FloatType>(from: $0)
@@ -2069,7 +2111,8 @@ public enum LoRAImporter {
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b,
         .ideogram4, .krea2, .minimaxH3:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"

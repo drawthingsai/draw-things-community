@@ -17,7 +17,8 @@ struct Quantizer: ParsableCommand {
       wurstchen_v3.0_stage_c, wurstchen_v3.0_stage_b, sd3, pixart, auraflow,
       flux1, sd3_large, hunyuan_video, wan_v2.1_1.3b, wan_v2.1_14b, hidream_i1,
       hidream_o1,
-      qwen_image, wan_v2.2_5b, z_image, ernie_image, flux2, flux2_9b, flux2_4b, cosmos2.5_2b, ltx2, ltx2.3,
+      qwen_image, wan_v2.2_5b, z_image, ernie_image, flux2, flux2_9b, flux2_4b, flux3_5b,
+      cosmos2.5_2b, ltx2, ltx2.3,
       seedvr2_3b, seedvr2_7b, ideogram_4, krea_2
       """)
   var modelVersion: String
@@ -264,6 +265,19 @@ struct Quantizer: ParsableCommand {
             }
           case .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .minimaxH3:
             fatalError()
+          case .flux3_5b:
+            if tensor.dataType == .Float32 {
+              // These projections are kept in FP32 to avoid FP16 underflow.
+              $0.write(key, tensor: tensor)
+            } else if key.contains("embedder") || key.contains("-linear-") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
           case .flux2, .flux2_9b, .flux2_4b, .ideogram4:
             if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-") {
               $0.write(key, tensor: fp16)

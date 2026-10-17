@@ -169,6 +169,9 @@ public final class ModelImporter {
         $0.contains("single_blocks.19.linear1.")
           || $0.contains("single_transformer_blocks.19.attn.to_qkv_mlp_proj.")
       }
+    var isFlux3 = stateDict.keys.contains {
+      $0.contains("txt_mode_blocks.") || $0.contains("content_mode_blocks.")
+    }
     var isFlux1 =
       !isHunyuan && !isFlux2
       && stateDict.keys.contains {
@@ -297,6 +300,7 @@ public final class ModelImporter {
       isFlux2 = false
       isFlux2_9B = false
       isFlux2_4B = false
+      isFlux3 = false
       isIdeogram4 = false
       isKrea2 = false
     } else if isWurstchenStageC {
@@ -455,6 +459,12 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("single_transformer_blocks.19.attn.to_qkv_mlp_proj.")
       }
+    } else if isFlux3 {
+      modelVersion = .flux3_5b
+      modifier = .kontext
+      inputDim = 32
+      expectedTotalAccess = 402
+      isDiffusersFormat = false
     } else if isIdeogram4 {
       modelVersion = .ideogram4
       modifier = .none
@@ -540,7 +550,7 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .zImage:
         throw Error.noTextEncoder
-      case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
         throw Error.noTextEncoder
       case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         throw Error.noTextEncoder
@@ -618,7 +628,8 @@ public final class ModelImporter {
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
             .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-            .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+            .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+            .krea2:
             fatalError()
           }
           if modelVersion == .sdxlBase || modelVersion == .sdxlRefiner {
@@ -661,7 +672,8 @@ public final class ModelImporter {
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b,
+              .seedvr2_7b,
               .ideogram4, .krea2:
               fatalError()
             }
@@ -825,6 +837,9 @@ public final class ModelImporter {
     case .flux2_4b:
       conditionalLength = 7680
       batchSize = 1
+    case .flux3_5b:
+      conditionalLength = 20480
+      batchSize = 1
     case .ideogram4:
       conditionalLength = 13 * 4_096
       batchSize = 1
@@ -899,7 +914,8 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
           .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
-          .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2,
+          .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+          .ltx2,
           .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           vectors = []
         case .kandinsky21, .v1, .v2:
@@ -1093,6 +1109,21 @@ public final class ModelImporter {
           ]
           + Flux2FixedOutputShapes(
             tokenLength: 512, channels: 3072
+          ).map {
+            graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
+          }
+      case .flux3_5b:
+        cArr =
+          [
+            graph.variable(
+              Tensor<FloatType>(
+                from: Flux3RotaryPositionEmbedding(
+                  height: 32, width: 32, tokenLength: 512,
+                  referenceSizes: [(height: 16, width: 16)],
+                  channels: 128)))
+          ]
+          + Flux3FixedOutputShapes(
+            tokenLength: 512, referenceSequenceLength: 256, channels: 3072
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
@@ -1389,6 +1420,13 @@ public final class ModelImporter {
           timesteps: 1,
           channels: 3072, layers: (5, 20), numberOfReferenceImages: 0, guidanceEmbed: true,
           usesFlashAttention: .scale1, kvCache: false)
+      case .flux3_5b:
+        // Build with a reference image so the reference embedder, refiner and modulations are imported.
+        (unetMapper, unet) = Flux3(
+          batchSize: 1, tokenLength: 512, referenceSequenceLength: 256, height: 64, width: 64,
+          channels: 3072, layers: (5, 28), usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = Flux3Fixed(
+          timesteps: 1, channels: 3072, referenceSizes: [(height: 32, width: 32)], flowMap: true)
       case .ideogram4:
         (unetMapper, unet) = Ideogram4(
           batchSize: 1, height: 64, width: 64, textLength: 32, usesFlashAttention: .scale1)
@@ -1566,6 +1604,14 @@ public final class ModelImporter {
           graph.variable(.CPU, .HWC(1, 512, 7680), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .flux3_5b:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 512, 20480), of: FloatType.self),
+          graph.variable(.CPU, .NHWC(1, 32, 32, 32), of: FloatType.self),
+          graph.variable(.CPU, .HWC(2, 1, 256), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 1, 256), of: FloatType.self),
         ]
         tEmb = nil
       case .ideogram4:
@@ -1824,7 +1870,8 @@ public final class ModelImporter {
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
             .hiDreamO1, .qwenImage2_1, .wan22_5b, .qwenImage, .cosmos2_5_2b, .auraflow, .zImage,
-            .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5,
+            .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3,
+            .longcatVideoAvatar1_5,
             .ideogram4, .krea2:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
@@ -1992,7 +2039,23 @@ public final class ModelImporter {
                   }
                   tensor = combined
                 }
-                if value.count > 1 {
+                if modelVersion == .flux3_5b,
+                  value.contains(where: {
+                    $0 == "t-time_embedder_2-0-0" || $0 == "t-next_time_embedder_2-0-0"
+                      || $0 == "t-final_ada_ln_0-0-0" || $0 == "t-final_ada_ln_1-0-0"
+                  })
+                {
+                  // These projections are kept in FP32 to avoid FP16 underflow.
+                  value.write(
+                    graph: graph,
+                    to: store, tensor: Tensor<Float>(from: tensors[0]), format: value.format,
+                    isDiagonalUp: false, isDiagonalDown: false
+                  ) {
+                    let _ = interrupt()
+                    return "__\(modelPrefixFixed)__[\($0)]"
+                  }
+                  let _ = interrupt()
+                } else if value.count > 1 {
                   value.write(
                     graph: graph,
                     to: store, tensor: tensor, format: value.format, isDiagonalUp: false,
@@ -2191,6 +2254,11 @@ public final class ModelImporter {
           }
         case .flux2_4b:
           if $0.keys.count != 292 && $0.keys.count != 294 {
+            throw Error.tensorWritesFailed
+          }
+        case .flux3_5b:
+          // The base model doesn't have the next timestep embedder.
+          if $0.keys.count != 415 && $0.keys.count != 413 {
             throw Error.tensorWritesFailed
           }
         case .ideogram4:
@@ -2477,6 +2545,10 @@ extension ModelImporter {
     case .flux2_4b:
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_3_4b_f16.ckpt")
+      }
+    case .flux3_5b:
+      textEncoder = fileNames.first {
+        $0.hasSuffix("_qwen_3_vl_4b_instruct_f16.ckpt")
       }
     case .ltx2, .ltx2_3:
       textEncoder = fileNames.first {
@@ -2813,6 +2885,18 @@ extension ModelImporter {
       }
       // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
       specification.hiresFixScale = finetuneScale * 2
+    case .flux3_5b:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_vl_4b_instruct_i8x_trailer.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_2_vae_f16.ckpt"
+      }
+      specification.highPrecisionAutoencoder = true
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
     case .flux2_4b:
       if specification.textEncoder == nil {
         specification.textEncoder = "qwen_3_4b_q8p.ckpt"

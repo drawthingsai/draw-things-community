@@ -69,6 +69,8 @@ public struct ModelZoo: DownloadZoo {
       return "FLUX.2 9B"
     case .flux2_4b:
       return "FLUX.2 4B"
+    case .flux3_5b:
+      return "FLUX.3 5B"
     case .cosmos2_5_2b:
       return "Cosmos 2.5 2B"
     case .ltx2:
@@ -1363,6 +1365,33 @@ public struct ModelZoo: DownloadZoo {
       paddedTextEncodingLength: 512, hiresFixScale: 24,
       note:
         "[FLUX.2 [klein] 4B Base](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
+      copyright: "© 2026 Black Forest Labs"
+    ),
+    Specification(
+      name: "FLUX.3 [klein] 5.6B", file: "flux_3_klein_q8p.ckpt", prefix: "",
+      version: .flux3_5b, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_i8x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "FLUX.3 [klein] 5.6B is a rectified flow transformer capable of generating and editing images based on text instructions. It is a flow map model; 16 sampling steps with shift 6.93 are recommended.",
+      copyright: "© 2026 Black Forest Labs"
+    ),
+    Specification(
+      name: "FLUX.3 [klein] 5.6B (8-bit S)", file: "flux_3_klein_i8x.ckpt", prefix: "",
+      version: .flux3_5b, defaultScale: 16, textEncoder: "qwen_3_vl_4b_instruct_i8x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", modifier: .kontext, objective: .u(conditionScale: 1000),
+      hiresFixScale: 24,
+      note:
+        "FLUX.3 [klein] 5.6B is a rectified flow transformer capable of generating and editing images based on text instructions. It is a flow map model; 16 sampling steps with shift 6.93 are recommended.",
+      copyright: "© 2026 Black Forest Labs"
+    ),
+    Specification(
+      name: "FLUX.3 [klein] 5.6B Base (8-bit S)", file: "flux_3_klein_base_i8x.ckpt",
+      prefix: "", version: .flux3_5b, defaultScale: 16,
+      textEncoder: "qwen_3_vl_4b_instruct_i8x.ckpt", autoencoder: "flux_2_vae_f16.ckpt",
+      modifier: .kontext, objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "FLUX.3 [klein] 5.6B Base is the undistilled rectified flow transformer capable of generating and editing images based on text instructions. Unlike FLUX.3 [klein] 5B, it requires classifier-free guidance.",
       copyright: "© 2026 Black Forest Labs"
     ),
     Specification(
@@ -2823,6 +2852,7 @@ public struct ModelZoo: DownloadZoo {
       return .u(conditionScale: 1)
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
+      .flux3_5b,
       .ltx2, .ltx2_3, .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       return .u(conditionScale: 1000)
@@ -2838,7 +2868,8 @@ public struct ModelZoo: DownloadZoo {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+      .seedvr2_3b,
       .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return .timestep
     case .svdI2v:
@@ -2873,7 +2904,8 @@ public struct ModelZoo: DownloadZoo {
     case .cosmos2_5_2b:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1))
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .ltx2, .ltx2_3,
+      .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2,
+      .ltx2_3,
       .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
@@ -2897,8 +2929,8 @@ public struct ModelZoo: DownloadZoo {
       return 512
     case .hiDreamI1:
       return 128
-    case .hiDreamO1, .hunyuanVideo, .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2, .ltx2,
-      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+    case .hiDreamO1, .hunyuanVideo, .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2,
+      .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return 0
     case .wan21_1_3b, .wan21_14b, .wan22_5b, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
       .longcatVideoAvatar1_5:
@@ -3070,7 +3102,7 @@ public struct ModelZoo: DownloadZoo {
           1.65655173, 1.68533454,
         ], 1, nil, nil, nil
       )
-    case .ernieImage, .flux2, .flux2_9b, .flux2_4b:
+    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
       return (
         [
           -6.76177666e-02, -7.15223551e-02, -7.53413364e-02, -7.44939372e-02,
@@ -3343,7 +3375,8 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2,
+      .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b:
       return nil
     }
@@ -3357,7 +3390,8 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow, .kandinsky21,
       .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .flux1, .hiDreamI1, .hiDreamO1, .zImage,
       .ernieImage, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .qwenImage2_1, .wan22_5b,
-      .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .krea2:
       return 24_000
     case .longcatVideoAvatar1_5:
       return 16_000
@@ -3426,7 +3460,7 @@ public struct ModelZoo: DownloadZoo {
       .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .zImage,
       .ernieImage,
       .flux2, .flux2_9b,
-      .flux2_4b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return 30
     }
   }
@@ -3449,7 +3483,8 @@ public struct ModelZoo: DownloadZoo {
       switch specification.version {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
-        .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
+        .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .cosmos2_5_2b,
         .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2,
         .longcatVideoAvatar1_5:
         return nil
@@ -3552,6 +3587,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 8 * 1_024 * 1_024 * 1_024
       case .flux2_4b:
         return fileSize < 4 * 1_024 * 1_024 * 1_024
+      case .flux3_5b:
+        return fileSize < 5 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
       case .seedvr2_3b:
@@ -3632,6 +3669,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 15 * 1_024 * 1_024 * 1_024
       case .flux2_4b:
         return fileSize < 7 * 1_024 * 1_024 * 1_024
+      case .flux3_5b:
+        return fileSize < 9 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
       case .seedvr2_3b:
@@ -3786,7 +3825,7 @@ extension ModelZoo {
   public static func isCLIPSkipAvailable(_ version: ModelVersion) -> Bool {
     switch version {
     case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .qwenImage2_1, .svdI2v, .wan22_5b,
-      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return false
     case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,

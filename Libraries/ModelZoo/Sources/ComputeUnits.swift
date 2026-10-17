@@ -95,7 +95,8 @@ public enum ComputeUnits {
     switch context.modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .qwenImage2_1,
-      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .cosmos2_5_2b, .hiDreamI1, .hiDreamO1,
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .hiDreamI1,
+      .hiDreamO1,
       .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (max(1, Int(configuration.batchSize)) * cfgChannels, 1)
     case .svdI2v:
@@ -141,7 +142,8 @@ public enum ComputeUnits {
       return 512
     case .hunyuanVideo:
       return 256
-    case .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
+    case .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+      .ideogram4:
       return 512
     case .krea2:
       return 256
@@ -495,6 +497,15 @@ public enum ComputeUnits {
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
         channels: 2048, layers: 28)
       return (main: mainCount * batchSize, fixed: 0)
+    case .flux3_5b:
+      let mainCount = Flux3InstructionCount(
+        batchSize: 1, tokenLength: baseTokenLength,
+        referenceSequenceLength: referenceSequenceLength, height: startHeight, width: startWidth,
+        channels: 3072, layers: (5, 28))
+      let fixedCount = Flux3FixedInstructionCount(
+        contextBatchSize: 1, tokenLength: baseTokenLength, timestepCount: 1,
+        referenceSequenceLength: referenceSequenceLength, channels: 3072)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .flux2, .flux2_9b, .flux2_4b:
       let channels: Int
       let layers: (Int, Int)

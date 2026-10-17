@@ -6,7 +6,7 @@ final class SamplerTests: XCTestCase {
   func testWeightsCacheSuffix() {
     for version: ModelVersion in [
       .minimaxH3, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .flux2,
-      .flux2_9b, .flux2_4b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .v1,
+      .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .v1,
     ] {
       for threshold: Float in [0, 0.04, .nan] {
         let teaCache = TeaCacheConfiguration(

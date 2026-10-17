@@ -890,7 +890,7 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .ernieImage, .flux2, .flux2_4b, .flux2_9b, .ideogram4:
+      case .ernieImage, .flux2, .flux2_4b, .flux3_5b, .flux2_9b, .ideogram4:
         imageHeight = shape[1] * 8
         imageWidth = shape[2] * 8
         isVideo = false
@@ -1346,6 +1346,7 @@ public enum ImageConverter {
         && (version == .flux1 || version == .hiDreamI1 || version == .zImage
           || version == .ernieImage
           || version == .flux2 || version == .flux2_4b || version == .flux2_9b
+          || version == .flux3_5b
           || version == .ideogram4
           || version == .qwenImage || version == .qwenImage2_1
           || version == .krea2
@@ -1498,7 +1499,7 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
-        case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .ideogram4:
+        case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ideogram4:
           for i in 0..<imageHeight * imageWidth {
             let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (
               fp16[i * 32], fp16[i * 32 + 1], fp16[i * 32 + 2], fp16[i * 32 + 3],
