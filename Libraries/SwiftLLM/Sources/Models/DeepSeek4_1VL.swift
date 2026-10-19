@@ -66,6 +66,8 @@ public func DeepSeek4_1VisionTokenCount(
   return ((grid.height + r - 1) / r) * ((grid.width + r - 1) / r + 1) + 2
 }
 
+/// Shaped as the patch grid. ccv rebuilds a model only when its input shapes change, and grids
+/// with equal patch counts (26×92, 46×52 and 92×26) merge patches differently.
 public func DeepSeek4_1VisionRotaryEmbedding<FloatType: TensorNumeric & BinaryFloatingPoint>(
   grid: (height: Int, width: Int),
   configuration: DeepSeek4_1VisionConfiguration = .deepSeekV4_1Flash,
@@ -73,7 +75,7 @@ public func DeepSeek4_1VisionRotaryEmbedding<FloatType: TensorNumeric & BinaryFl
 ) -> Tensor<FloatType> {
   let d = configuration.headDim
   precondition(d.isMultiple(of: 4))
-  var result = Tensor<FloatType>(.CPU, .NHWC(1, grid.height * grid.width, 1, d))
+  var result = Tensor<FloatType>(.CPU, .NHWC(grid.height, grid.width, 1, d))
   for y in 0..<grid.height {
     for x in 0..<grid.width {
       for i in 0..<(d / 2) {
@@ -83,8 +85,8 @@ public func DeepSeek4_1VisionRotaryEmbedding<FloatType: TensorNumeric & BinaryFl
           / pow(
             configuration.ropeTheta,
             Double(2 * (i % (d / 4))) / Double(d / 2))
-        result[0, y * grid.width + x, 0, 2 * i] = FloatType(cos(angle))
-        result[0, y * grid.width + x, 0, 2 * i + 1] = FloatType(sin(angle))
+        result[y, x, 0, 2 * i] = FloatType(cos(angle))
+        result[y, x, 0, 2 * i + 1] = FloatType(sin(angle))
       }
     }
   }
@@ -118,9 +120,10 @@ public func DeepSeek4_1VisionTransformer(
   configuration: DeepSeek4_1VisionConfiguration = .deepSeekV4_1Flash
 ) -> Model {
   let patches = Input()
-  let rotary = Input()
+  let rotaryGrid = Input()
   let t = grid.height * grid.width
   let h = configuration.hiddenSize
+  let rotary = rotaryGrid.reshaped([1, t, 1, configuration.headDim])
   var x = Dense(count: h, name: "vision.patch_embed.proj")(patches).to(.Float32)
   for i in 0..<configuration.layers {
     let prefix = "vision.blocks.\(i)"
@@ -147,5 +150,5 @@ public func DeepSeek4_1VisionTransformer(
     .reshaped([mh * mw, h * r * r])
   x = Dense(count: configuration.outputHiddenSize, name: "aligner.w1")(x).GELU()
   x = Dense(count: configuration.outputHiddenSize, name: "aligner.w2")(x)
-  return Model([patches, rotary], [x])
+  return Model([patches, rotaryGrid], [x])
 }
