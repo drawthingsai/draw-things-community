@@ -16,6 +16,7 @@ public protocol SogouBrowserSearch {
 public struct SogouSearch {
   private let httpTransport: HttpTransport
   private let browserSearch: SogouBrowserSearch?
+  private let cooldown: ChallengeCooldown
   private static let endpoint = URL(string: "https://www.sogou.com/web")!
 
   public static var defaultBrowserSearch: SogouBrowserSearch? {
@@ -31,6 +32,13 @@ public struct SogouSearch {
     httpTransport: HttpTransport = URLSessionHttpTransport(),
     browserSearch: SogouBrowserSearch? = SogouSearch.defaultBrowserSearch
   ) {
+    self.init(cooldown: .sogou, httpTransport: httpTransport, browserSearch: browserSearch)
+  }
+
+  init(
+    cooldown: ChallengeCooldown, httpTransport: HttpTransport, browserSearch: SogouBrowserSearch?
+  ) {
+    self.cooldown = cooldown
     self.httpTransport = httpTransport
     self.browserSearch = browserSearch
   }
@@ -46,6 +54,10 @@ public struct SogouSearch {
       completion(.success([]))
       return
     }
+    if cooldown.isActive, let browserSearch {
+      browserSearch.search(query: normalizedQuery, options: options, completion: completion)
+      return
+    }
 
     searchPage(
       query: normalizedQuery, options: options, page: 1, results: [], seenURLs: []
@@ -54,6 +66,9 @@ public struct SogouSearch {
         WebSearchBrowserFallback.shouldUseBrowser(after: error),
         let browserSearch = self.browserSearch
       {
+        if WebSearchBrowserFallback.isBlock(error) {
+          self.cooldown.start()
+        }
         browserSearch.search(query: normalizedQuery, options: options, completion: completion)
       } else {
         completion(result)

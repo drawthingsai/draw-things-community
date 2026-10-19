@@ -41,6 +41,7 @@ final class DuckDuckGoFallbackTests: XCTestCase {
       var browserCalls = 0
       var completed = 0
       let search = DuckDuckGoSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: FallbackTransport { request in
           httpCalls += 1
           return .success(
@@ -81,6 +82,7 @@ final class DuckDuckGoFallbackTests: XCTestCase {
   func testSuccessfulAndExplicitEmptyPagesDoNotUseBrowser() throws {
     for body in [resultHTML, "<div class='no-results'><h1>No results found</h1></div>"] {
       let search = DuckDuckGoSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: FallbackTransport { request in
           .success(
             (
@@ -105,6 +107,7 @@ final class DuckDuckGoFallbackTests: XCTestCase {
   func testBrowserFailureIsReportedWithoutRetryLoop() {
     var browserCalls = 0
     let search = DuckDuckGoSearch(
+      cooldown: ChallengeCooldown(),
       httpTransport: FallbackTransport { _ in .failure(URLError(.timedOut)) },
       browserSearch: StubBrowserSearch { _, _ in
         browserCalls += 1
@@ -123,6 +126,7 @@ final class DuckDuckGoFallbackTests: XCTestCase {
       URLError(.cancelled), URLError(.notConnectedToInternet), URLError(.secureConnectionFailed),
     ] {
       let search = DuckDuckGoSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: FallbackTransport { _ in .failure(error) },
         browserSearch: StubBrowserSearch { _, _ in
           XCTFail("Should not launch browser")
@@ -138,6 +142,7 @@ final class DuckDuckGoFallbackTests: XCTestCase {
 
   func testUnrecognizedPageIsNotSuccessfulEmptySearch() {
     let search = DuckDuckGoSearch(
+      cooldown: ChallengeCooldown(),
       httpTransport: FallbackTransport { request in
         .success(
           (
@@ -157,8 +162,10 @@ final class DuckDuckGoFallbackTests: XCTestCase {
     var calls = 0
     let html =
       resultHTML
-      + "<div class='nav-link'><form><input type='hidden' name='s' value='10'></form></div>"
+      + "<div class='nav-link'><form><input type='hidden' name='s' value='10'>"
+      + "<input type='hidden' name='vqd' value='4-123'></form></div>"
     let search = DuckDuckGoSearch(
+      cooldown: ChallengeCooldown(),
       httpTransport: FallbackTransport { request in
         calls += 1
         let body = calls == 1 ? html : "<form id='challenge-form'></form>"
@@ -178,6 +185,83 @@ final class DuckDuckGoFallbackTests: XCTestCase {
       XCTAssertEqual(try? result.get(), [])
     }
     XCTAssertEqual(calls, 2)
+  }
+
+  func testNextPageWithoutVQDEndsResults() {
+    var calls = 0
+    let html =
+      resultHTML
+      + "<div class='nav-link'><form><input type='hidden' name='s' value='10'></form></div>"
+    let search = DuckDuckGoSearch(
+      cooldown: ChallengeCooldown(),
+      httpTransport: FallbackTransport { request in
+        calls += 1
+        return .success(
+          (
+            Data(html.utf8),
+            HTTPURLResponse(
+              url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+          ))
+      }, browserSearch: nil)
+    search.search(query: "example", options: DuckDuckGoSearchOptions(pages: 2)) { result in
+      XCTAssertEqual((try? result.get())?.count, 1)
+    }
+    XCTAssertEqual(calls, 1)
+  }
+
+  func testBangsAreQuotedAndLongQueriesRejected() throws {
+    XCTAssertEqual(try DuckDuckGoSearch.preparedQuery("  !w   swift "), "'!w' swift")
+    XCTAssertEqual(try DuckDuckGoSearch.preparedQuery("swift !gh"), "swift '!gh'")
+    XCTAssertEqual(try DuckDuckGoSearch.preparedQuery("a ! b"), "a ! b")
+    XCTAssertEqual(try DuckDuckGoSearch.preparedQuery("'!w' swift"), "'!w' swift")
+    XCTAssertEqual(
+      try DuckDuckGoSearch.preparedQuery(String(repeating: "é", count: 499)).count, 499)
+    XCTAssertThrowsError(try DuckDuckGoSearch.preparedQuery(String(repeating: "a", count: 500))) {
+      guard case WebSearchError.queryTooLong(499) = $0 else { return XCTFail("\($0)") }
+    }
+    var requestedQuery: String?
+    let search = DuckDuckGoSearch(
+      cooldown: ChallengeCooldown(),
+      httpTransport: FallbackTransport { request in
+        requestedQuery =
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first(where: { $0.name == "q" })?.value
+        return .failure(URLError(.notConnectedToInternet))
+      }, browserSearch: nil)
+    search.search(query: "!w swift") { _ in }
+    XCTAssertEqual(requestedQuery, "'!w' swift")
+  }
+
+  func testBlockSendsLaterSearchesToBrowserUntilCooldownEnds() {
+    for (status, body, blocks) in [
+      (202, "<form id='challenge-form'></form>", true), (429, "Slow down", true),
+      (403, "Forbidden", true), (200, "<html>Loading</html>", false),
+    ] {
+      var httpCalls = 0
+      var browserCalls = 0
+      let search = DuckDuckGoSearch(
+        cooldown: ChallengeCooldown(),
+        httpTransport: FallbackTransport { request in
+          httpCalls += 1
+          return .success(
+            (
+              Data(body.utf8),
+              HTTPURLResponse(
+                url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+            ))
+        },
+        browserSearch: StubBrowserSearch { _, _ in
+          browserCalls += 1
+          return .success([])
+        })
+      search.search(query: "first") { _ in }
+      search.search(query: "second") { _ in }
+      XCTAssertEqual(httpCalls, blocks ? 1 : 2, "\(status)")
+      XCTAssertEqual(browserCalls, 2, "\(status)")
+    }
+    let expired = ChallengeCooldown(duration: 0)
+    expired.start()
+    XCTAssertFalse(expired.isActive)
   }
 
   func testRenderedBrowserResultsAndNoResults() throws {

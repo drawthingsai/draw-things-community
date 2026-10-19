@@ -16,7 +16,10 @@ public protocol DuckDuckGoBrowserSearch {
 public struct DuckDuckGoSearch {
   private let httpTransport: HttpTransport
   private let browserSearch: DuckDuckGoBrowserSearch?
+  private let cooldown: ChallengeCooldown
   private static let endpoint = URL(string: "https://html.duckduckgo.com/html/")!
+  /// DuckDuckGo rejects queries of 500 characters or more.
+  static let maximumQueryLength = 499
 
   public static var defaultBrowserSearch: DuckDuckGoBrowserSearch? {
     #if canImport(WebKit)
@@ -31,8 +34,30 @@ public struct DuckDuckGoSearch {
     httpTransport: HttpTransport = URLSessionHttpTransport(),
     browserSearch: DuckDuckGoBrowserSearch? = DuckDuckGoSearch.defaultBrowserSearch
   ) {
+    self.init(cooldown: .duckDuckGo, httpTransport: httpTransport, browserSearch: browserSearch)
+  }
+
+  init(
+    cooldown: ChallengeCooldown, httpTransport: HttpTransport,
+    browserSearch: DuckDuckGoBrowserSearch?
+  ) {
+    self.cooldown = cooldown
     self.httpTransport = httpTransport
     self.browserSearch = browserSearch
+  }
+
+  /// The query as DuckDuckGo should receive it over HTTP or in a browser. A word starting with
+  /// `!` is quoted, since DuckDuckGo otherwise treats it as a bang and redirects to another site.
+  static func preparedQuery(_ query: String) throws -> String {
+    let words = query.split(whereSeparator: \.isWhitespace).map { word in
+      word.count > 1 && word.hasPrefix("!") ? "'\(word)'" : String(word)
+    }
+    let prepared = words.joined(separator: " ")
+    // DuckDuckGo counts code points, as JavaScript and Python do.
+    guard prepared.unicodeScalars.count <= maximumQueryLength else {
+      throw WebSearchError.queryTooLong(maximumQueryLength)
+    }
+    return prepared
   }
 
   /// Searches DuckDuckGo and calls `completion` with normalized, de-duplicated results.
@@ -41,9 +66,19 @@ public struct DuckDuckGoSearch {
     options: DuckDuckGoSearchOptions = DuckDuckGoSearchOptions(),
     completion: @escaping (Result<[SearchResult], Error>) -> Void
   ) {
-    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedQuery: String
+    do {
+      normalizedQuery = try Self.preparedQuery(query)
+    } catch {
+      completion(.failure(error))
+      return
+    }
     guard !normalizedQuery.isEmpty, options.pages > 0, options.maxResults > 0 else {
       completion(.success([]))
+      return
+    }
+    if cooldown.isActive, let browserSearch {
+      browserSearch.search(query: normalizedQuery, options: options, completion: completion)
       return
     }
 
@@ -54,6 +89,9 @@ public struct DuckDuckGoSearch {
       if case .failure(let error) = result, WebSearchBrowserFallback.shouldUseBrowser(after: error),
         let browserSearch = self.browserSearch
       {
+        if WebSearchBrowserFallback.isBlock(error) {
+          self.cooldown.start()
+        }
         browserSearch.search(query: normalizedQuery, options: options, completion: completion)
       } else {
         completion(result)
@@ -326,7 +364,12 @@ enum DuckDuckGoHTMLParser {
       }
       parameters.append((name, try input.attr("value")))
     }
-    return parameters.isEmpty ? nil : parameters
+    // DuckDuckGo reads a next page requested without its vqd token as a bot and starts
+    // challenging the IP, so a form without one ends the results.
+    guard parameters.contains(where: { $0.0 == "vqd" && !$0.1.isEmpty }) else {
+      return nil
+    }
+    return parameters
   }
 }
 

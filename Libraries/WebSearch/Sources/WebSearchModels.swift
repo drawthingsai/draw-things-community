@@ -406,6 +406,8 @@ public enum WebSearchError: LocalizedError {
   case responseTooLarge(Int, Int)
   /// The search provider returned an interstitial or access challenge instead of results.
   case searchBlocked(String, URL?)
+  /// The query is longer than the provider accepts.
+  case queryTooLong(Int)
 
   /// Human-readable error message.
   public var errorDescription: String? {
@@ -433,6 +435,8 @@ public enum WebSearchError: LocalizedError {
       return "Unsupported content type: \(contentType ?? "unknown")"
     case .responseTooLarge(let actual, let maximum):
       return "Response too large: \(actual) bytes exceeds limit of \(maximum) bytes"
+    case .queryTooLong(let limit):
+      return "The search query is longer than \(limit) characters. Shorten it and search again."
     case .searchBlocked(let message, let url):
       if let url {
         return "\(message) from \(url.absoluteString)"

@@ -32,11 +32,18 @@
       query: String, options: DuckDuckGoSearchOptions,
       completion: @escaping (Result<[SearchResult], Error>) -> Void
     ) {
+      let preparedQuery: String
+      do {
+        preparedQuery = try DuckDuckGoSearch.preparedQuery(query)
+      } catch {
+        completion(.failure(error))
+        return
+      }
       // WebKit requires the main thread even when the caller is a background agent or a CLI.
       DispatchQueue.main.async {
         WebKitSearchSession.shared.enqueue(
           Request(
-            query: query, options: options, challengeTimeout: self.challengeTimeout,
+            query: preparedQuery, options: options, challengeTimeout: self.challengeTimeout,
             challengeHandler: self.challengeHandler, makeWebView: self.makeWebView,
             completion: completion))
       }

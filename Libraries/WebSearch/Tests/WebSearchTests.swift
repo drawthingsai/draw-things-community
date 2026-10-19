@@ -58,6 +58,7 @@ final class WebSearchTests: XCTestCase {
           <form action="/html/" method="post">
             <input type="hidden" name="q" value="example" />
             <input type="hidden" name="s" value="10" />
+            <input type="hidden" name="vqd" value="4-123" />
           </form>
         </div>
       </body></html>
@@ -69,7 +70,7 @@ final class WebSearchTests: XCTestCase {
     XCTAssertEqual(parsed.results[0].url.absoluteString, "https://example.com/doc")
     XCTAssertEqual(parsed.results[0].displayURL, "example.com/doc")
     XCTAssertEqual(parsed.results[0].snippet, "A useful result.")
-    XCTAssertEqual(parsed.nextParameters?.count, 2)
+    XCTAssertEqual(parsed.nextParameters?.count, 3)
   }
 
   func testSearchRequestParameters() throws {

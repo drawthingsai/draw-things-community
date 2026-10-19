@@ -33,6 +33,30 @@ final class SogouFallbackTests: XCTestCase {
     <form id="seccodeForm"><div id="seccodeInput"></div></form>
     """
 
+  func testBlockSendsLaterSearchesToBrowser() {
+    var httpCalls = 0
+    var browserCalls = 0
+    let search = SogouSearch(
+      cooldown: ChallengeCooldown(),
+      httpTransport: SogouTransport { request in
+        httpCalls += 1
+        return .success(
+          (
+            Data(self.challengeHTML.utf8),
+            HTTPURLResponse(
+              url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+          ))
+      },
+      browserSearch: StubSogouBrowser { _, _ in
+        browserCalls += 1
+        return .success([])
+      })
+    search.search(query: "first") { _ in }
+    search.search(query: "second") { _ in }
+    XCTAssertEqual(httpCalls, 1)
+    XCTAssertEqual(browserCalls, 2)
+  }
+
   func testRecoverableResponsesUseBrowserOnceAndPreserveOptions() {
     for (status, body) in [
       (200, challengeHTML), (200, "Loading"), (403, "Forbidden"), (429, "Slow down"),
@@ -40,6 +64,7 @@ final class SogouFallbackTests: XCTestCase {
     ] {
       var browserCalls = 0
       let search = SogouSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: SogouTransport { request in
           .success(
             (
@@ -75,6 +100,7 @@ final class SogouFallbackTests: XCTestCase {
   func testSuccessfulAndExplicitEmptyResultsStayOnHTTP() {
     for body in [resultHTML, "<p>抱歉，没有找到与“example”相关的网页。</p>"] {
       let search = SogouSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: SogouTransport { request in
           .success(
             (
@@ -99,6 +125,7 @@ final class SogouFallbackTests: XCTestCase {
   func testHTTPOnlyReportsChallengeAndUnknownPageInsteadOfEmptySuccess() {
     for body in [challengeHTML, "<html>Loading</html>"] {
       let search = SogouSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: SogouTransport { request in
           .success(
             (
@@ -125,6 +152,7 @@ final class SogouFallbackTests: XCTestCase {
     ] {
       var browserCalls = 0
       let search = SogouSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: SogouTransport { _ in .failure(URLError(code)) },
         browserSearch: StubSogouBrowser { _, _ in
           browserCalls += 1
@@ -140,6 +168,7 @@ final class SogouFallbackTests: XCTestCase {
     var requests = 0
     var browserCalls = 0
     let search = SogouSearch(
+      cooldown: ChallengeCooldown(),
       httpTransport: SogouTransport { request in
         requests += 1
         return .success(
@@ -164,6 +193,7 @@ final class SogouFallbackTests: XCTestCase {
     for nextHTML in [resultHTML, "<p>没有找到相关结果</p>"] {
       var requests = 0
       let search = SogouSearch(
+        cooldown: ChallengeCooldown(),
         httpTransport: SogouTransport { request in
           requests += 1
           return .success(
