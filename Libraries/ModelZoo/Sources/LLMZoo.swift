@@ -48,9 +48,15 @@ public struct LLMZoo: DownloadZoo {
     Specification(
       name: "DeepSeek 4.1 Flash 0910 (2-bit S)", file: "deepseek_4.1_flash_0910_i2x.ckpt",
       engram: "deepseek_4.1_flash_0910_i2x.engram",
-      version: .deepseek_4_1_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash",
+      version: .deepseek_4_1_flash, deprecated: true,
+      huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash"
+    ),
+    Specification(
+      name: "DeepSeek 4.1 Flash 1017 (2-bit S)", file: "deepseek_4.1_flash_1017_i2x.ckpt",
+      engram: "deepseek_4.1_flash_1017_i2x.engram",
+      version: .deepseek_4_1_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       note:
-        "A larger, more capable model that understands images. Built for long-horizon work and the most complex problems."
+        "The most capable model, with frontier intelligence and image understanding. Built for long-horizon work and the most complex problems."
     ),
     Specification(
       name: "DeepSeek 4 Flash 0731 (2-bit S)", file: "deepseek_4_flash_0731_i2x.ckpt",
