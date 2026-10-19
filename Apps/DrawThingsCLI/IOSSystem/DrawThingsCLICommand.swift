@@ -78,7 +78,9 @@ public func draw_things_main(
             }
           case .progress: break
           }
-          configuration.modelDownloadEvent?(event)
+          if let projectURL = configuration.projectURL, let threadId = configuration.threadId {
+            configuration.modelDownloadEvent?(event, projectURL, threadId)
+          }
         }
       },
       imageGenerationEvent: configuration.map { configuration in

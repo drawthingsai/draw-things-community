@@ -86,7 +86,9 @@ struct DrawThingsCLICommandTests {
         interaction.cancel(request)
         completion(.success(requested!))
       }, bashUserInteraction: interaction, unloadTextGenerator: { unloadCount += 1 },
-      modelDownloadEvent: { event in
+      modelDownloadEvent: { event, projectURL, threadId in
+        try! expectEqual(projectURL, generationProjectURL)
+        try! expectEqual(threadId, generationThreadId)
         switch event {
         case .started(_, _, _, _, let cancel):
           downloadStarts += 1
