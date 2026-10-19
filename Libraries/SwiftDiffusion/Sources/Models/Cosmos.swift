@@ -930,7 +930,7 @@ private func CosmosAdaLayerNormFixed(
   let scale = Dense(count: hiddenSize, noBias: true, name: "\(name)_scale")
   let hidden = linear1(embeddedTimestep.swish())
   let shiftOut = shift(hidden) + tembShift
-  let scaleOut = scale(hidden) + tembScale + 1
+  let scaleOut = scale(hidden) + tembScale
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     let linear2 = ModelWeightElement(
@@ -1497,7 +1497,7 @@ private func LoRACosmosAdaLayerNormFixed(
     name: "\(name)_scale")
   let hidden = linear1(embeddedTimestep.swish())
   let shiftOut = shift(hidden) + tembShift
-  let scaleOut = scale(hidden) + tembScale + 1
+  let scaleOut = scale(hidden) + tembScale
   let mapper: ModelWeightMapper = { format in
     var mapping = ModelWeightMapping()
     let linear2 = ModelWeightElement(
