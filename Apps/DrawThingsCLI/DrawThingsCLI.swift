@@ -104,6 +104,9 @@ private struct ResolvedGenerationConfiguration {
   let configuration: GenerationConfiguration
   let recommendedNegativePrompt: String?
   let loraOverrideMapping: [String: LoRAZoo.Specification]
+  // Set by --width / --height or the configuration overrides rather than the model defaults.
+  let isWidthSpecified: Bool
+  let isHeightSpecified: Bool
 }
 
 enum VideoExportFormat: String, ExpressibleByArgument {
@@ -372,7 +375,7 @@ private let negativePromptFileHelp = ArgumentHelp(
 private let generateImageHelp = ArgumentHelp(
   "Input image path. Repeat --image to add reference images for supported models.",
   discussion:
-    "The first image is the primary img2img or reference input; subsequent images are additional references in the supplied order. Each image is resized with aspect-preserving scale and center crop to match the requested output size. --avc accepts exactly one image."
+    "Without --width or --height, the missing size comes from the first image: its resolution, or its aspect ratio when the other side is given, rounded to a multiple of 64. The first image is the canvas and the rest are moodboard images, scaled to cover the output size without cropping. When --width and --height don't match the first image's aspect ratio, it is used only as a moodboard image and there is no canvas; pass --crop to center-crop every image to the output size instead. A canvas image smaller than a requested size is scaled up, with a warning. --avc accepts exactly one image, which is always the canvas and is center-cropped to the output size, with or without --crop."
 )
 
 private let videoFormatHelp = ArgumentHelp(
@@ -510,10 +513,14 @@ struct GenerateSamplingOptions: ParsableArguments {
   @Option(name: .long, help: "CFG guidance scale.")
   var cfg: Float?
 
-  @Option(name: .long, help: "Output width in pixels (multiple of 64).")
+  @Option(
+    name: .long,
+    help: "Output width in pixels (multiple of 64). Defaults to the first --image when given.")
   var width: Int?
 
-  @Option(name: .long, help: "Output height in pixels (multiple of 64).")
+  @Option(
+    name: .long,
+    help: "Output height in pixels (multiple of 64). Defaults to the first --image when given.")
   var height: Int?
 
   @Option(
@@ -541,6 +548,13 @@ struct GenerateConfigurationOverrideOptions: ParsableArguments {
 struct GenerateImageInputOptions: ParsableArguments {
   @Option(name: .long, help: generateImageHelp)
   var image: [String] = []
+
+  @Flag(
+    name: .long,
+    help:
+      "Center-crop every --image to the output size, keeping the first one as the canvas even when its aspect ratio differs."
+  )
+  var crop = false
 
   @Option(
     name: .customLong("init-image"),
@@ -935,7 +949,9 @@ private enum ConfigurationLoader {
       overrideDictionary, onto: recommendedConfiguration, forcingModel: modelSpecification.file)
     return ResolvedGenerationConfiguration(
       configuration: configuration, recommendedNegativePrompt: recommendedNegativePrompt,
-      loraOverrideMapping: loraOverrideMapping)
+      loraOverrideMapping: loraOverrideMapping,
+      isWidthSpecified: overrideDictionary?["width"] != nil,
+      isHeightSpecified: overrideDictionary?["height"] != nil)
   }
 
   private static func loadOverrideDictionary(
@@ -3755,7 +3771,7 @@ private func validateMiniMaxH3TemporalFrameCount(_ frames: Int, flag: String) th
 
 private func createConfiguration(
   context: DrawThingsCLIContext, modelSpecification: ModelZoo.Specification, steps: Int?,
-  cfg: Float?, width: Int?, height: Int?,
+  cfg: Float?, width: Int?, height: Int?, firstImageSize: (width: Int, height: Int)?,
   frames: Int?, seed: UInt32?, strength: Float?, configJSON: String?, configFile: String?,
   modelsDirectory: URL
 ) throws -> ResolvedGenerationConfiguration {
@@ -3786,6 +3802,15 @@ private func createConfiguration(
     }
     builder.startHeight = UInt16(height / 64)
   }
+  let isWidthSpecified = width != nil || resolvedConfiguration.isWidthSpecified
+  let isHeightSpecified = height != nil || resolvedConfiguration.isHeightSpecified
+  if let firstImageSize, !isWidthSpecified || !isHeightSpecified {
+    let size = outputSize(
+      of: firstImageSize, width: isWidthSpecified ? Int(builder.startWidth) * 64 : nil,
+      height: isHeightSpecified ? Int(builder.startHeight) * 64 : nil)
+    builder.startWidth = UInt16(size.width / 64)
+    builder.startHeight = UInt16(size.height / 64)
+  }
   if let frames {
     guard frames >= 1 else { throw ValidationError("--frames must be >= 1") }
     let version = ModelZoo.versionForModel(modelSpecification.file)
@@ -3811,7 +3836,8 @@ private func createConfiguration(
   return ResolvedGenerationConfiguration(
     configuration: builder.build(),
     recommendedNegativePrompt: resolvedConfiguration.recommendedNegativePrompt,
-    loraOverrideMapping: resolvedConfiguration.loraOverrideMapping)
+    loraOverrideMapping: resolvedConfiguration.loraOverrideMapping,
+    isWidthSpecified: isWidthSpecified, isHeightSpecified: isHeightSpecified)
 }
 
 private func runLoRATraining(context: DrawThingsCLIContext, _ options: LoRATrainCommandOptions)
@@ -4332,16 +4358,33 @@ extension DrawThingsCLI {
         throw unresolvedModelValidationError(model)
       }
 
+      let imageSizes = try imagePaths.map(inputImageSize(path:))
       let resolvedConfiguration = try createConfiguration(
         context: context, modelSpecification: modelSpecification, steps: sampling.steps,
         cfg: sampling.cfg,
-        width: sampling.width, height: sampling.height, frames: sampling.frames,
-        seed: sampling.seed, strength: sampling.strength,
+        width: sampling.width, height: sampling.height, firstImageSize: imageSizes.first,
+        frames: sampling.frames, seed: sampling.seed, strength: sampling.strength,
         configJSON: configurationOverrides.configJSON,
         configFile: configurationOverrides.configFile,
         modelsDirectory: modelsDirectory)
       let promptValues = try resolvedPrompts(context: context, prompts)
       let configuration = resolvedConfiguration.configuration
+      let canvasWidth = Int(configuration.startWidth) * 64
+      let canvasHeight = Int(configuration.startHeight) * 64
+      let (canvasIndex, moodboardIndices) = canvasAndMoodboardImages(
+        sizes: imageSizes,
+        canvasSize: !imageInput.crop && resolvedConfiguration.isWidthSpecified
+          && resolvedConfiguration.isHeightSpecified
+          ? (width: canvasWidth, height: canvasHeight) : nil)
+      if let canvasIndex {
+        warnIfCanvasImageIsSmaller(
+          context: context, path: imagePaths[canvasIndex], size: imageSizes[canvasIndex],
+          resolvedConfiguration: resolvedConfiguration)
+      } else if let firstImagePath = imagePaths.first, let size = imageSizes.first {
+        context.write(
+          "Warning: The first image, \(firstImagePath) (\(size.width)x\(size.height)), doesn't match the aspect ratio of the requested \(canvasWidth)x\(canvasHeight) output, so it is used only as a moodboard image, not as the canvas. Pass --crop to center-crop all images to \(canvasWidth)x\(canvasHeight), or crop it to that aspect ratio yourself.\n",
+          to: .standardError)
+      }
       if modelSpecification.version == .longcatVideoAvatar1_5 {
         guard configuration.guidanceScale == 1 else {
           throw ValidationError("LongCat-Video-Avatar currently requires --cfg 1.")
@@ -4375,10 +4418,9 @@ extension DrawThingsCLI {
           let model: String
           let computeUnits: Int?
         }
-        // Mirrors the cloud request: the first image is the input, the rest are shuffle hints.
+        // Mirrors the cloud request: the canvas is the input, moodboard images are shuffle hints.
         let computeUnits = ComputeUnits.from(
-          configuration, hasImage: !imagePaths.isEmpty,
-          shuffleCount: max(0, imagePaths.count - 1))
+          configuration, hasImage: canvasIndex != nil, shuffleCount: moodboardIndices.count)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(
@@ -4409,10 +4451,14 @@ extension DrawThingsCLI {
         fileMapping[defaultEncoder] = modelsDirectory.appendingPathComponent(encoderFile).path
       }
 
-      if imageInput.audio != nil && imagePath == nil
+      if imageInput.audio != nil && canvasIndex == nil
         && modelSpecification.version == .longcatVideoAvatar1_5
       {
-        throw ValidationError("--image is required with --audio for LongCat-Video-Avatar.")
+        throw ValidationError(
+          imagePaths.isEmpty
+            ? "--image is required with --audio for LongCat-Video-Avatar."
+            : "LongCat-Video-Avatar needs a canvas image with --audio, but the first --image doesn't match the aspect ratio of the requested output. Pass --crop to center-crop it, or omit --width and --height."
+        )
       }
 
       if !backend.isRemoteOrCloud {
@@ -4424,20 +4470,37 @@ extension DrawThingsCLI {
         name: modelSpecification.name, version: modelSpecification.version,
         prompt: promptValues.prompt,
         signposts: ImageGeneratorUtils.expectedSignposts(
-          !imagePaths.isEmpty, mask: false, text: promptValues.prompt,
+          canvasIndex != nil, mask: false, text: promptValues.prompt,
           negativeText: resolvedNegativePrompt, configuration: configuration,
           version: modelSpecification.version, memorizedBy: Set(files)))
       defer { context.finishImageGeneration(generationID) }
       try context.checkCancellation()
-      let inputImageTensors = try imagePaths.map {
+      let canvasImage = try canvasIndex.map {
         try loadInputImageTensor(
-          path: $0, imageWidth: Int(configuration.startWidth) * 64,
-          imageHeight: Int(configuration.startHeight) * 64,
+          path: imagePaths[$0], imageWidth: canvasWidth, imageHeight: canvasHeight,
+          preserveAlpha: modelSpecification.version == .qwenImage2_1)
+      }
+      let moodboardImages = try moodboardIndices.map { index in
+        var imageWidth = canvasWidth
+        var imageHeight = canvasHeight
+        // Like the app's moodboard, scale to cover the canvas without cropping.
+        if !imageInput.crop {
+          let size = imageSizes[index]
+          if canvasWidth * size.height > size.width * canvasHeight {
+            imageHeight = Int(
+              (Double(size.height) * Double(canvasWidth) / Double(size.width)).rounded())
+          } else {
+            imageWidth = Int(
+              (Double(size.width) * Double(canvasHeight) / Double(size.height)).rounded())
+          }
+        }
+        return try loadInputImageTensor(
+          path: imagePaths[index], imageWidth: imageWidth, imageHeight: imageHeight,
           preserveAlpha: modelSpecification.version == .qwenImage2_1)
       }
       var hints: [(ControlHintType, [(AnyTensor, Float)])] = []
-      if inputImageTensors.count > 1 {
-        hints.append((.shuffle, inputImageTensors.dropFirst().map { ($0 as AnyTensor, Float(1)) }))
+      if !moodboardImages.isEmpty {
+        hints.append((.shuffle, moodboardImages.map { ($0 as AnyTensor, Float(1)) }))
       }
 
       if backend.isRemoteOrCloud {
@@ -4447,7 +4510,7 @@ extension DrawThingsCLI {
           negativePrompt: resolvedNegativePrompt,
           configuration: configuration,
           outputPath: outputPath,
-          inputImage: inputImageTensors.first,
+          inputImage: canvasImage,
           hints: hints,
           videoFormat: output.videoFormat
         )
@@ -4505,7 +4568,7 @@ extension DrawThingsCLI {
       context.print("Models directory: \(modelsDirectory.path)")
       let result = try runner.generate(
         prompt: promptValues.prompt, negativePrompt: resolvedNegativePrompt,
-        configuration: configuration, outputPath: outputPath, inputImage: inputImageTensors.first,
+        configuration: configuration, outputPath: outputPath, inputImage: canvasImage,
         videoFormat: output.videoFormat, hints: hints, fallbackAudio: fallbackAudio,
         fileMapping: fileMapping,
         livePreviewSession: livePreviewSession)
@@ -4746,14 +4809,18 @@ extension DrawThingsCLI.Generate {
       throw ValidationError("--avc currently supports only LongCat-Video-Avatar 1.5 models.")
     }
 
+    let imageSize = try inputImageSize(path: imagePath)
     let resolvedConfiguration = try createConfiguration(
       context: context, modelSpecification: modelSpecification, steps: sampling.steps,
       cfg: sampling.cfg,
-      width: sampling.width, height: sampling.height, frames: segmentFrames,
-      seed: sampling.seed, strength: sampling.strength,
+      width: sampling.width, height: sampling.height, firstImageSize: imageSize,
+      frames: segmentFrames, seed: sampling.seed, strength: sampling.strength,
       configJSON: configurationOverrides.configJSON,
       configFile: configurationOverrides.configFile,
       modelsDirectory: modelsDirectory)
+    warnIfCanvasImageIsSmaller(
+      context: context, path: imagePath, size: imageSize,
+      resolvedConfiguration: resolvedConfiguration)
     let promptValues = try resolvedPrompts(context: context, prompts)
     let configuration = resolvedConfiguration.configuration
     guard configuration.guidanceScale == 1 else {
@@ -5263,6 +5330,68 @@ private func loadInputImageTensor(
     throw DrawThingsCLIError.invalidInputImage(filePath)
   }
   return tensor
+}
+
+private func inputImageSize(path: String) throws -> (width: Int, height: Int) {
+  let filePath = URL(fileURLWithPath: path).standardizedFileURL.path
+  guard FileManager.default.fileExists(atPath: filePath) else {
+    throw DrawThingsCLIError.invalidInputImagePath(filePath)
+  }
+  guard let size = inspectTrainingImage(url: URL(fileURLWithPath: filePath)) else {
+    throw DrawThingsCLIError.invalidInputImage(filePath)
+  }
+  return size
+}
+
+/// The output size an image gives: its own resolution, or its aspect ratio next to a given width
+/// or height, rounded to the nearest multiple of 64. A given side is kept as is.
+private func outputSize(of imageSize: (width: Int, height: Int), width: Int?, height: Int?) -> (
+  width: Int, height: Int
+) {
+  let scale =
+    if let width {
+      Double(width) / Double(imageSize.width)
+    } else if let height {
+      Double(height) / Double(imageSize.height)
+    } else {
+      1.0
+    }
+  return (
+    width: width ?? max(Int((Double(imageSize.width) * scale / 64).rounded()), 1) * 64,
+    height: height ?? max(Int((Double(imageSize.height) * scale / 64).rounded()), 1) * 64
+  )
+}
+
+/// Picks which --image is the canvas and which are moodboard images, by index. The first image is
+/// the canvas, except that with a `canvasSize` (the output size when both sides were given and
+/// images aren't cropped), a first image with another aspect ratio puts every image on the
+/// moodboard. The aspect ratio matches when either side of `canvasSize` alone gives the other the
+/// way a missing side is filled in.
+func canvasAndMoodboardImages(
+  sizes: [(width: Int, height: Int)], canvasSize: (width: Int, height: Int)?
+) -> (canvas: Int?, moodboard: [Int]) {
+  guard let canvasSize, let first = sizes.first,
+    outputSize(of: first, width: canvasSize.width, height: nil) != canvasSize,
+    outputSize(of: first, width: nil, height: canvasSize.height) != canvasSize
+  else {
+    return (sizes.indices.first, Array(sizes.indices.dropFirst()))
+  }
+  return (nil, Array(sizes.indices))
+}
+
+private func warnIfCanvasImageIsSmaller(
+  context: DrawThingsCLIContext, path: String, size: (width: Int, height: Int),
+  resolvedConfiguration: ResolvedGenerationConfiguration
+) {
+  let width = Int(resolvedConfiguration.configuration.startWidth) * 64
+  let height = Int(resolvedConfiguration.configuration.startHeight) * 64
+  guard
+    (resolvedConfiguration.isWidthSpecified && size.width < width)
+      || (resolvedConfiguration.isHeightSpecified && size.height < height)
+  else { return }
+  context.write(
+    "Warning: The canvas image, \(path) (\(size.width)x\(size.height)), is smaller than the requested \(width)x\(height) output, so it is scaled up.\n",
+    to: .standardError)
 }
 
 private func combinedTimingSummary(

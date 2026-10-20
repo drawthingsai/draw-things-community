@@ -82,8 +82,10 @@ route it through `ControlModel`.
 
 ## Validate Inputs
 
-Use both a reference image and driving audio. The image is aspect-scaled and center-cropped to the
-requested output size. Width and height must be multiples of 64.
+Use both a reference image and driving audio. With `--avc`, the image is aspect-scaled and
+center-cropped to the requested output size. Without `--avc`, pass `--crop` for the same framing; an
+image whose aspect ratio doesn't match `--width` and `--height` otherwise leaves no canvas, which
+LongCat rejects. Width and height must be multiples of 64.
 
 Confirm that AVFoundation can decode the audio before starting a long run:
 
@@ -178,7 +180,7 @@ Omit `--avc`, `--segment-frames`, and `--cond-frames`. Set `--frames 93` explici
 "$CLI" generate \
   --models-dir "$MODELS_DIR" \
   --model longcat_video_avatar_1.5_dmd_i8x.ckpt \
-  --image "$IMAGE" \
+  --image "$IMAGE" --crop \
   --audio "$AUDIO" \
   --prompt "$PROMPT" \
   --steps 8 --cfg 1 \

@@ -1,9 +1,11 @@
 import ArgumentParser
 import CLICloudAuth
+import CoreGraphics
 import Diffusion
 import Downloader
 import Foundation
 import ImageGenerator
+import ImageIO
 import ModelZoo
 import NNC
 import XCTest
@@ -286,6 +288,108 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
     XCTAssertEqual(
       try GenerateImageInputOptions.parse(["--image", "first.png"]).image, ["first.png"])
     XCTAssertThrowsError(try GenerateImageInputOptions.parse(["--image", "first.png", "--image"]))
+  }
+
+  func testCanvasAndMoodboardImages() {
+    let sizes = [
+      (width: 1000, height: 750), (width: 1024, height: 1024), (width: 512, height: 512),
+    ]
+    // The first image's aspect ratio decides, at any resolution.
+    var images = canvasAndMoodboardImages(sizes: sizes, canvasSize: (width: 1024, height: 768))
+    XCTAssertEqual(images.canvas, 0)
+    XCTAssertEqual(images.moodboard, [1, 2])
+    images = canvasAndMoodboardImages(sizes: sizes, canvasSize: (width: 2048, height: 1536))
+    XCTAssertEqual(images.canvas, 0)
+    // Only the first image is checked, even when a later one matches.
+    images = canvasAndMoodboardImages(sizes: sizes, canvasSize: (width: 1024, height: 1024))
+    XCTAssertNil(images.canvas)
+    XCTAssertEqual(images.moodboard, [0, 1, 2])
+    // 1170x2532 rounds to 1024x2240 next to --width 1024, so that size matches but 1024x2304 doesn't.
+    images = canvasAndMoodboardImages(
+      sizes: [(width: 1170, height: 2532)], canvasSize: (width: 1024, height: 2240))
+    XCTAssertEqual(images.canvas, 0)
+    images = canvasAndMoodboardImages(
+      sizes: [(width: 1170, height: 2532)], canvasSize: (width: 1024, height: 2304))
+    XCTAssertNil(images.canvas)
+    images = canvasAndMoodboardImages(sizes: sizes, canvasSize: nil)
+    XCTAssertEqual(images.canvas, 0)
+    XCTAssertEqual(images.moodboard, [1, 2])
+    images = canvasAndMoodboardImages(sizes: [], canvasSize: nil)
+    XCTAssertNil(images.canvas)
+    XCTAssertEqual(images.moodboard, [])
+  }
+
+  private func estimate(model: String = "z_image_turbo_1.0_q6p.ckpt", _ arguments: [String])
+    throws -> (computeUnits: Int?, error: String)
+  {
+    var result: (computeUnits: Int?, error: String) = (nil, "")
+    try withContext { context, directory, contents in
+      let bitmap = try XCTUnwrap(
+        CGContext(
+          data: nil, width: 1000, height: 750, bitsPerComponent: 8, bytesPerRow: 0,
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+      let destination = try XCTUnwrap(
+        CGImageDestinationCreateWithURL(
+          directory.appendingPathComponent("photo.png") as CFURL, "public.png" as CFString, 1, nil
+        ))
+      CGImageDestinationAddImage(destination, try XCTUnwrap(bitmap.makeImage()), nil)
+      XCTAssertTrue(CGImageDestinationFinalize(destination))
+      XCTAssertEqual(
+        DrawThingsCLI.run(
+          arguments: [
+            "generate", "--offline", "--estimate", "--model", model, "--prompt", "a red cube",
+          ] + arguments, context: context), 0, contents().1)
+      let json = try XCTUnwrap(contents().0.split(separator: "\n").last { $0.hasPrefix("{") })
+      let object = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+      result = (object?["computeUnits"] as? Int, contents().1)
+    }
+    return result
+  }
+
+  func testFirstImageFillsInMissingSize() throws {
+    // A 1000x750 image rounds to 1024x768 on its own, and to 512x384 next to --width 512.
+    let derived = try XCTUnwrap(try estimate(["--image", "photo.png"]).computeUnits)
+    XCTAssertEqual(
+      try estimate(["--image", "photo.png", "--width", "1024", "--height", "768"]).computeUnits,
+      derived)
+    XCTAssertNotEqual(
+      try estimate(["--image", "photo.png", "--width", "1024", "--height", "1024"]).computeUnits,
+      derived)
+    let half = try estimate(["--image", "photo.png", "--width", "512", "--height", "384"])
+      .computeUnits
+    XCTAssertNotEqual(half, derived)
+    XCTAssertEqual(try estimate(["--image", "photo.png", "--width", "512"]).computeUnits, half)
+    // A size from the configuration overrides counts as given.
+    XCTAssertEqual(
+      try estimate(["--image", "photo.png", "--config-json", #"{"height":384}"#]).computeUnits,
+      half)
+  }
+
+  func testImageWarnings() throws {
+    let square = ["--image", "photo.png", "--width", "1024", "--height", "1024"]
+    let aspectRatio =
+      "photo.png (1000x750), doesn't match the aspect ratio of the requested 1024x1024 output"
+    // The aspect ratio check is the same for every model.
+    for model in ["z_image_turbo_1.0_q6p.ckpt", "flux_2_klein_4b_q6p.ckpt"] {
+      let error = try estimate(model: model, square).error
+      XCTAssertTrue(error.contains(aspectRatio), error)
+      XCTAssertFalse(error.contains("smaller"), error)
+    }
+    // --crop keeps the image as the canvas, scaled up to cover 1024x1024.
+    var error = try estimate(square + ["--crop"]).error
+    XCTAssertTrue(
+      error.contains("photo.png (1000x750), is smaller than the requested 1024x1024 output"), error)
+    XCTAssertFalse(error.contains("aspect ratio"), error)
+    error = try estimate(["--image", "photo.png", "--width", "1024", "--height", "768"]).error
+    XCTAssertTrue(error.contains("is smaller than the requested 1024x768 output"), error)
+    XCTAssertFalse(error.contains("aspect ratio"), error)
+    for arguments in [
+      ["--image", "photo.png"], ["--image", "photo.png", "--width", "512", "--height", "384"],
+    ] {
+      error = try estimate(arguments).error
+      XCTAssertFalse(error.contains("Warning"), error)
+    }
   }
 
   func testImageAliasesResolveToPrimaryImage() throws {
