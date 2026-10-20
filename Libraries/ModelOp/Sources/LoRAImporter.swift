@@ -50,7 +50,7 @@ public enum LoRAImporter {
     let unetMapper: ModelWeightMapper
     let unetFixedMapper: ModelWeightMapper
     switch version {
-    case .longcatVideoAvatar1_5:
+    case .mossImage, .longcatVideoAvatar1_5:
       fatalError()
     case .minimaxH3:
       (unetMapper, unet) = MiniMaxH3(
@@ -291,7 +291,7 @@ public enum LoRAImporter {
       let inputDim: Int
       let conditionalLength: Int
       switch version {
-      case .longcatVideoAvatar1_5:
+      case .mossImage, .longcatVideoAvatar1_5:
         fatalError()
       case .minimaxH3:
         inputDim = 24
@@ -378,7 +378,7 @@ public enum LoRAImporter {
       let isCfgEnabled: Bool
       let isGuidanceEmbedEnabled: Bool
       switch version {
-      case .longcatVideoAvatar1_5:
+      case .mossImage, .longcatVideoAvatar1_5:
         fatalError()
       case .minimaxH3:
         isCfgEnabled = false
@@ -767,14 +767,15 @@ public enum LoRAImporter {
         vectors = [graph.variable(.CPU, .WC(2, 768), of: FloatType.self)]
       case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
         .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
-        .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3,
+        .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2,
+        .ltx2_3,
         .cosmos2_5_2b, .ideogram4, .krea2, .minimaxH3:
         vectors = []
       case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
       switch version {
-      case .longcatVideoAvatar1_5:
+      case .mossImage, .longcatVideoAvatar1_5:
         fatalError()
       case .minimaxH3:
         cArr =
@@ -1671,7 +1672,7 @@ public enum LoRAImporter {
     case .zImage:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
+    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
@@ -2045,7 +2046,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
         if let tensorDescMistral3 = stateDict["mistral3"] {
           try archive.with(tensorDescMistral3) {
             let tensor = Tensor<FloatType>(from: $0)
@@ -2111,7 +2112,8 @@ public enum LoRAImporter {
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+        .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4, .krea2, .minimaxH3:
         modelPrefix = "dit"

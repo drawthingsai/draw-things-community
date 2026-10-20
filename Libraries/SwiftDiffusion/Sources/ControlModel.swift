@@ -384,7 +384,8 @@ extension ControlModel {
     switch version {
     case .v1, .v2, .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .kandinsky21, .sd3, .pixart, .auraflow,
       .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .qwenImage,
-      .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b,
+      .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
+      .cosmos2_5_2b,
       .seedvr2_3b,
       .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
       tiledHeight =
@@ -607,7 +608,8 @@ extension ControlModel {
         case .auraflow, .hiDreamI1, .hiDreamO1, .hunyuanVideo, .kandinsky21, .pixart, .sd3,
           .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2, .wurstchenStageB,
           .wurstchenStageC, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-          .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+          .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+          .seedvr2_7b,
           .ideogram4,
           .krea2:
           break
@@ -928,7 +930,8 @@ extension ControlModel {
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage,
-          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3,
+          .seedvr2_3b,
           .seedvr2_7b,
           .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
@@ -962,7 +965,8 @@ extension ControlModel {
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage,
-          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3,
+          .seedvr2_3b,
           .seedvr2_7b,
           .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
@@ -984,7 +988,8 @@ extension ControlModel {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b,
         .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -1038,7 +1043,8 @@ extension ControlModel {
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
               .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+              .ltx2, .ltx2_3,
               .seedvr2_3b,
               .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
               fatalError()
@@ -1076,7 +1082,8 @@ extension ControlModel {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b,
         .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -1108,7 +1115,8 @@ extension ControlModel {
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage,
-          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3,
+          .seedvr2_3b,
           .seedvr2_7b,
           .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
@@ -1130,7 +1138,8 @@ extension ControlModel {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b,
         .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -1185,7 +1194,8 @@ extension ControlModel {
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
               .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+              .ltx2, .ltx2_3,
               .seedvr2_3b,
               .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
               fatalError()
@@ -1308,7 +1318,8 @@ extension ControlModel {
         case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
           .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
           .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage,
-          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+          .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3,
+          .seedvr2_3b,
           .seedvr2_7b,
           .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
@@ -1330,7 +1341,8 @@ extension ControlModel {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21, .ssd1b,
         .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b,
         .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -1388,7 +1400,8 @@ extension ControlModel {
             case .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlRefiner, .kandinsky21,
               .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
               .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+              .ltx2, .ltx2_3,
               .seedvr2_3b,
               .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
               fatalError()
@@ -1493,7 +1506,8 @@ extension ControlModel {
         case .v1, .sdxlBase, .v2, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21,
           .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
           .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+          .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2,
+          .ltx2_3,
           .seedvr2_3b,
           .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
@@ -1511,7 +1525,8 @@ extension ControlModel {
       case .v1, .v2, .sdxlBase, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b,
         .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -1812,6 +1827,7 @@ extension ControlModel {
     case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .sdxlRefiner, .ssd1b,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .qwenImage,
       .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+      .mossImage,
       .cosmos2_5_2b,
       .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
       fatalError()
@@ -1961,7 +1977,8 @@ extension ControlModel {
     case .v2, .sd3, .sd3Large, .pixart, .auraflow, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .ideogram4,
       .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       fatalError()
@@ -2360,7 +2377,8 @@ extension ControlModel {
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlRefiner, .ssd1b, .svdI2v, .v1, .v2,
       .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .ideogram4,
       .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       fatalError()
@@ -2515,7 +2533,8 @@ extension ControlModel {
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
         .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-        .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+        .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .ideogram4,
         .krea2,
         .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -2600,6 +2619,7 @@ extension ControlModel {
       case .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .sdxlRefiner, .ssd1b, .svdI2v,
         .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .qwenImage,
         .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .mossImage,
         .cosmos2_5_2b,
         .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
         fatalError()
@@ -2747,7 +2767,8 @@ extension ControlModel {
     case .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-      .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+      .seedvr2_7b,
       .ideogram4,
       .krea2, .longcatVideoAvatar1_5:
       break

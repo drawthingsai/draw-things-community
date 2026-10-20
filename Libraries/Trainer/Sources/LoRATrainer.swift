@@ -123,7 +123,7 @@ public struct LoRATrainer {
           return "hunyuan_video_vae_f16.ckpt"
         case .qwenImage:
           return "qwen_image_vae_f16.ckpt"
-        case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ideogram4:
+        case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ideogram4:
           return "flux_2_vae_f16.ckpt"
         case .krea2:
           return "qwen_image_vae_f16.ckpt"
@@ -164,7 +164,7 @@ public struct LoRATrainer {
           return "ministral_3_3b_f16.ckpt"
         case .zImage:
           fatalError()
-        case .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
+        case .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
           fatalError()
         case .ideogram4:
           return "qwen_3_vl_8b_instruct_q8p.ckpt"
@@ -2007,7 +2007,8 @@ public struct LoRATrainer {
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .ideogram4,
         .krea2:
         fatalError()
       }
@@ -2072,7 +2073,8 @@ public struct LoRATrainer {
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
             .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-            .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+            .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+            .ideogram4,
             .krea2:
             fatalError()
           }
@@ -6408,7 +6410,8 @@ public struct LoRATrainer {
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .ideogram4,
         .krea2:
         fatalError()
       }
@@ -6493,7 +6496,8 @@ public struct LoRATrainer {
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+              .seedvr2_3b,
               .seedvr2_7b,
               .ideogram4, .krea2:
               fatalError()
@@ -6697,7 +6701,8 @@ public struct LoRATrainer {
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .ideogram4,
         .krea2:
         fatalError()
       }
@@ -6894,7 +6899,8 @@ public struct LoRATrainer {
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
-          .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3:
+          .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
+          .ltx2, .ltx2_3:
           embeddingName = ("string_to_param", "string_to_param")
           firstStd = 0.02
         case .sd3, .sd3Large, .sdxlBase, .ssd1b:
@@ -7185,7 +7191,8 @@ public struct LoRATrainer {
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
                 .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
                 .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b,
-                .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3,
+                .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2,
+                .ltx2_3,
                 .seedvr2_3b,
                 .seedvr2_7b, .ideogram4, .krea2:
                 fatalError()
@@ -7328,7 +7335,8 @@ public struct LoRATrainer {
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+              .seedvr2_3b,
               .seedvr2_7b,
               .ideogram4, .krea2:
               fatalError()
@@ -7435,7 +7443,8 @@ public struct LoRATrainer {
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+              .seedvr2_3b,
               .seedvr2_7b,
               .ideogram4, .krea2:
               fatalError()

@@ -21,7 +21,7 @@ public enum LoRAExporter {
     var metadata = [String: String]()
     metadata["name"] = humanName
     switch version {
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .mossImage, .longcatVideoAvatar1_5, .minimaxH3:
       fatalError()
     case .v1:
       metadata["version"] = "v1"
@@ -187,7 +187,8 @@ public enum LoRAExporter {
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
       .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .krea2:
       textEncoderKeys = []
       textEncoderKeysMapping = [:]
       textEncoderKeys2 = nil

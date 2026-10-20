@@ -114,6 +114,20 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       "<|lyrics_start|>": 151672, "<|lyrics_end|>": 151673,
       "<|caption_start|>": 151674, "<|caption_end|>": 151675,
     ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>")
+  let tokenizerQwen35 = TiktokenTokenizer(
+    vocabulary: BinaryResources.vocab_qwen3_5_json, merges: BinaryResources.merges_qwen3_5_txt,
+    specialTokens: [
+      "<|endoftext|>": 248044, "<|im_start|>": 248045, "<|im_end|>": 248046,
+      "<|object_ref_start|>": 248047, "<|object_ref_end|>": 248048, "<|box_start|>": 248049,
+      "<|box_end|>": 248050, "<|quad_start|>": 248051, "<|quad_end|>": 248052,
+      "<|vision_start|>": 248053, "<|vision_end|>": 248054, "<|vision_pad|>": 248055,
+      "<|image_pad|>": 248056, "<|video_pad|>": 248057, "<tool_call>": 248058,
+      "</tool_call>": 248059, "<|fim_prefix|>": 248060, "<|fim_middle|>": 248061,
+      "<|fim_suffix|>": 248062, "<|fim_pad|>": 248063, "<|repo_name|>": 248064,
+      "<|file_sep|>": 248065, "<tool_response>": 248066, "</tool_response>": 248067,
+      "<think>": 248068, "</think>": 248069,
+    ], unknownToken: "<|endoftext|>", startToken: "<|endoftext|>", endToken: "<|endoftext|>",
+    pretokenizer: .qwen3_5)
   let tokenizerMistral3 = TiktokenTokenizer(
     vocabulary: BinaryResources.vocab_mistral3_json, merges: BinaryResources.merges_mistral3_txt,
     specialTokens: [
@@ -133,7 +147,7 @@ private func createLocalImageGenerator(queue: DispatchQueue) -> (String, LocalIm
       tokenizerChatGLM3: tokenizerChatGLM3, tokenizerLlama3: tokenizerLlama3,
       tokenizerUMT5: tokenizerUMT5, tokenizerQwen25: tokenizerQwen25,
       tokenizerQwen3: tokenizerQwen3, tokenizerQwen3MinimaxH3: tokenizerQwen3MinimaxH3,
-      tokenizerMistral3: tokenizerMistral3,
+      tokenizerQwen35: tokenizerQwen35, tokenizerMistral3: tokenizerMistral3,
       tokenizerGemma3: tokenizerGemma3
     )
   )

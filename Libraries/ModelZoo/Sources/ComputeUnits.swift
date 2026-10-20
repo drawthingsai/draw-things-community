@@ -95,7 +95,8 @@ public enum ComputeUnits {
     switch context.modelVersion {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .qwenImage2_1,
-      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .hiDreamI1,
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+      .hiDreamI1,
       .hiDreamO1,
       .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (max(1, Int(configuration.batchSize)) * cfgChannels, 1)
@@ -143,6 +144,7 @@ public enum ComputeUnits {
     case .hunyuanVideo:
       return 256
     case .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+      .mossImage,
       .ideogram4:
       return 512
     case .krea2:
@@ -497,6 +499,14 @@ public enum ComputeUnits {
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
         channels: 2048, layers: 28)
       return (main: mainCount * batchSize, fixed: 0)
+    case .mossImage:
+      let mainCount = MOSSImageInstructionCount(
+        batchSize: 1, tokenLength: baseTokenLength, height: startHeight, width: startWidth,
+        channels: 3_072, layers: 42)
+      // The text refiner runs on every prompt packed together.
+      let fixedCount = MOSSImageFixedInstructionCount(
+        batchSize: 1, tokenLength: baseTokenLength * cfgChannels, timesteps: 1, channels: 3_072)
+      return (main: mainCount * batchSize, fixed: fixedCount * batchSize)
     case .flux3_5b:
       let mainCount = Flux3InstructionCount(
         batchSize: 1, tokenLength: baseTokenLength,

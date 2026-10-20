@@ -3551,6 +3551,99 @@ extension TextEncoder {
     return ([conditioning], [textModel])
   }
 
+  private func encodeMOSSImage(
+    tokens: [DynamicGraph.Tensor<Int32>], tokenLengthUncond: Int, tokenLengthCond: Int
+  )
+    -> ([DynamicGraph.Tensor<FloatType>], [Model])
+  {
+    let graph = tokens[0].graph
+    let externalData: DynamicGraph.Store.Codec =
+      externalOnDemand || deviceProperties.memoryCapacity < .high
+      ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
+    let tokenLength = tokens[0].shape[0] / 2
+    let configuration = Qwen3_5ModelConfiguration.qwen3_5_9B
+    // MOSS Image encodes each prompt at its own length because padding would leak into the linear
+    // attention states. The condition is the final normalized hidden state of every token. The
+    // cache states are output (and ignored) because the graph computes them regardless.
+    let textModel = ModelBuilder { (tokenLength: Int, _) in
+      Qwen3_5CausalLM(
+        FloatType.self, tokenLength: tokenLength, configuration: configuration,
+        includeLogits: false, outputCacheStates: true, lastNumberOfTokens: tokenLength)
+    }
+    textModel.maxConcurrency = .limit(4)
+    let emptyTokens = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Int32.self)
+    let emptyEmbeddings = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: FloatType.self)
+    func inputs(tokenLength: Int, offset: Int) -> [DynamicGraph.AnyTensor] {
+      var inputs: [DynamicGraph.AnyTensor] = [
+        tokens[0][offset..<(offset + tokenLength)].toGPU(0), emptyEmbeddings, emptyTokens,
+        graph.variable(
+          Qwen3_5RotaryEmbedding(
+            sequenceLength: tokenLength, configuration: configuration, of: FloatType.self
+          ).toGPU(0)),
+      ]
+      // Linear attention states start from zero, full attention caches only hold the prompt.
+      for i in 0..<configuration.layers {
+        if configuration.isLinearAttentionLayer(i) {
+          let convState = graph.variable(
+            .GPU(0),
+            .NHWC(1, configuration.linearConvKernel - 1, 1, configuration.linearConvDim),
+            of: FloatType.self)
+          convState.full(0)
+          let recurrentState = graph.variable(
+            .GPU(0),
+            .NHWC(
+              1, configuration.linearNumValueHeads, configuration.linearValueHeadDim,
+              configuration.linearKeyHeadDim), of: Float.self)
+          recurrentState.full(0)
+          inputs.append(contentsOf: [convState, recurrentState])
+        } else {
+          let keys = graph.variable(
+            .GPU(0),
+            .NHWC(1, tokenLength, configuration.keyValueHeads, configuration.attentionHeadDim),
+            of: FloatType.self)
+          let values = graph.variable(
+            .GPU(0),
+            .NHWC(1, tokenLength, configuration.keyValueHeads, configuration.attentionHeadDim),
+            of: FloatType.self)
+          inputs.append(contentsOf: [keys, values])
+        }
+      }
+      return inputs
+    }
+    let tokenLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
+    let offsets = isCfgEnabled ? [0, tokenLength] : [tokenLength]
+    let maxTokenLength = tokenLengths.max() ?? tokenLengthCond
+    // Compile with the longest prompt.
+    let longest = tokenLengths.firstIndex(of: maxTokenLength) ?? 0
+    let longestInputs = inputs(tokenLength: maxTokenLength, offset: offsets[longest])
+    textModel.compile(maxTokenLength, inputs: longestInputs)
+    if !weightsCache.detach(filePaths[0], to: textModel.parameters) {
+      TensorData.makeExternalData(for: filePaths[0], graph: graph)
+      graph.openStore(
+        filePaths[0], flags: .readOnly,
+        externalStore: TensorData.externalStore(filePath: filePaths[0])
+      ) { store in
+        store.read(
+          "text_model", model: textModel,
+          codec: [.q8p, .q6p, .q4p, .ezm7, .i8x, .jit, externalData])
+      }
+    }
+    var conditioning = graph.variable(
+      .GPU(0), .HWC(tokenLengths.count, maxTokenLength, configuration.hiddenSize),
+      of: FloatType.self)
+    conditioning.full(0)
+    for (i, tokenLength) in tokenLengths.enumerated() {
+      let input =
+        i == longest ? longestInputs : inputs(tokenLength: tokenLength, offset: offsets[i])
+      let c = textModel(tokenLength, inputs: input[0], Array(input.dropFirst()))[0].as(
+        of: FloatType.self)
+      conditioning[i..<(i + 1), 0..<tokenLength, 0..<configuration.hiddenSize] = c.reshaped(
+        .HWC(1, tokenLength, configuration.hiddenSize))
+    }
+    weightsCache.attach(filePaths[0], from: textModel.parameters)
+    return ([conditioning], [])
+  }
+
   private func encodeIdeogram4(
     tokens: [DynamicGraph.Tensor<Int32>], tokenLengthUncond: Int, tokenLengthCond: Int
   )
@@ -4348,6 +4441,9 @@ extension TextEncoder {
     case .flux3_5b:
       return encodeFlux3(
         tokens: tokens, tokenLengthUncond: &tokenLengthUncond, tokenLengthCond: &tokenLengthCond)
+    case .mossImage:
+      return encodeMOSSImage(
+        tokens: tokens, tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond)
     case .flux2_9b, .flux2_4b:
       return encodeFlux2Qwen3(
         images: images, tokens: tokens, positions: positions, mask: mask,
@@ -4489,7 +4585,8 @@ extension TextEncoder {
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2,
+        .ltx2_3,
         .seedvr2_3b,
         .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -4530,6 +4627,7 @@ extension TextEncoder {
                   .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                   .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1,
                   .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+                  .mossImage,
                   .cosmos2_5_2b,
                   .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
                   .longcatVideoAvatar1_5, .minimaxH3:
@@ -4573,6 +4671,7 @@ extension TextEncoder {
                 .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo,
                 .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1,
                 .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+                .mossImage,
                 .cosmos2_5_2b, .ltx2,
                 .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5,
                 .minimaxH3:

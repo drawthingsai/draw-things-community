@@ -550,7 +550,7 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .zImage:
         throw Error.noTextEncoder
-      case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
+      case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
         throw Error.noTextEncoder
       case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         throw Error.noTextEncoder
@@ -628,7 +628,8 @@ public final class ModelImporter {
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
             .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-            .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+            .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+            .ideogram4,
             .krea2:
             fatalError()
           }
@@ -672,7 +673,8 @@ public final class ModelImporter {
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
               .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b,
+              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+              .seedvr2_3b,
               .seedvr2_7b,
               .ideogram4, .krea2:
               fatalError()
@@ -775,6 +777,8 @@ public final class ModelImporter {
     let conditionalLength: Int
     let batchSize: Int
     switch modelVersion {
+    case .mossImage:
+      fatalError()
     case .longcatVideoAvatar1_5:
       conditionalLength = 4096
       batchSize = 1
@@ -867,6 +871,8 @@ public final class ModelImporter {
       let unetMapper: ModelWeightMapper?
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
+      case .mossImage:
+        fatalError()
       case .longcatVideoAvatar1_5:
         let rot = Tensor<FloatType>(
           from: WanRotaryPositionEmbedding(
@@ -915,6 +921,7 @@ public final class ModelImporter {
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
           .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
           .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+          .mossImage,
           .ltx2,
           .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
           vectors = []
@@ -1161,6 +1168,8 @@ public final class ModelImporter {
       let unetFixedMapper: ModelWeightMapper?
       var additionalMappings = [(prefix: String, mapping: ModelWeightMapping)]()
       switch modelVersion {
+      case .mossImage:
+        fatalError()
       case .longcatVideoAvatar1_5:
         (unetMapper, unet) = LongCatVideoAvatar(
           time: 1, height: 64, width: 64, channels: 4_096, layers: 48, intermediateSize: 11_008,
@@ -1452,6 +1461,8 @@ public final class ModelImporter {
       }
       let crossattn: [DynamicGraph.AnyTensor]
       switch modelVersion {
+      case .mossImage:
+        fatalError()
       case .longcatVideoAvatar1_5:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 512, 4096), of: FloatType.self),
@@ -1870,7 +1881,7 @@ public final class ModelImporter {
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
             .hiDreamO1, .qwenImage2_1, .wan22_5b, .qwenImage, .cosmos2_5_2b, .auraflow, .zImage,
-            .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3,
+            .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
             .longcatVideoAvatar1_5,
             .ideogram4, .krea2:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
@@ -2151,6 +2162,8 @@ public final class ModelImporter {
       }
       try graph.openStore(filePath) {
         switch modelVersion {
+        case .mossImage:
+          fatalError()
         case .longcatVideoAvatar1_5:
           if $0.keys.count < 2_600 {
             throw Error.tensorWritesFailed
@@ -2434,6 +2447,8 @@ extension ModelImporter {
     let textEncoder: String?
 
     switch modelVersion {
+    case .mossImage:
+      fatalError()
     case .longcatVideoAvatar1_5:
       textEncoder = "umt5_xxl_encoder_q8p.ckpt"
     case .v1:
@@ -2590,6 +2605,8 @@ extension ModelImporter {
     var additionalModels = [(name: String, subtitle: String, file: String)]()
 
     switch modelVersion {
+    case .mossImage:
+      fatalError()
     case .longcatVideoAvatar1_5:
       if specification.textEncoder == nil {
         specification.textEncoder = "umt5_xxl_encoder_q8p.ckpt"

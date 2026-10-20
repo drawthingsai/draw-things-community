@@ -57,7 +57,8 @@ extension UNetFixedEncoder {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .ideogram4,
       .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       return true
@@ -203,7 +204,8 @@ extension UNetFixedEncoder {
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-      .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+      .seedvr2_7b,
       .ideogram4,
       .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return []
@@ -1214,7 +1216,8 @@ extension UNetFixedEncoder {
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .seedvr2_7b,
         .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -2897,6 +2900,63 @@ extension UNetFixedEncoder {
         ]
       }
       return (rotaryEmbeddings + conditions, nil)
+    case .mossImage:
+      precondition(timesteps.count > 0)
+      let c0 = textEncoding[0]
+      let tokenLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
+      // Pack the prompts one after another, the text refiner attends within each prompt only.
+      var context = graph.variable(
+        .GPU(0), .HWC(batchSize, tokenLengths.reduce(0, +), 4_096), of: FloatType.self)
+      var offset = 0
+      for (i, tokenLength) in tokenLengths.enumerated() {
+        context[0..<batchSize, offset..<(offset + tokenLength), 0..<4_096] =
+          c0[(i * batchSize)..<((i + 1) * batchSize), 0..<tokenLength, 0..<4_096]
+        offset += tokenLength
+      }
+      let textRotary = graph.variable(
+        Tensor<FloatType>(
+          from: MOSSImageRotaryPositionEmbedding(
+            height: 0, width: 0, tokenLengths: [tokenLengths.max() ?? tokenLengthCond])
+        ).toGPU(0))
+      var timeEmbeds = graph.variable(.GPU(0), .WC(timesteps.count, 256), of: FloatType.self)
+      for (i, timestep) in timesteps.enumerated() {
+        timeEmbeds[i..<(i + 1), 0..<256] = graph.variable(
+          Tensor<FloatType>(
+            from: timeEmbedding(
+              timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
+          ).toGPU(0))
+      }
+      let (_, unetFixed) = MOSSImageFixed(
+        FloatType.self, batchSize: batchSize, tokenLengths: tokenLengths,
+        timesteps: timesteps.count, channels: 3_072,
+        usesFlashAttention: valueOr(usesFlashAttention, .scale1))
+      unetFixed.maxConcurrency = .limit(4)
+      unetFixed.compile(inputs: context, textRotary, timeEmbeds)
+      if !weightsCache.detach("\(filePath):[fixed]", to: unetFixed.parameters) {
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
+      }
+      let conditions = unetFixed(inputs: context, textRotary, timeEmbeds)
+      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      // Unpack the refined text into one row per prompt, the same layout as the text encoding.
+      let refined = DynamicGraph.Tensor<Float>(conditions[0])
+      var text = graph.variable(.GPU(0), .HWC(c0.shape[0], c0.shape[1], 3_072), of: Float.self)
+      text.full(0)
+      offset = 0
+      for (i, tokenLength) in tokenLengths.enumerated() {
+        text[(i * batchSize)..<((i + 1) * batchSize), 0..<tokenLength, 0..<3_072] =
+          refined[0..<batchSize, offset..<(offset + tokenLength), 0..<3_072]
+        offset += tokenLength
+      }
+      // Image tokens take the text length as a position, thus, each prompt has its own row.
+      let rotaryEmbedding = Tensor<FloatType>(
+        from: MOSSImageRotaryPositionEmbedding(
+          height: startHeight / 2, width: startWidth / 2, tokenLengths: tokenLengths)
+      ).toGPU(0)
+      return ([graph.variable(rotaryEmbedding), text] + conditions.dropFirst(), nil)
     case .flux3_5b:
       let c0 = textEncoding[0]
       let cBatchSize = c0.shape[0]

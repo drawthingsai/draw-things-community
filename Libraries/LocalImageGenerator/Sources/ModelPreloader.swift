@@ -549,7 +549,7 @@ extension ModelPreloader {
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
       .qwenImage2_1, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-      .flux3_5b,
+      .flux3_5b, .mossImage,
       .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5,
       .minimaxH3:
       fatalError()
@@ -781,7 +781,8 @@ extension ModelPreloader {
         case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
           .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
           .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
-          .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+          .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+          .ideogram4,
           .krea2,
           .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
@@ -823,7 +824,8 @@ extension ModelPreloader {
                   case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
                     .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
                     .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .wan22_5b,
-                    .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3,
+                    .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
+                    .ltx2, .ltx2_3,
                     .seedvr2_3b,
                     .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
                     fatalError()
@@ -869,7 +871,8 @@ extension ModelPreloader {
                 case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
                   .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
                   .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .wan22_5b,
-                  .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3,
+                  .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2,
+                  .ltx2_3,
                   .seedvr2_3b,
                   .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
                   fatalError()
@@ -1177,7 +1180,8 @@ extension ModelPreloader {
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
             .wurstchenStageB, .wurstchenStageC, .svdI2v, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
             .hiDreamI1, .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
-            .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+            .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b,
+            .seedvr2_7b,
             .ideogram4,
             .krea2, .longcatVideoAvatar1_5:
             return DeviceCapability.isLowPerformance
@@ -1419,7 +1423,8 @@ extension ModelPreloader {
     switch sampler.version {
     case .auraflow, .flux1, .hiDreamI1, .hiDreamO1, .hunyuanVideo, .sd3, .sd3Large, .wan21_14b,
       .wan21_1_3b, .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage,
-      .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .ideogram4,
       .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       let unet: UNetWrapper<FloatType>? = {

@@ -71,6 +71,8 @@ public struct ModelZoo: DownloadZoo {
       return "FLUX.2 4B"
     case .flux3_5b:
       return "FLUX.3 5B"
+    case .mossImage:
+      return "MOSS Image"
     case .cosmos2_5_2b:
       return "Cosmos 2.5 2B"
     case .ltx2:
@@ -1366,6 +1368,14 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[FLUX.2 [klein] 4B Base](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
       copyright: "© 2026 Black Forest Labs"
+    ),
+    Specification(
+      name: "MOSS Image SFT", file: "moss_image_sft_f16.ckpt", prefix: "",
+      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "[MOSS Image SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) is a supervised fine-tuned text-to-image model from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
+      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-SFT"
     ),
     Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",
@@ -2825,7 +2835,7 @@ public struct ModelZoo: DownloadZoo {
       return .u(conditionScale: 1)
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b,
-      .flux3_5b,
+      .flux3_5b, .mossImage,
       .ltx2, .ltx2_3, .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
       return .u(conditionScale: 1000)
@@ -2841,7 +2851,8 @@ public struct ModelZoo: DownloadZoo {
     case .kandinsky21, .sdxlBase, .sdxlRefiner, .v1, .v2, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2,
+      .ltx2_3,
       .seedvr2_3b,
       .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return .timestep
@@ -2877,7 +2888,8 @@ public struct ModelZoo: DownloadZoo {
     case .cosmos2_5_2b:
       return .rf(.init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1))
     case .sd3, .sd3Large, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
-      .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .ltx2,
+      .hiDreamO1, .qwenImage, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+      .mossImage, .ltx2,
       .ltx2_3,
       .ernieImage, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
@@ -2903,7 +2915,7 @@ public struct ModelZoo: DownloadZoo {
     case .hiDreamI1:
       return 128
     case .hiDreamO1, .hunyuanVideo, .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2,
-      .flux3_5b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return 0
     case .wan21_1_3b, .wan21_14b, .wan22_5b, .flux2_9b, .flux2_4b, .cosmos2_5_2b,
       .longcatVideoAvatar1_5:
@@ -3075,7 +3087,7 @@ public struct ModelZoo: DownloadZoo {
           1.65655173, 1.68533454,
         ], 1, nil, nil, nil
       )
-    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
+    case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
       return (
         [
           -6.76177666e-02, -7.15223551e-02, -7.53413364e-02, -7.44939372e-02,
@@ -3348,7 +3360,8 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4,
+      .krea2,
       .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b:
       return nil
@@ -3363,7 +3376,8 @@ public struct ModelZoo: DownloadZoo {
     case .v1, .v2, .svdI2v, .ssd1b, .sdxlBase, .sdxlRefiner, .pixart, .auraflow, .kandinsky21,
       .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .flux1, .hiDreamI1, .hiDreamO1, .zImage,
       .ernieImage, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .qwenImage2_1, .wan22_5b,
-      .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4,
+      .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b,
+      .ideogram4,
       .krea2:
       return 24_000
     case .longcatVideoAvatar1_5:
@@ -3433,7 +3447,7 @@ public struct ModelZoo: DownloadZoo {
       .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .zImage,
       .ernieImage,
       .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return 30
     }
   }
@@ -3457,6 +3471,7 @@ public struct ModelZoo: DownloadZoo {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_1_3b, .wan21_14b, .qwenImage,
         .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .mossImage,
         .cosmos2_5_2b,
         .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2,
         .longcatVideoAvatar1_5:
@@ -3562,6 +3577,8 @@ public struct ModelZoo: DownloadZoo {
         return fileSize < 4 * 1_024 * 1_024 * 1_024
       case .flux3_5b:
         return fileSize < 5 * 1_024 * 1_024 * 1_024
+      case .mossImage:
+        return fileSize < 6 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
       case .seedvr2_3b:
@@ -3643,6 +3660,8 @@ public struct ModelZoo: DownloadZoo {
       case .flux2_4b:
         return fileSize < 7 * 1_024 * 1_024 * 1_024
       case .flux3_5b:
+        return fileSize < 9 * 1_024 * 1_024 * 1_024
+      case .mossImage:
         return fileSize < 9 * 1_024 * 1_024 * 1_024
       case .ltx2, .ltx2_3:
         return fileSize < 20 * 1_024 * 1_024 * 1_024
@@ -3798,7 +3817,8 @@ extension ModelZoo {
   public static func isCLIPSkipAvailable(_ version: ModelVersion) -> Bool {
     switch version {
     case .pixart, .auraflow, .wan21_14b, .wan21_1_3b, .qwenImage, .qwenImage2_1, .svdI2v, .wan22_5b,
-      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+      .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+      .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return false
     case .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .v1, .v2, .flux1, .hunyuanVideo, .hiDreamI1,

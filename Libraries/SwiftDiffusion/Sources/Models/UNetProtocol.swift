@@ -132,7 +132,7 @@ extension UNetProtocol {
         .toGPU(0))
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
       .longcatVideoAvatar1_5,
       .minimaxH3:
       return nil
@@ -396,6 +396,15 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
         ].copied()
       }
       + conditions[(1 + CosmosFixedTimeConditionCount)..<conditions.count]
+  case .mossImage:
+    // Rotary and text are followed by 6 shared modulation chunks and the head shift / scale.
+    return conditions[0..<2]
+      + conditions[2..<conditions.count].map {
+        let shape = $0.shape
+        return DynamicGraph.Tensor<Float>($0)[
+          index..<(index + 1), 0..<shape[1], 0..<shape[2]
+        ].copied()
+      }
   case .flux3_5b:
     let endIndex = referenceImageCount > 0 ? 3 : 2
     return conditions[0..<endIndex]
@@ -649,7 +658,8 @@ public func externalOnDemandPartially(
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b, .flux1, .sd3Large,
       .hunyuanVideo, .hiDreamI1, .hiDreamO1, .wan21_14b, .qwenImage, .qwenImage2_1, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ltx2, .ltx2_3,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2,
+      .ltx2_3,
       .seedvr2_3b,
       .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5:
       return false
@@ -662,7 +672,8 @@ public func externalOnDemandPartially(
       .wurstchenStageB, .sd3, .pixart, .auraflow, .wan21_1_3b, .wan22_5b:
       return false
     case .flux1, .sd3Large, .hunyuanVideo, .hiDreamI1, .hiDreamO1, .wan21_14b, .qwenImage,
-      .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b,
+      .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
+      .cosmos2_5_2b,
       .ltx2,
       .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       return true
@@ -1901,6 +1912,27 @@ extension UNetFromNNC {
             ).1
           })
       }
+    case .mossImage:
+      tiledWidth =
+        tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
+      tiledHeight =
+        tiledDiffusion.isEnabled
+        ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
+      tiledAudioHeight = 0
+      tileScaleFactor = 8
+      didRunLoRASeparately = false
+      unet = ModelBuilderOrModel.modelBuilder(
+        ModelBuilder { _, inputs in
+          // The negative branch skips block 22 (upstream `uncond_skip_layers`) by passing 0-length
+          // rotary embeddings to it.
+          return MOSSImage(
+            FloatType.self, batchSize: inputs[0].shape[0], tokenLength: inputs[2].shape[1],
+            height: tiledHeight, width: tiledWidth, channels: 3_072, layers: 42,
+            skippableLayers: [22],
+            skipsLayers: inputs[inputs.count - 1].shape[0] == 0,
+            usesFlashAttention: valueOr(useFlashAttention, .scale1)
+          ).1
+        })
     case .flux3_5b:
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 8, startWidth) : startWidth
@@ -2287,7 +2319,7 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-        .flux3_5b,
+        .flux3_5b, .mossImage,
         .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
         .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -2354,7 +2386,8 @@ extension UNetFromNNC {
       modelKey = "stage_c"
     case .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-      .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+      .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2,
+      .ltx2_3,
       .seedvr2_3b,
       .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3:
       modelKey = "dit"
@@ -2402,7 +2435,7 @@ extension UNetFromNNC {
           return true
         }
       } else if version == .flux2 || version == .flux2_4b || version == .flux2_9b
-        || version == .flux3_5b
+        || version == .flux3_5b || version == .mossImage
       {  // FLUX.2 is a 32B-parameter model, offload all MLP layers.
         if name.contains("_up_proj-") || name.contains("_w3-") {
           return true
@@ -2538,7 +2571,7 @@ extension UNetFromNNC {
             case .minimaxH3:
               return [Int: Int](uniqueKeysWithValues: (0..<50).map { ($0, $0) })
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-              .seedvr2_7b:
+              .seedvr2_7b, .mossImage:
               fatalError()
             }
           }()
@@ -3166,6 +3199,33 @@ extension UNetFromNNC {
           0..<shape[0], (h * w)..<(h * w + tokenLength), 0..<shape[2], 0..<shape[3]] =
           tokenEncoding
         return finalEncoding
+      case .mossImage:
+        // The rotary embedding has one row per prompt, image tokens followed by text tokens.
+        if $0.0 == 0 {
+          let shape = $0.1.shape
+          let imageLength = (originalShape[1] / 2) * (originalShape[2] / 2)
+          let tokenLength = shape[1] - imageLength
+          let graph = $0.1.graph
+          let imageEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], 0..<imageLength, 0..<shape[2], 0..<shape[3]
+          ].copied().reshaped(
+            .NHWC(shape[0], originalShape[1] / 2, originalShape[2] / 2, shape[3]))
+          let tokenEncoding = DynamicGraph.Tensor<FloatType>($0.1)[
+            0..<shape[0], imageLength..<shape[1], 0..<shape[2], 0..<shape[3]
+          ].copied()
+          let h = inputEndYPad / 2 - inputStartYPad / 2
+          let w = inputEndXPad / 2 - inputStartXPad / 2
+          let sliceEncoding = imageEncoding[
+            0..<shape[0], (inputStartYPad / 2)..<(inputEndYPad / 2),
+            (inputStartXPad / 2)..<(inputEndXPad / 2), 0..<shape[3]
+          ].copied().reshaped(.NHWC(shape[0], h * w, 1, shape[3]))
+          var finalEncoding = graph.variable(
+            $0.1.kind, .NHWC(shape[0], h * w + tokenLength, 1, shape[3]), of: FloatType.self)
+          finalEncoding[0..<shape[0], 0..<(h * w), 0..<1, 0..<shape[3]] = sliceEncoding
+          finalEncoding[0..<shape[0], (h * w)..<(h * w + tokenLength), 0..<1, 0..<shape[3]] =
+            tokenEncoding
+          return finalEncoding
+        }
       case .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
         if $0.0 == 0 {
           let shape = $0.1.shape
@@ -3615,6 +3675,30 @@ extension UNetFromNNC {
         }
       }
       unet.compile(inputs: inputs)
+      return
+    case .mossImage:
+      let x = DynamicGraph.Tensor<FloatType>(inputs[0])
+      let shape = x.shape
+      let rot = DynamicGraph.Tensor<FloatType>(inputs[1])
+      let rotShape = rot.shape
+      let context = DynamicGraph.Tensor<Float>(inputs[2])
+      let contextShape = context.shape
+      // Compile with the longest prompt, which has its own row in the rotary embedding. The
+      // skippable blocks take the same rotary embedding as the other blocks.
+      let (index, tokenLength) =
+        isCfgEnabled && tokenLengthUncond > tokenLengthCond
+        ? (0, tokenLengthUncond) : (rotShape[0] - 1, tokenLengthCond)
+      let batchSize = isCfgEnabled ? shape[0] / 2 : shape[0]
+      let imageLength = (shape[1] / 2) * (shape[2] / 2)
+      let branchRot = rot[
+        index..<(index + 1), 0..<(imageLength + tokenLength), 0..<1, 0..<rotShape[3]
+      ].copied()
+      let compileInputs: [DynamicGraph.AnyTensor] =
+        [
+          x[0..<batchSize, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied(), branchRot,
+          context[0..<batchSize, 0..<tokenLength, 0..<contextShape[2]].copied(),
+        ] + inputs[3...] + [branchRot]
+      unet.compile(inputs: compileInputs)
       return
     case .flux3_5b:
       guard isCfgEnabled else {
@@ -4874,6 +4958,57 @@ extension UNetFromNNC {
           return et
         }
       }
+    case .mossImage:
+      let shape = firstInput.shape
+      let rot = DynamicGraph.Tensor<FloatType>(restInputs[0])
+      let rotShape = rot.shape
+      let context = DynamicGraph.Tensor<Float>(restInputs[1])
+      let contextShape = context.shape
+      let imageLength = (shape[1] / 2) * (shape[2] / 2)
+      // Each prompt runs at its own length with its own row of the rotary embedding. The negative
+      // branch skips block 22 by giving it 0-length rotary embeddings.
+      func run(_ range: Range<Int>, index: Int, tokenLength: Int, skipsLayers: Bool)
+        -> DynamicGraph.Tensor<FloatType>
+      {
+        let x = firstInput[range, 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
+        let branchRot = rot[
+          index..<(index + 1), 0..<(imageLength + tokenLength), 0..<1, 0..<rotShape[3]
+        ].copied()
+        let skippableRot =
+          skipsLayers
+          ? firstInput.graph.variable(.GPU(0), format: .NHWC, shape: [0], of: FloatType.self)
+          : branchRot
+        let others: [DynamicGraph.AnyTensor] =
+          [branchRot, context[range, 0..<tokenLength, 0..<contextShape[2]].copied()]
+          + restInputs[2...] + [skippableRot]
+        return unet(inputs: x, others)[0].as(of: FloatType.self)
+      }
+      guard isCfgEnabled else {
+        return run(0..<shape[0], index: 0, tokenLength: tokenLengthCond, skipsLayers: false)
+      }
+      let etUncond: DynamicGraph.Tensor<FloatType>
+      let etCond: DynamicGraph.Tensor<FloatType>
+      if tokenLengthCond >= tokenLengthUncond {
+        // We compiled the graph with the conditional branch, run it first to avoid re-compilation.
+        etCond = run(
+          (shape[0] / 2)..<shape[0], index: 1, tokenLength: tokenLengthCond, skipsLayers: false)
+        etCond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etCond, etCond)
+        }
+        etUncond = run(
+          0..<(shape[0] / 2), index: 0, tokenLength: tokenLengthUncond, skipsLayers: true)
+      } else {
+        etUncond = run(
+          0..<(shape[0] / 2), index: 0, tokenLength: tokenLengthUncond, skipsLayers: true)
+        etUncond.graph.joined()  // Wait for the result to be fully populated. Seems otherwise I can have Metal error for very large executions.
+        guard !isCancelled.load(ordering: .acquiring) else {
+          return Functional.concat(axis: 0, etUncond, etUncond)
+        }
+        etCond = run(
+          (shape[0] / 2)..<shape[0], index: 1, tokenLength: tokenLengthCond, skipsLayers: false)
+      }
+      return Functional.concat(axis: 0, etUncond, etCond)
     case .flux3_5b:
       guard isCfgEnabled else {
         return unet(inputs: firstInput, restInputs)[0].as(of: FloatType.self)
@@ -5491,7 +5626,8 @@ extension UNetFromNNC {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .seedvr2_3b,
+      .seedvr2_7b,
       .ideogram4, .krea2, .longcatVideoAvatar1_5:
       return (0, 0)
     case .ltx2, .ltx2_3:
@@ -5616,7 +5752,8 @@ extension UNetFromNNC {
       tileScaleFactor = 2
     case .wurstchenStageC:
       tileScaleFactor = 1
-    case .auraflow, .pixart, .flux1, .ernieImage, .flux2, .flux2_4b, .flux3_5b, .flux2_9b,
+    case .auraflow, .pixart, .flux1, .ernieImage, .flux2, .flux2_4b, .flux3_5b, .mossImage,
+      .flux2_9b,
       .hunyuanVideo,
       .hiDreamI1,
       .kandinsky21, .qwenImage, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
@@ -5870,7 +6007,7 @@ extension UNetFromNNC {
       case .v2, .sd3, .sd3Large, .pixart, .auraflow, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
         .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-        .flux3_5b,
+        .flux3_5b, .mossImage,
         .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
         .longcatVideoAvatar1_5, .minimaxH3:
         fatalError()
@@ -5910,7 +6047,8 @@ extension UNetFromNNC {
     case .v1, .v2, .sd3, .sd3Large, .pixart, .auraflow, .flux1, .sdxlBase, .sdxlRefiner, .ssd1b,
       .svdI2v, .kandinsky21, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3, .seedvr2_3b,
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+      .seedvr2_3b,
       .seedvr2_7b,
       .longcatVideoAvatar1_5, .minimaxH3:
       return x

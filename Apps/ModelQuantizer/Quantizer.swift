@@ -19,7 +19,7 @@ struct Quantizer: ParsableCommand {
       hidream_o1,
       qwen_image, wan_v2.2_5b, z_image, ernie_image, flux2, flux2_9b, flux2_4b, flux3_5b,
       cosmos2.5_2b, ltx2, ltx2.3,
-      seedvr2_3b, seedvr2_7b, ideogram_4, krea_2
+      seedvr2_3b, seedvr2_7b, ideogram_4, krea_2, moss_image
       """)
   var modelVersion: String
 
@@ -265,6 +265,19 @@ struct Quantizer: ParsableCommand {
             }
           case .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .minimaxH3:
             fatalError()
+          case .mossImage:
+            if tensor.dataType == .Float32 {
+              // time_embedder_2 is kept in FP32 to avoid FP16 underflow.
+              $0.write(key, tensor: tensor)
+            } else if key.contains("embedder") || key.contains("final_linear") {
+              $0.write(key, tensor: fp16)
+            } else {
+              if squeezedDims > 1 {
+                $0.write(key, tensor: fp16, codec: [.q8p, .ezm7])
+              } else {
+                $0.write(key, tensor: fp16, codec: .ezm7)
+              }
+            }
           case .flux3_5b:
             if tensor.dataType == .Float32 {
               // These projections are kept in FP32 to avoid FP16 underflow.
