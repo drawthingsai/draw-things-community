@@ -147,6 +147,16 @@ struct DrawThingsCLICommandTests {
       defer { ios_setStreams(stdin, stdout, stderr) }
       try expectEqual(ios_system_osh("draw-things-cli generate --help > help.txt; cat help.txt"), 0)
       try expect(contents().0.contains("--model"))
+      // run-tests.sh sets a Simplified Chinese system encoding, which cannot
+      // decode this UTF-8 PWD as a C string.
+      let localizedProject = project.appendingPathComponent("项目", isDirectory: true)
+      try FileManager.default.createDirectory(
+        at: localizedProject, withIntermediateDirectories: true)
+      ios_setDirectoryURL(localizedProject)
+      try expectEqual(ios_system_osh("draw-things-cli --help"), 0)
+      // ios_system reports a caught exception on stderr, not in the status.
+      try expect(!contents().1.contains("system exception"))
+      ios_setDirectoryURL(project)
       try expectEqual(resolutionCount, 0)
       try expectEqual(unloadCount, 0)
       try expectEqual(ios_system_osh("draw-things-cli auth status"), 0)
