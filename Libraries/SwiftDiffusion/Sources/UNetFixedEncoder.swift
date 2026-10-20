@@ -474,7 +474,9 @@ extension UNetFixedEncoder {
         fixedConditions.count == fixedConditionCount + 1 + referenceImageCount + referenceAudioCount
       )
       let context = fixedConditions[0]
-      weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      }
       return ([context, rotary] + fixedConditions.dropFirst(), nil)
     case .ideogram4:
       let c0 = textEncoding[0]
@@ -606,7 +608,9 @@ extension UNetFixedEncoder {
       let fixedConditions = unetFixed(
         inputs: c, [textIndicatorIDs, imageIndicatorIDs, timeEmbeds]
       ).map { $0.as(of: FloatType.self) }
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       let maxTextLength =
         useUnconditionalDiT
         ? tokenLengthCond
@@ -758,7 +762,7 @@ extension UNetFixedEncoder {
         }
       }
       let fixedConditions = unetFixed(inputs: c, [timeEmbeds]).map { $0.as(of: FloatType.self) }
-      if lora.isEmpty || shouldRunLoRASeparately {
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
       let maxTextLength = isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
@@ -1510,7 +1514,7 @@ extension UNetFixedEncoder {
       var conditions = unetFixed(inputs: c, referenceImages + restInputs).map {
         $0.as(of: FloatType.self)
       }
-      if lora.isEmpty || shouldRunLoRASeparately {
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
         weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       }
       var referenceSizes: [(height: Int, width: Int)]
@@ -1702,7 +1706,7 @@ extension UNetFixedEncoder {
       let conditions = unetFixed(
         inputs: c, [timeEmbeds, expandedPooled] + (guidanceEmbeds.map { [$0] } ?? [])
       ).map { $0.as(of: FloatType.self) }
-      if lora.isEmpty || shouldRunLoRASeparately {
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
       return (
@@ -2029,7 +2033,7 @@ extension UNetFixedEncoder {
       }
       var conditions: [DynamicGraph.AnyTensor] = unetFixed(
         inputs: c, [timeEmbeds] + (vaceContext.map { [$0] } ?? []) + (c1.map { [$0] } ?? []))
-      if lora.isEmpty || shouldRunLoRASeparately {
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
       // Use this convoluted style (rather than conditions.enumerated().flatMap) to maximize memory reuse. Otherwise we are holding to old conditions so newer copied ones will not trigger a reuse.
@@ -2253,7 +2257,9 @@ extension UNetFixedEncoder {
       }
       let conditions = fixed(inputs: inputs[0], Array(inputs.dropFirst()))
       precondition(conditions.count == 5 + 2 * 32)
-      weightsCache.attach(cacheKey, from: fixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach(cacheKey, from: fixed.parameters)
+      }
       var result: [DynamicGraph.AnyTensor] = [
         graph.variable(targetRotary.toGPU(0))
       ]
@@ -2448,7 +2454,7 @@ extension UNetFixedEncoder {
       var conditions = unetFixed(
         inputs: c, referenceImages + otherInputs
       )
-      if lora.isEmpty || shouldRunLoRASeparately {
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
         weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
       }
       if let timestepEmbeddingVectors = timestepEmbeddingVectors {
@@ -2748,7 +2754,9 @@ extension UNetFixedEncoder {
         inputs: c,
         [txtRot, timeEmbeds] + (capPadTokens.map { [graph.variable($0.toGPU(0))] } ?? [])
       )
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       let rotaryEmbeddings: [DynamicGraph.Tensor<FloatType>]
       if isCfgEnabled {
         let rotaryEmbeddingUncond = Tensor<FloatType>(
@@ -2926,21 +2934,97 @@ extension UNetFixedEncoder {
               timestep: timestep, batchSize: 1, embeddingSize: 256, maxPeriod: 10_000)
           ).toGPU(0))
       }
-      let (_, unetFixed) = MOSSImageFixed(
-        FloatType.self, batchSize: batchSize, tokenLengths: tokenLengths,
-        timesteps: timesteps.count, channels: 3_072,
-        usesFlashAttention: valueOr(usesFlashAttention, .scale1))
+      let unetFixed: Model
+      let (rankOfLoRA, filesRequireMerge) = LoRALoader.rank(
+        graph, of: lora.map { $0.file }, modelFile: filePath)
+      let isLoHa = lora.contains { $0.isLoHa }
+      var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
+      let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      let shouldRunLoRASeparately =
+        !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
+        && canRunLoRASeparately
+      if shouldRunLoRASeparately {
+        configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+        (_, unetFixed) = LoRAMOSSImageFixed(
+          FloatType.self, batchSize: batchSize, tokenLengths: tokenLengths,
+          timesteps: timesteps.count, channels: 3_072,
+          usesFlashAttention: valueOr(usesFlashAttention, .scale1),
+          LoRAConfiguration: configuration)
+      } else {
+        (_, unetFixed) = MOSSImageFixed(
+          FloatType.self, batchSize: batchSize, tokenLengths: tokenLengths,
+          timesteps: timesteps.count, channels: 3_072,
+          usesFlashAttention: valueOr(usesFlashAttention, .scale1))
+      }
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: context, textRotary, timeEmbeds)
-      if !weightsCache.detach("\(filePath):[fixed]", to: unetFixed.parameters) {
-        graph.openStore(
-          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
-        ) { store in
+      let loadedFromWeightsCache = weightsCache.detach(
+        "\(filePath):[fixed]", to: unetFixed.parameters)
+      graph.openStore(
+        filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+      ) { store in
+        if !lora.isEmpty {
+          if shouldRunLoRASeparately {
+            let mapping: [Int: Int] = [Int: Int](
+              uniqueKeysWithValues: (0..<2).map {
+                return ($0, $0)
+              })
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+              ) {
+                name, dataType, format, shape in
+                let result: DynamicGraph.Store.ModelReaderResult
+                if dataType == .Float32 {
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape,
+                    of: Float32.self)
+                } else {
+                  result = loader.concatenateLoRA(
+                    graph, LoRAMapping: mapping, filesRequireMerge: filesRequireMerge, name: name,
+                    store: store, dataType: dataType, format: format, shape: shape,
+                    of: FloatType.self)
+                }
+                switch result {
+                case .continue(let updatedName, _, _):
+                  guard updatedName == name else { return result }
+                  if !loadedFromWeightsCache {
+                    return result
+                  } else {
+                    return .fail  // Don't need to load.
+                  }
+                case .fail, .final(_):
+                  return result
+                }
+              }
+            }
+          } else {
+            LoRALoader.openStore(graph, lora: lora) { loader in
+              store.read(
+                "dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData]
+              ) {
+                name, dataType, _, shape in
+                if dataType == .Float32 {
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: Float32.self)
+                } else {
+                  return loader.mergeLoRA(
+                    graph, name: name, store: store, dataType: dataType, shape: shape,
+                    of: FloatType.self)
+                }
+              }
+            }
+          }
+        } else if !loadedFromWeightsCache {
           store.read("dit", model: unetFixed, codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
         }
       }
       let conditions = unetFixed(inputs: context, textRotary, timeEmbeds)
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       // Unpack the refined text into one row per prompt, the same layout as the text encoding.
       let refined = DynamicGraph.Tensor<Float>(conditions[0])
       var text = graph.variable(.GPU(0), .HWC(c0.shape[0], c0.shape[1], 3_072), of: Float.self)
@@ -3088,7 +3172,9 @@ extension UNetFixedEncoder {
       }
       var conditions: [DynamicGraph.AnyTensor] = unetFixed(
         inputs: c0, referenceImages + timeInputs)
-      weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      }
       if referenceImages.count > 0 {
         let refLatents = conditions[0..<referenceImages.count].map {
           DynamicGraph.Tensor<FloatType>($0)
@@ -3282,7 +3368,9 @@ extension UNetFixedEncoder {
       ).map {
         $0.as(of: FloatType.self)
       }
-      weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]\(suffix)", from: unetFixed.parameters)
+      }
       var referenceSizes: [(height: Int, width: Int)]
       if referenceImages.count > 0 {
         if kvCache {
@@ -3660,8 +3748,10 @@ extension UNetFixedEncoder {
         of: FloatType.self)
       let audioContext = audioConnector(inputs: audioHiddenStates, audioRotaryEmbedding1D)[0].as(
         of: FloatType.self)
-      weightsCache.attach("\(filePath):[video_connector]", from: videoConnector.parameters)
-      weightsCache.attach("\(filePath):[audio_connector]", from: audioConnector.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[video_connector]", from: videoConnector.parameters)
+        weightsCache.attach("\(filePath):[audio_connector]", from: audioConnector.parameters)
+      }
       let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
         LTX2VideoAudioRotaryPositionEmbedding(
           time: batchSize, height: h, width: w, audioTime: (batchSize - 1) * 8 + 1,
@@ -3749,7 +3839,9 @@ extension UNetFixedEncoder {
         }
       }
       let contexts = unetFixed(inputs: timeEmbeds)
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       return (
         referenceImages + [
           graph.variable(Tensor<FloatType>(from: rotaryEmbedding).toGPU(0)),
@@ -3960,8 +4052,10 @@ extension UNetFixedEncoder {
         of: FloatType.self)
       let audioContext = audioConnector(inputs: audioHiddenStates, rotaryEmbedding1D)[0].as(
         of: FloatType.self)
-      weightsCache.attach("\(filePath):[video_connector]", from: videoConnector.parameters)
-      weightsCache.attach("\(filePath):[audio_connector]", from: audioConnector.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[video_connector]", from: videoConnector.parameters)
+        weightsCache.attach("\(filePath):[audio_connector]", from: audioConnector.parameters)
+      }
       let (rotaryEmbedding, rotaryEmbeddingAudio, rotaryEmbeddingVideoToAudio) =
         LTX2VideoAudioRotaryPositionEmbedding(
           time: batchSize, height: h, width: w, audioTime: (batchSize - 1) * 8 + 1,
@@ -4049,7 +4143,9 @@ extension UNetFixedEncoder {
         }
       }
       let contexts = unetFixed(inputs: videoContext, audioContext, timeEmbeds)
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       return (
         referenceImages + [
           graph.variable(Tensor<FloatType>(from: rotaryEmbedding).toGPU(0)),
@@ -4168,7 +4264,9 @@ extension UNetFixedEncoder {
       let conditions = unetFixed(
         inputs: timeEmbeds, [pooleds, t5] + llama3
       )
-      weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      if lora.isEmpty || (shouldRunLoRASeparately && filesRequireMerge.isEmpty) {
+        weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
+      }
       return ([graph.variable(rot)] + conditions, nil)
     case .wurstchenStageB:
       let cfgChannelsAndBatchSize = textEncoding[0].shape[0]

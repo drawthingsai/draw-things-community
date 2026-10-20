@@ -857,11 +857,71 @@ public struct ModelZoo: DownloadZoo {
       "c82dd45d6fba7ad038e8f148760ed5cf65fe4e53c56b57b778fee26275e73503",
     "qwen_3_vl_8b_instruct_q8p.ckpt":
       "54d29b3e951c233ae800604848b83422a48629857c70fb83c4620eb31d900b9a",
+    "moss_image_sft_q8p.ckpt":
+      "e5631ac16e2e0c2f034ce1ff4ad2afbe677cb16597a05ec841aa9338668e45ae",
+    "moss_image_sft_i8x.ckpt":
+      "73d61a050d780229d9d266a6cb6cc8f7a9b79c157aa07354062750af37f34e57",
+    "moss_image_sft_i4x.ckpt":
+      "7dc38a503051fdfcdd78bb7d14d905aa9a3a915c949a23f0921ec974c8d2c985",
+    "moss_image_base_q8p.ckpt":
+      "0361102e9a21f05d63a686ce3ff2c8f9d6e59f86b7aa4e5fb116dd8f1d5eb745",
+    "moss_image_base_i8x.ckpt":
+      "c3feaf95d2c7f634db60d00adb1b50403f52d6fa4527b315a9133be01f42fc4d",
+    "moss_image_base_i4x.ckpt":
+      "69740b845f4e74aa50dfb5a0b030541e9c18bb0c7f7e377cdd9c4880e182f2e6",
   ]
 
   public static let defaultSpecification: Specification = builtinSpecifications[0]
 
   public static let builtinSpecifications: [Specification] = [
+    Specification(
+      name: "MOSS Image SFT", file: "moss_image_sft_q8p.ckpt", prefix: "",
+      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "[MOSS Image SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) is a supervised fine-tuned text-to-image model from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
+      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-SFT"
+    ),
+    Specification(
+      name: "MOSS Image SFT (8-bit S)", file: "moss_image_sft_i8x.ckpt", prefix: "",
+      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "[MOSS Image SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) is a supervised fine-tuned text-to-image model from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
+      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-SFT"
+    ),
+    Specification(
+      name: "MOSS Image SFT (4-bit S)", file: "moss_image_sft_i4x.ckpt", prefix: "",
+      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "[MOSS Image SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) is a supervised fine-tuned text-to-image model from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
+      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-SFT"
+    ),
+    Specification(
+      name: "MOSS Image Base", file: "moss_image_base_q8p.ckpt", prefix: "",
+      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "[MOSS Image Base](https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base) is the base text-to-image model of the MOSS Image family from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
+      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-Base"
+    ),
+    Specification(
+      name: "MOSS Image Base (8-bit S)", file: "moss_image_base_i8x.ckpt", prefix: "",
+      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "[MOSS Image Base](https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base) is the base text-to-image model of the MOSS Image family from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
+      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-Base"
+    ),
+    Specification(
+      name: "MOSS Image Base (4-bit S)", file: "moss_image_base_i4x.ckpt", prefix: "",
+      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
+      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
+      note:
+        "[MOSS Image Base](https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base) is the base text-to-image model of the MOSS Image family from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
+      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-Base"
+    ),
     Specification(
       name: "LTX-2.3 22B [distilled] 1.1", file: "ltx_2.3_22b_distilled_1.1_q8p.ckpt", prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
@@ -1368,14 +1428,6 @@ public struct ModelZoo: DownloadZoo {
       note:
         "[FLUX.2 [klein] 4B Base](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B) is a 4 billion parameter rectified flow transformer capable of generating, editing and combining images based on text instructions.",
       copyright: "© 2026 Black Forest Labs"
-    ),
-    Specification(
-      name: "MOSS Image SFT", file: "moss_image_sft_f16.ckpt", prefix: "",
-      version: .mossImage, defaultScale: 16, textEncoder: "qwen_3.5_9b_i5x.ckpt",
-      autoencoder: "flux_2_vae_f16.ckpt", objective: .u(conditionScale: 1000), hiresFixScale: 24,
-      note:
-        "[MOSS Image SFT](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT) is a supervised fine-tuned text-to-image model from OpenMOSS. It supports natural-language prompts, tag sequences and JSON layouts for controlling text placement and object arrangement. 50 sampling steps with Text Guidance 3 and Shift 5 are recommended. The model is Apache 2.0-licensed.",
-      copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-SFT"
     ),
     Specification(
       name: "Qwen Image 1.0", file: "qwen_image_1.0_q8p.ckpt", prefix: "",

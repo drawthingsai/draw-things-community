@@ -1920,11 +1920,27 @@ extension UNetFromNNC {
         ? min(tiledDiffusion.tileSize.height * 8, startHeight) : startHeight
       tiledAudioHeight = 0
       tileScaleFactor = 8
-      didRunLoRASeparately = false
+      didRunLoRASeparately =
+        !lora.isEmpty && rankOfLoRA > 0 && !isLoHa && runLoRASeparatelyIsPreferred
+        && canRunLoRASeparately
+      if didRunLoRASeparately {
+        configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
+      }
+      let usesLoRA = didRunLoRASeparately
       unet = ModelBuilderOrModel.modelBuilder(
         ModelBuilder { _, inputs in
           // The negative branch skips block 22 (upstream `uncond_skip_layers`) by passing 0-length
           // rotary embeddings to it.
+          if usesLoRA {
+            return LoRAMOSSImage(
+              FloatType.self, batchSize: inputs[0].shape[0], tokenLength: inputs[2].shape[1],
+              height: tiledHeight, width: tiledWidth, channels: 3_072, layers: 42,
+              skippableLayers: [22],
+              skipsLayers: inputs[inputs.count - 1].shape[0] == 0,
+              usesFlashAttention: valueOr(useFlashAttention, .scale1),
+              LoRAConfiguration: configuration
+            ).1
+          }
           return MOSSImage(
             FloatType.self, batchSize: inputs[0].shape[0], tokenLength: inputs[2].shape[1],
             height: tiledHeight, width: tiledWidth, channels: 3_072, layers: 42,
@@ -2548,6 +2564,11 @@ extension UNetFromNNC {
                 uniqueKeysWithValues: (0..<28).map {
                   return ($0, $0)
                 })
+            case .mossImage:
+              return [Int: Int](
+                uniqueKeysWithValues: (0..<42).map {
+                  return ($0, $0)
+                })
             case .cosmos2_5_2b:
               return [Int: Int](
                 uniqueKeysWithValues: (0..<28).map {
@@ -2571,7 +2592,7 @@ extension UNetFromNNC {
             case .minimaxH3:
               return [Int: Int](uniqueKeysWithValues: (0..<50).map { ($0, $0) })
             case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .seedvr2_3b,
-              .seedvr2_7b, .mossImage:
+              .seedvr2_7b:
               fatalError()
             }
           }()

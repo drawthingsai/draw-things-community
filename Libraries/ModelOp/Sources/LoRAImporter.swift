@@ -50,8 +50,15 @@ public enum LoRAImporter {
     let unetMapper: ModelWeightMapper
     let unetFixedMapper: ModelWeightMapper
     switch version {
-    case .mossImage, .longcatVideoAvatar1_5:
+    case .longcatVideoAvatar1_5:
       fatalError()
+    case .mossImage:
+      (unetMapper, unet) = MOSSImage(
+        FloatType.self, batchSize: 1, tokenLength: 32, height: 64, width: 64, channels: 3_072,
+        layers: 42, skippableLayers: [], skipsLayers: false, usesFlashAttention: .scale1)
+      (unetFixedMapper, unetFixed) = MOSSImageFixed(
+        FloatType.self, batchSize: 1, tokenLengths: [32], timesteps: 1, channels: 3_072,
+        usesFlashAttention: .scale1)
     case .minimaxH3:
       (unetMapper, unet) = MiniMaxH3(
         hiddenSize: 5_376, layers: 50, textLength: 2, audioLength: 4, videoFrames: 1,
@@ -291,8 +298,11 @@ public enum LoRAImporter {
       let inputDim: Int
       let conditionalLength: Int
       switch version {
-      case .mossImage, .longcatVideoAvatar1_5:
+      case .longcatVideoAvatar1_5:
         fatalError()
+      case .mossImage:
+        inputDim = 32
+        conditionalLength = 4_096
       case .minimaxH3:
         inputDim = 24
         conditionalLength = 5_120
@@ -378,8 +388,19 @@ public enum LoRAImporter {
       let isCfgEnabled: Bool
       let isGuidanceEmbedEnabled: Bool
       switch version {
-      case .mossImage, .longcatVideoAvatar1_5:
+      case .longcatVideoAvatar1_5:
         fatalError()
+      case .mossImage:
+        isCfgEnabled = false
+        isGuidanceEmbedEnabled = false
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 32, 4_096), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: MOSSImageRotaryPositionEmbedding(height: 0, width: 0, tokenLengths: [32]))),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .minimaxH3:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = false
@@ -775,8 +796,15 @@ public enum LoRAImporter {
         fatalError()
       }
       switch version {
-      case .mossImage, .longcatVideoAvatar1_5:
+      case .longcatVideoAvatar1_5:
         fatalError()
+      case .mossImage:
+        // The refined text and the modulations are in FP32, they are appended when compiling.
+        cArr = [
+          graph.variable(
+            Tensor<FloatType>(
+              from: MOSSImageRotaryPositionEmbedding(height: 32, width: 32, tokenLengths: [32])))
+        ]
       case .minimaxH3:
         cArr =
           [
@@ -1068,7 +1096,12 @@ public enum LoRAImporter {
       case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
         fatalError()
       }
-      let inputs: [DynamicGraph.Tensor<FloatType>] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+      var inputs: [DynamicGraph.AnyTensor] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+      if version == .mossImage {
+        inputs.append(graph.variable(.CPU, .HWC(1, 32, 3_072), of: Float.self))
+        inputs.append(
+          contentsOf: (0..<8).map { _ in graph.variable(.CPU, .HWC(1, 1, 3_072), of: Float.self) })
+      }
       unet.compile(inputs: inputs)
       func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
         var reversed: [String: [(Int, String)]] = [:]
@@ -1452,6 +1485,9 @@ public enum LoRAImporter {
         $0.contains("txt_mode_blocks.") || $0.contains("txt_mode_blocks_")
           || $0.contains("content_mode_blocks.") || $0.contains("content_mode_blocks_")
       }
+      let isMOSSImage = stateDict.keys.contains {
+        $0.contains("proj.ffn_up_gate.") || $0.contains("proj_ffn_up_gate")
+      }
       let isCosmosAnima = stateDict.keys.contains {
         $0.contains("patch_embed.proj.") || $0.contains("patch_embed_proj")
           || $0.contains("blocks.5.self_attn.q_proj.")
@@ -1502,6 +1538,9 @@ public enum LoRAImporter {
       }
       if isFlux3 {
         return forceVersionOr(.flux3_5b)
+      }
+      if isMOSSImage {
+        return forceVersionOr(.mossImage)
       }
       // Only confident about these if it is SD or SDXL. In any other cases, prefer the force version.
       switch (
