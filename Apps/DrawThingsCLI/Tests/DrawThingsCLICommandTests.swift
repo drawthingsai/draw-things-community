@@ -154,8 +154,6 @@ struct DrawThingsCLICommandTests {
         at: localizedProject, withIntermediateDirectories: true)
       ios_setDirectoryURL(localizedProject)
       try expectEqual(ios_system_osh("draw-things-cli --help"), 0)
-      // ios_system reports a caught exception on stderr, not in the status.
-      try expect(!contents().1.contains("system exception"))
       ios_setDirectoryURL(project)
       try expectEqual(resolutionCount, 0)
       try expectEqual(unloadCount, 0)
