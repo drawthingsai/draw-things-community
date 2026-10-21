@@ -26,7 +26,9 @@ def apply_custom_patch(patch_file_path):
 
     # Apply the diff using git apply
     try:
-        subprocess.run(['git', 'apply', diff_file_path], check=True)
+        # The diffs carry Git LFS pointers. Keep them as pointers rather than smudging objects
+        # the destination does not have until push_lfs_objects.py uploads them.
+        subprocess.run(['git', 'apply', diff_file_path], check=True, env=dict(os.environ, GIT_LFS_SKIP_SMUDGE='1'))
         print("Diffs applied successfully.")
     except subprocess.CalledProcessError as e:
         print("Failed to apply diffs:", e)

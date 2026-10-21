@@ -60,7 +60,7 @@ Vendors/OSH
 Vendors/FFmpeg
 WORKSPACE.linux
 WORKSPACE.darwin
-SYNCLIST
+SYNCLIST.draw-things-community -> SYNCLIST
 BUILD
 Package.swift
 Package.resolved
