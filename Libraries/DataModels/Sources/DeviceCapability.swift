@@ -7,6 +7,10 @@ import Utils
   import Metal
 #endif
 
+#if os(iOS)
+  import os
+#endif
+
 #if canImport(UIKit)
   extension UIDevice {
     var modelIdentifier: String {
@@ -51,7 +55,7 @@ public struct DeviceCapability {
     case _56GiB = 56
     case _64GiB = 64
     case _72GiB = 72
-    case none = 0
+    case disabled = 0
   }
 
   public static var weightsStreaming: WeightsStreaming {
@@ -59,9 +63,9 @@ public struct DeviceCapability {
     let gibibyte = UInt64(1_024 * 1_024 * 1_024)
     let reservedMemory = 32 * gibibyte
     let availableMemory = physicalMemory > reservedMemory ? physicalMemory - reservedMemory : 0
-    // Allow for the 149.44 GiB V4.1 checkpoint before disabling streaming.
-    if availableMemory >= 150 * gibibyte {
-      return .none
+    // Allow for the 150.35 GiB V4.1 checkpoint before disabling streaming.
+    if availableMemory >= 151 * gibibyte {
+      return .disabled
     } else if availableMemory >= 72 * gibibyte {
       return ._72GiB
     } else if availableMemory >= 64 * gibibyte {
@@ -80,6 +84,44 @@ public struct DeviceCapability {
       return ._16GiB
     }
     return ._8GiB
+  }
+
+  /// Physical memory minus app, wired, and compressed pages, so free pages and file cache count
+  /// as available. A process under a memory limit is also bounded by what that limit leaves.
+  public static var availableMemory: UInt64 {
+    let physicalMemory = ProcessInfo.processInfo.physicalMemory
+    #if canImport(Darwin)
+      var statistics = vm_statistics64()
+      var count = mach_msg_type_number_t(
+        MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+      let host = mach_host_self()
+      // Each mach_host_self() call adds a send-right reference.
+      defer { mach_port_deallocate(mach_task_self_, host) }
+      let result = withUnsafeMutablePointer(to: &statistics) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+          host_statistics64(host, HOST_VM_INFO64, $0, &count)
+        }
+      }
+      var pageSize: vm_size_t = 0
+      guard result == KERN_SUCCESS, host_page_size(host, &pageSize) == KERN_SUCCESS else {
+        return physicalMemory
+      }
+      let usedPages =
+        Int(statistics.internal_page_count) - Int(statistics.purgeable_count)
+        + Int(statistics.wire_count) + Int(statistics.compressor_page_count)
+      let usedMemory = UInt64(max(usedPages, 0)) * UInt64(pageSize)
+      var availableMemory = physicalMemory > usedMemory ? physicalMemory - usedMemory : 0
+      #if os(iOS)
+        // Zero means the process has no memory limit, such as an iPad app on a Mac.
+        let processAvailableMemory = UInt64(os_proc_available_memory())
+        if processAvailableMemory > 0 {
+          availableMemory = min(availableMemory, processAvailableMemory)
+        }
+      #endif
+      return availableMemory
+    #else
+      return physicalMemory
+    #endif
   }
 
   public static let keepModelPreloaded: Bool = {
