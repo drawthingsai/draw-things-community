@@ -22,6 +22,19 @@ swift_test(
 )
 
 swift_test(
+    name = "PerplexityDeciderFlashDecisionTests",
+    srcs = ["Tests/PerplexityDeciderFlashDecisionTests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":SwiftLLM",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
     name = "Qwen3_5TextGenerationTests",
     srcs = ["Tests/Qwen3_5TextGenerationTests.swift"],
     tags = [

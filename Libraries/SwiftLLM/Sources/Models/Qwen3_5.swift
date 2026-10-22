@@ -203,7 +203,7 @@ private func Qwen3_5FullAttention(
   return Model([x, rotary, kIn, vIn], [out])
 }
 
-private func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
+func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
   prefix: String, configuration: Qwen3_5ModelConfiguration, batchSize: Int, tokenLength: Int,
   x: Model.IO, convState: Model.IO, recurrentState: Model.IO, of: FloatType.Type = FloatType.self,
   stateCheckpointCount: Int = 0
@@ -292,7 +292,7 @@ private func Qwen3_5LinearAttention<FloatType: TensorNumeric>(
   return [out, convStateOutput, recurrentStateOutput]
 }
 
-private func Qwen3_5DecoderPost(
+func Qwen3_5DecoderPost(
   prefix: String, x: Model.IO, configuration: Qwen3_5ModelConfiguration
 ) -> Model.IO {
   let norm = RMSNorm(epsilon: 1e-6, axis: [1], name: "\(prefix).post_attention_layernorm")
