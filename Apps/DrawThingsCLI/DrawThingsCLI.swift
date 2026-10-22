@@ -1721,7 +1721,8 @@ private func defaultImportScale(for version: ModelVersion, artifactFileName: Str
     return 8
   case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .zImage,
     .ernieImage, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .auraflow, .flux1, .flux2,
-    .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .ideogram4, .krea2:
+    .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .ltx2,
+    .ltx2_3, .ideogram4, .krea2:
     return 16
   case .pixart:
     return artifactFileName.contains("512") ? 8 : 16
@@ -1745,7 +1746,7 @@ private func validateCustomTextEncoderSupport(
   case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
     .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
     .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
-    .cosmos2_5_2b,
+    .cosmos2_5_2b, .cosmos2_5_2_9b,
     .ltx2, .ltx2_3,
     .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
     throw ValidationError(
@@ -1775,7 +1776,7 @@ private func projectedImportedOutputFiles(
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
       .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
-      .cosmos2_5_2b,
+      .cosmos2_5_2b, .cosmos2_5_2_9b,
       .ltx2,
       .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
       break
@@ -4049,7 +4050,7 @@ private func runLoRATraining(context: DrawThingsCLIContext, _ options: LoRATrain
     tokenizerStack = [tokenizers.tokenizerQwen3]
   case .ernieImage:
     tokenizerStack = [tokenizers.tokenizerMistral3]
-  case .cosmos2_5_2b:
+  case .cosmos2_5_2b, .cosmos2_5_2_9b:
     tokenizerStack = [tokenizers.tokenizerQwen3, tokenizers.tokenizerT5]
   default:
     throw ValidationError("Unsupported LoRA trainer model version: \(trainer.version)")
@@ -4097,7 +4098,7 @@ private func runLoRATraining(context: DrawThingsCLIContext, _ options: LoRATrain
   case .ernieImage:
     trainableKeys = ernieImageTrainableKeys(
       trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
-  case .cosmos2_5_2b:
+  case .cosmos2_5_2b, .cosmos2_5_2_9b:
     trainableKeys = cosmosTrainableKeys(
       trainableLayers: requestedTrainableLayers, layerIndices: requestedLayerIndices)
   default:
@@ -5143,7 +5144,7 @@ extension DrawThingsCLI {
           )
         } progress: { progress in
           let percent = min(100, max(0, Int((progress * 100).rounded(.down))))
-          if percent >= lastPrintedPercent + 5 || percent == 100 {
+          if percent >= lastPrintedPercent + 5 || (percent == 100 && lastPrintedPercent < 100) {
             context.print("Importing: \(percent)%")
             lastPrintedPercent = percent
           }

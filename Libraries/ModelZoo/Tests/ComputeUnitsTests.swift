@@ -42,6 +42,7 @@ final class ComputeUnitsTests: XCTestCase {
     .init(version: .flux2_4b, width: 8, height: 8, frames: 1),
     .init(version: .flux3_5b, width: 8, height: 8, frames: 1),
     .init(version: .cosmos2_5_2b, width: 8, height: 8, frames: 1),
+    .init(version: .cosmos2_5_2_9b, width: 8, height: 8, frames: 1),
     .init(version: .ideogram4, width: 8, height: 8, frames: 1),
     .init(version: .krea2, width: 8, height: 8, frames: 1),
     .init(version: .ltx2, width: 8, height: 8, frames: 121),
@@ -152,6 +153,8 @@ final class ComputeUnitsTests: XCTestCase {
       return 1.176470588 * 0.8
     case .cosmos2_5_2b:
       return 1.176470588 * 0.8
+    case .cosmos2_5_2_9b:
+      return 1.176470588 * 0.8 * 40.0 / 28.0
     case .ideogram4:
       return 2.588235294
     case .krea2:
@@ -190,7 +193,7 @@ final class ComputeUnitsTests: XCTestCase {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .qwenImage2_1,
       .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
-      .hiDreamI1,
+      .cosmos2_5_2_9b, .hiDreamI1,
       .hiDreamO1,
       .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       batchSize = max(1, Int(configuration.batchSize)) * cfgChannels

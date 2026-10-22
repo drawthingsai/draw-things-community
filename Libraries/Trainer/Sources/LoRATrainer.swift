@@ -128,6 +128,7 @@ public struct LoRATrainer {
         case .krea2:
           return "qwen_image_vae_f16.ckpt"
         case .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3, .cosmos2_5_2b,
+          .cosmos2_5_2_9b,
           .longcatVideoAvatar1_5,
           .seedvr2_3b, .seedvr2_7b:
           fatalError()
@@ -170,13 +171,13 @@ public struct LoRATrainer {
           return "qwen_3_vl_8b_instruct_q8p.ckpt"
         case .krea2:
           return "qwen_3_vl_4b_q8p.ckpt"
-        case .ltx2, .ltx2_3, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
+        case .ltx2, .ltx2_3, .cosmos2_5_2b, .cosmos2_5_2_9b, .seedvr2_3b, .seedvr2_7b:
           fatalError()
         }
       })()
     CLIPEncoder = ModelZoo.CLIPEncodersForModel(model).first
     if version == .qwenImage || version == .zImage || version == .ernieImage
-      || version == .cosmos2_5_2b
+      || version == .cosmos2_5_2b || version == .cosmos2_5_2_9b
     {
       paddedTextEncodingLength = maxTextLength
     } else {
@@ -2006,7 +2007,8 @@ public struct LoRATrainer {
         ]
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage,
+        .ernieImage, .flux2,
         .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
         .ideogram4,
         .krea2:
@@ -2072,7 +2074,8 @@ public struct LoRATrainer {
             }
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-            .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+            .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage,
+            .ernieImage, .flux2,
             .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
             .ideogram4,
             .krea2:
@@ -2195,7 +2198,7 @@ public struct LoRATrainer {
         progressHandler: progressHandler)
     }
 
-    if version == .cosmos2_5_2b {
+    if version == .cosmos2_5_2b || version == .cosmos2_5_2_9b {
       return prepareDatasetForCosmos(
         inputs: inputs, tokenizers: tokenizers, customEmbeddingLength: customEmbeddingLength,
         progressHandler: progressHandler)
@@ -2837,8 +2840,10 @@ public struct LoRATrainer {
   ) -> [DynamicGraph.AnyTensor] {
     return graph.withNoGrad {
       let filePath = ModelZoo.filePathForModelDownloaded(model)
+      let layers = version == .cosmos2_5_2_9b ? 40 : 28
       let unetFixed = CosmosFixed(
         timesteps: batch.count, batchSize: batch.count, textLength: tokenLength,
+        layers: layers,
         usesFlashAttention: .scaleMerged
       ).1
       var timeEmbeds = graph.variable(.GPU(0), .WC(batch.count, 2_048), of: Float.self)
@@ -5585,12 +5590,15 @@ public struct LoRATrainer {
       1)
     var cachedRotaryPositionEmbedder = CachedRotaryPositionEmbedder()
     let rotaryEmbeddingHeads = 16
+    let layers = version == .cosmos2_5_2_9b ? 40 : 28
+    let fixedTimeConditionCount = CosmosFixedTimeConditionCount(layers: layers)
     let latentsWidth = Int(scale.widthScale) * 8
     let latentsHeight = Int(scale.heightScale) * 8
     let dit: ModelBuilder<(width: Int, height: Int)> = ModelBuilder { size, inputs in
-      let textLength = inputs[2 + CosmosFixedTimeConditionCount].shape[1]
+      let textLength = inputs[2 + fixedTimeConditionCount].shape[1]
       return LoRACosmos(
         batchSize: 1, height: size.height, width: size.width, textLength: textLength,
+        layers: layers,
         usesFlashAttention: valueOr(.scale1), LoRAConfiguration: configuration
       ).0
     }
@@ -5603,11 +5611,11 @@ public struct LoRATrainer {
       graph: graph, height: latentsHeight / 2, width: latentsWidth / 2,
       heads: rotaryEmbeddingHeads)
     let fixedShapes = CosmosFixedOutputShapes(
-      timesteps: 1, batchSize: 1, textLength: trainingTokenLength)
+      timesteps: 1, batchSize: 1, textLength: trainingTokenLength, layers: layers)
     let cArr =
       [rotaryCondition]
       + fixedShapes.enumerated().map { index, shape -> DynamicGraph.AnyTensor in
-        if index < CosmosFixedTimeConditionCount {
+        if index < fixedTimeConditionCount {
           return graph.constant(.GPU(0), format: .NHWC, shape: shape, of: Float.self)
         }
         return graph.constant(.GPU(0), format: .NHWC, shape: shape, of: FloatType.self)
@@ -5775,7 +5783,7 @@ public struct LoRATrainer {
             func condition(_ tensor: DynamicGraph.AnyTensor, index: Int)
               -> DynamicGraph.AnyTensor
             {
-              if index < CosmosFixedTimeConditionCount {
+              if index < fixedTimeConditionCount {
                 let typed = tensor.as(of: Float.self).rawValue
                 return graph.constant(
                   typed[j..<(j + 1), 0..<typed.shape[1], 0..<typed.shape[2]].copied())
@@ -6068,7 +6076,7 @@ public struct LoRATrainer {
           orthonormalLoRADown: orthonormalLoRADown, powerEMA: powerEMA, memorySaver: memorySaver,
           weightsMemory: weightsMemory, progressHandler: progressHandler)
         return
-      } else if version == .cosmos2_5_2b {
+      } else if version == .cosmos2_5_2b || version == .cosmos2_5_2_9b {
         trainCosmos(
           graph: graph, firstStage: firstStage, sessionStore: sessionStore,
           resumingLoRAFile: resumingLoRAFile, dataFrame: dataFrame, zeroCaption: zeroCaption,
@@ -6409,7 +6417,8 @@ public struct LoRATrainer {
         unetLoRAMapping = LoRAMapping.SDUNetXLSSD1B
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage,
+        .ernieImage, .flux2,
         .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
         .ideogram4,
         .krea2:
@@ -6495,7 +6504,8 @@ public struct LoRATrainer {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
+              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
+              .cosmos2_5_2_9b, .wan22_5b, .zImage,
               .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
               .seedvr2_3b,
               .seedvr2_7b,
@@ -6700,7 +6710,8 @@ public struct LoRATrainer {
         c = graph.variable(.GPU(0), .WC(1, 2560), of: FloatType.self)
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+        .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage,
+        .ernieImage, .flux2,
         .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
         .ideogram4,
         .krea2:
@@ -6898,7 +6909,8 @@ public struct LoRATrainer {
         case .longcatVideoAvatar1_5, .minimaxH3:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
-          .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
+          .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
+          .cosmos2_5_2b, .cosmos2_5_2_9b,
           .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
           .ltx2, .ltx2_3:
           embeddingName = ("string_to_param", "string_to_param")
@@ -7190,7 +7202,8 @@ public struct LoRATrainer {
                 injectedEmbeddings.append(injectedEmbedding1)
               case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
                 .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-                .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b,
+                .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
+                .cosmos2_5_2_9b, .wan22_5b,
                 .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2,
                 .ltx2_3,
                 .seedvr2_3b,
@@ -7334,7 +7347,8 @@ public struct LoRATrainer {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
+              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
+              .cosmos2_5_2_9b, .wan22_5b, .zImage,
               .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
               .seedvr2_3b,
               .seedvr2_7b,
@@ -7442,7 +7456,8 @@ public struct LoRATrainer {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
+              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
+              .cosmos2_5_2_9b, .wan22_5b, .zImage,
               .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
               .seedvr2_3b,
               .seedvr2_7b,

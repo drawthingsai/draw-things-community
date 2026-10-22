@@ -57,7 +57,8 @@ extension UNetFixedEncoder {
     case .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .sd3, .sd3Large, .pixart, .auraflow, .flux1,
       .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .ltx2, .ltx2_3,
+      .seedvr2_3b, .seedvr2_7b,
       .ideogram4,
       .krea2,
       .longcatVideoAvatar1_5, .minimaxH3:
@@ -204,7 +205,8 @@ extension UNetFixedEncoder {
       return []
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-      .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+      .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .ltx2,
+      .ltx2_3, .seedvr2_3b,
       .seedvr2_7b,
       .ideogram4,
       .krea2, .longcatVideoAvatar1_5, .minimaxH3:
@@ -1220,7 +1222,8 @@ extension UNetFixedEncoder {
       case .v1, .v2, .auraflow, .flux1, .kandinsky21, .pixart, .sdxlBase, .sdxlRefiner, .ssd1b,
         .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ltx2, .ltx2_3, .seedvr2_3b,
+        .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .ltx2,
+        .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
         .krea2, .longcatVideoAvatar1_5, .minimaxH3:
@@ -3414,7 +3417,10 @@ extension UNetFixedEncoder {
           channels: 128)
       ).toGPU(0)
       return ([graph.variable(rotaryEmbedding)] + conditions, nil)
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
+      let layers = version == .cosmos2_5_2_9b ? 40 : 28
+      let fixedTimeConditionCount = CosmosFixedTimeConditionCount(layers: layers)
+      let fixedKVConditionCount = CosmosFixedKVConditionCount(layers: layers)
       let c0 = textEncoding[0]
       let h = startHeight / 2
       let w = startWidth / 2
@@ -3446,12 +3452,14 @@ extension UNetFixedEncoder {
         unetFixed =
           LoRACosmosFixed(
             timesteps: timesteps.count, batchSize: c0.shape[0], textLength: c0.shape[1],
+            layers: layers,
             usesFlashAttention: valueOr(usesFlashAttention, .scale1),
             LoRAConfiguration: configuration
           ).0
       } else {
         (_, unetFixed) = CosmosFixed(
           timesteps: timesteps.count, batchSize: c0.shape[0], textLength: c0.shape[1],
+          layers: layers,
           usesFlashAttention: valueOr(usesFlashAttention, .scale1))
       }
       unetFixed.maxConcurrency = .limit(4)
@@ -3462,7 +3470,7 @@ extension UNetFixedEncoder {
         filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
       ) { store in
         if shouldRunLoRASeparately {
-          let mapping = [Int: Int](uniqueKeysWithValues: (0..<28).map { ($0, $0) })
+          let mapping = [Int: Int](uniqueKeysWithValues: (0..<layers).map { ($0, $0) })
           LoRALoader.openStore(graph, lora: lora) { loader in
             store.read(
               "dit", model: unetFixed,
@@ -3512,12 +3520,12 @@ extension UNetFixedEncoder {
       }
       var conditionOrNils: [DynamicGraph.AnyTensor?] = conditions
       precondition(
-        conditionOrNils.count == CosmosFixedTimeConditionCount + CosmosFixedKVConditionCount)
+        conditionOrNils.count == fixedTimeConditionCount + fixedKVConditionCount)
       conditions = []
       for offset in 0..<conditionOrNils.count {
         guard let element = conditionOrNils[offset] else { continue }
         switch offset {
-        case 0..<CosmosFixedTimeConditionCount:
+        case 0..<fixedTimeConditionCount:
           conditions.append(element)
         default:
           let shape = element.shape

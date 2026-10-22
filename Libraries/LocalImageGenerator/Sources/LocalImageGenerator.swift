@@ -175,7 +175,7 @@ extension LocalImageGenerator {
       .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage,
       .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
       .mossImage,
-      .cosmos2_5_2b,
+      .cosmos2_5_2b, .cosmos2_5_2_9b,
       .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5,
       .minimaxH3:
       samplingTimesteps = []
@@ -1846,7 +1846,7 @@ extension LocalImageGenerator {
       result.7 = result.7 - 34
       result.8 = result.8 - 34
       return result
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
       var result = tokenize(
         graph: graph, tokenizer: tokenizerQwen3, text: text,
         negativeText: negativeText,
@@ -3424,7 +3424,7 @@ extension LocalImageGenerator {
         break
       case .wan21_1_3b, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5:
         fatalError()
-      case .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .krea2:
+      case .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .krea2:
         fatalError()
       case .zImage, .ernieImage:
         fatalError()
@@ -3534,7 +3534,7 @@ extension LocalImageGenerator {
         fatalError()
       case .ltx2, .ltx2_3:
         fatalError()
-      case .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .ideogram4, .krea2:
+      case .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .ideogram4, .krea2:
         fatalError()
       case .hunyuanVideo:
         fatalError()
@@ -3545,7 +3545,8 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .wan22_5b, .zImage,
+        .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .cosmos2_5_2b,
+        .cosmos2_5_2_9b, .wan22_5b, .zImage,
         .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
         .seedvr2_3b,
         .seedvr2_7b,
@@ -3573,7 +3574,8 @@ extension LocalImageGenerator {
       switch version {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b, .seedvr2_3b,
+        .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .cosmos2_5_2b,
+        .cosmos2_5_2_9b, .seedvr2_3b,
         .seedvr2_7b, .ideogram4, .krea2, .minimaxH3, .mossImage:
         return (nil, [])
       case .longcatVideoAvatar1_5:
@@ -3702,7 +3704,8 @@ extension LocalImageGenerator {
       case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
         .hiDreamI1, .hiDreamO1, .wan22_5b, .zImage, .ernieImage, .flux1, .qwenImage, .qwenImage2_1,
-        .cosmos2_5_2b, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .seedvr2_3b,
+        .cosmos2_5_2b, .cosmos2_5_2_9b, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .mossImage, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4, .krea2,
         .minimaxH3:
@@ -3724,7 +3727,8 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .wurstchenStageB, .wurstchenStageC, .flux1, .hiDreamI1, .hiDreamO1, .qwenImage,
-      .qwenImage2_1, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+      .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage, .ernieImage, .flux2,
+      .flux2_9b, .flux2_4b,
       .flux3_5b, .mossImage,
       .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
       return false
@@ -3742,7 +3746,8 @@ extension LocalImageGenerator {
     switch version {
     case .v1, .v2, .auraflow, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
       .ssd1b, .svdI2v, .wurstchenStageB, .wurstchenStageC, .hunyuanVideo, .flux1, .hiDreamI1,
-      .hiDreamO1, .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+      .hiDreamO1, .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b,
+      .zImage, .ernieImage, .flux2,
       .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return (1, image, nil)
     case .ltx2, .ltx2_3, .minimaxH3:
@@ -3844,7 +3849,8 @@ extension LocalImageGenerator {
         batchSize + referenceFrames, referenceFrames
       )
     case .hunyuanVideo, .auraflow, .flux1, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1,
-      .cosmos2_5_2b, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner, .ssd1b,
+      .cosmos2_5_2b, .cosmos2_5_2_9b, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
+      .sdxlRefiner, .ssd1b,
       .svdI2v, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .zImage, .ernieImage, .flux2,
       .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
       .ideogram4, .krea2,
@@ -3906,7 +3912,7 @@ extension LocalImageGenerator {
       return result
     case .hiDreamI1, .hiDreamO1:
       fatalError()
-    case .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .krea2:
+    case .qwenImage, .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .krea2:
       fatalError()
     case .zImage, .ernieImage, .ideogram4:
       fatalError()
@@ -4338,7 +4344,8 @@ extension LocalImageGenerator {
           * 4
         firstPassAudioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .seedvr2_3b,
+        .seedvr2_7b, .krea2,
         .longcatVideoAvatar1_5:
         firstPassChannels = 16
         firstPassScaleFactor = 8
@@ -4602,7 +4609,8 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
-        .qwenImage2_1, .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .flux3_5b,
         .mossImage,
         .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         break
@@ -5170,7 +5178,8 @@ extension LocalImageGenerator {
         case .qwenImage2_1:
           channels = 64
         case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+          .hiDreamI1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .seedvr2_3b,
+          .seedvr2_7b, .krea2,
           .longcatVideoAvatar1_5:
           channels = 16
         case .hiDreamO1:
@@ -5729,7 +5738,8 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 16 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .seedvr2_3b,
+        .seedvr2_7b, .krea2,
         .longcatVideoAvatar1_5:
         channels = 16
         startScaleFactor = 8
@@ -5962,7 +5972,8 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
-        .qwenImage2_1, .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .flux3_5b,
         .mossImage,
         .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         break
@@ -7132,7 +7143,8 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 16 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .seedvr2_3b,
+        .seedvr2_7b, .krea2,
         .longcatVideoAvatar1_5:
         channels = 16
         startScaleFactor = 8
@@ -7442,7 +7454,8 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
-        .qwenImage2_1, .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .flux3_5b,
         .mossImage,
         .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         break
@@ -8090,7 +8103,8 @@ extension LocalImageGenerator {
         startHeight = image.shape[1] / 16 / imageScaleFactor
         audioHeight = 0
       case .wurstchenStageC, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .qwenImage, .cosmos2_5_2b, .zImage, .seedvr2_3b, .seedvr2_7b, .krea2,
+        .hiDreamI1, .qwenImage, .cosmos2_5_2_9b, .cosmos2_5_2b, .zImage, .seedvr2_3b,
+        .seedvr2_7b, .krea2,
         .longcatVideoAvatar1_5:
         channels = 16
         startScaleFactor = 8
@@ -8399,7 +8413,8 @@ extension LocalImageGenerator {
           hasCustom: custom != nil)
       case .auraflow, .flux1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase, .sdxlRefiner,
         .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .hiDreamI1, .hiDreamO1, .qwenImage,
-        .qwenImage2_1, .cosmos2_5_2b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+        .qwenImage2_1, .cosmos2_5_2b, .cosmos2_5_2_9b, .zImage, .ernieImage, .flux2,
+        .flux2_9b, .flux2_4b, .flux3_5b,
         .mossImage,
         .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
         break

@@ -240,12 +240,14 @@ public enum LoRAImporter {
         batchSize: 1, height: 64, width: 64, textLength: 512, layers: 36, channels: 4_096,
         usesFlashAttention: .scale1)
       (unetFixedMapper, unetFixed) = ErnieImageFixed(timesteps: 1, channels: 4_096)
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
+      let layers = version == .cosmos2_5_2_9b ? 40 : 28
       (unetMapper, unet) = Cosmos(
-        batchSize: 1, height: 64, width: 64, textLength: 512,
+        batchSize: 1, height: 64, width: 64, textLength: 512, layers: layers,
         usesFlashAttention: .scale1)
       (unetFixedMapper, unetFixed) = CosmosFixed(
-        timesteps: 1, batchSize: 1, textLength: 512, usesFlashAttention: .scale1)
+        timesteps: 1, batchSize: 1, textLength: 512, layers: layers,
+        usesFlashAttention: .scale1)
     case .ltx2:
       (unetMapper, unet) = LTX2(
         time: 16, h: 16, w: 16, textLength: 1024, audioFrames: 121, channels: (4096, 2048),
@@ -365,7 +367,7 @@ public enum LoRAImporter {
       case .ernieImage:
         inputDim = 32
         conditionalLength = 4096
-      case .cosmos2_5_2b:
+      case .cosmos2_5_2b, .cosmos2_5_2_9b:
         inputDim = 16
         conditionalLength = 1024
       case .ltx2:
@@ -574,7 +576,7 @@ public enum LoRAImporter {
           graph.variable(.CPU, .HWC(1, 1, 4096), of: FloatType.self),
         ]
         tEmb = nil
-      case .cosmos2_5_2b:
+      case .cosmos2_5_2b, .cosmos2_5_2_9b:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = false
         crossattn = [
@@ -790,7 +792,7 @@ public enum LoRAImporter {
         .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
         .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2,
         .ltx2_3,
-        .cosmos2_5_2b, .ideogram4, .krea2, .minimaxH3:
+        .cosmos2_5_2b, .cosmos2_5_2_9b, .ideogram4, .krea2, .minimaxH3:
         vectors = []
       case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
         fatalError()
@@ -1015,7 +1017,8 @@ public enum LoRAImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .cosmos2_5_2b:
+      case .cosmos2_5_2b, .cosmos2_5_2_9b:
+        let layers = version == .cosmos2_5_2_9b ? 40 : 28
         cArr =
           [
             graph.variable(
@@ -1023,7 +1026,7 @@ public enum LoRAImporter {
                 from: CosmosRotaryPositionEmbedding(height: 32, width: 32)))
           ]
           + CosmosFixedOutputShapes(
-            timesteps: 1, batchSize: 1, textLength: 512
+            timesteps: 1, batchSize: 1, textLength: 512, layers: layers
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
@@ -1493,6 +1496,12 @@ public enum LoRAImporter {
           || $0.contains("blocks.5.self_attn.q_proj.")
           || $0.contains("blocks_5_self_attn_q_proj")
       }
+      let isCosmosAnima2_9B = stateDict.keys.contains {
+        $0.contains("blocks.39.self_attn.q_proj.")
+          || $0.contains("blocks_39_self_attn_q_proj")
+          || $0.contains("transformer_blocks.39.attn1.to_q.")
+          || $0.contains("transformer_blocks_39_attn1_to_q")
+      }
       let isSDOrSDXL = stateDict.keys.contains {
         $0.hasSuffix(
           "down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight")
@@ -1534,7 +1543,7 @@ public enum LoRAImporter {
         return forceVersionOr(.ernieImage)
       }
       if isCosmosAnima {
-        return forceVersionOr(.cosmos2_5_2b)
+        return forceVersionOr(isCosmosAnima2_9B ? .cosmos2_5_2_9b : .cosmos2_5_2b)
       }
       if isFlux3 {
         return forceVersionOr(.flux3_5b)
@@ -1705,7 +1714,7 @@ public enum LoRAImporter {
     case .qwenImage:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .zImage:
@@ -2071,7 +2080,7 @@ public enum LoRAImporter {
             didImportTIEmbedding = true
           }
         }
-      case .zImage, .cosmos2_5_2b:
+      case .zImage, .cosmos2_5_2b, .cosmos2_5_2_9b:
         if let tensorDescQwen3 = stateDict["qwen3"] {
           try archive.with(tensorDescQwen3) {
             let tensor = Tensor<FloatType>(from: $0)
@@ -2150,7 +2159,8 @@ public enum LoRAImporter {
         modelPrefix = "stage_c"
         modelPrefixFixed = "stage_c_fixed"
       case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-        .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
+        .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b,
+        .wan22_5b, .zImage,
         .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
         .seedvr2_3b,
         .seedvr2_7b,
