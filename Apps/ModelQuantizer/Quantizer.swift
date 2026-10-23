@@ -227,7 +227,7 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
-          case .cosmos2_5_2b:
+          case .cosmos2_5_2b, .cosmos2_5_2_9b:
             if key.contains("embedder") || key.contains("pos_embed") || key.contains("-linear-")
               || key.contains("_linear_")
             {

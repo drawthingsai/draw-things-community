@@ -844,7 +844,7 @@ public enum ImageConverter {
         default:
           return []
         }
-      case .qwenImage, .cosmos2_5_2b, .krea2:
+      case .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .krea2:
         imageHeight = shape[1] * 8
         imageWidth = shape[2] * 8
         isVideo = false
@@ -1350,7 +1350,7 @@ public enum ImageConverter {
           || version == .ideogram4
           || version == .qwenImage || version == .qwenImage2_1
           || version == .krea2
-          || version == .cosmos2_5_2b
+          || version == .cosmos2_5_2b || version == .cosmos2_5_2_9b
           || version == .wan21_1_3b || version == .wan21_14b || version == .ltx2
           || version == .ltx2_3 || version == .minimaxH3
           || version == .v1 || version == .v2 || version == .svdI2v || version == .sd3
@@ -1667,7 +1667,7 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
-        case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .krea2,
+        case .wan21_1_3b, .wan21_14b, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .krea2,
           .longcatVideoAvatar1_5:
           for i in 0..<imageHeight * imageWidth {
             let (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) = (

@@ -100,6 +100,14 @@ public enum LoRAExporter {
       modelExportFormat = .comfyUI
       modelWeightFormats = [.generativeModels]
       textualInversionExport = ("string_to_param_qwen3", "qwen3")
+    case .cosmos2_5_2_9b:
+      metadata["version"] = "cosmos2.5_2.9b"
+      metadata["ss_base_model_version"] = "cosmos2.5_2.9b"
+      modelFixedPrefix = "dit"
+      modelPrefix = "dit"
+      modelExportFormat = .comfyUI
+      modelWeightFormats = [.generativeModels]
+      textualInversionExport = ("string_to_param_qwen3", "qwen3")
     case .zImage:
       metadata["version"] = "z_image"
       metadata["ss_base_model_version"] = "z_image"
@@ -186,7 +194,8 @@ public enum LoRAExporter {
       textEncoderKeysMapping2 = nil
     case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-      .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+      .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage,
+      .ernieImage, .flux2, .flux2_9b,
       .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
       .krea2:
       textEncoderKeys = []

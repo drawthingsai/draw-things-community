@@ -96,6 +96,7 @@ public enum ComputeUnits {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .flux1, .qwenImage, .qwenImage2_1,
       .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+      .cosmos2_5_2_9b,
       .hiDreamI1,
       .hiDreamO1,
       .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
@@ -494,10 +495,11 @@ public enum ComputeUnits {
         channels: configuration.hiddenSize, layers: configuration.layers,
         intermediateSize: configuration.mlpHiddenSize)
       return (main: mainCount * batchSize, fixed: 0)
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
+      let layers = context.modelVersion == .cosmos2_5_2_9b ? 40 : 28
       let mainCount = ZImageInstructionCount(
         batchSize: 1, height: startHeight, width: startWidth, textLength: baseTokenLength,
-        channels: 2048, layers: 28)
+        channels: 2048, layers: layers)
       return (main: mainCount * batchSize, fixed: 0)
     case .mossImage:
       let mainCount = MOSSImageInstructionCount(

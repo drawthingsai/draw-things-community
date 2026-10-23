@@ -23,7 +23,8 @@ public struct TeaCacheConfiguration {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+      .cosmos2_5_2_9b, .ideogram4,
       .krea2,
       .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
@@ -84,7 +85,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+      .cosmos2_5_2_9b, .ideogram4,
       .krea2,
       .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
@@ -139,7 +141,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .wan21_14b, .wan21_1_3b, .hiDreamI1,
       .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
-      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2, .ltx2_3,
+      .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .ideogram4, .krea2,
+      .ltx2, .ltx2_3,
       .seedvr2_3b,
       .seedvr2_7b,
       .longcatVideoAvatar1_5:
@@ -221,6 +224,7 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .qwenImage, .qwenImage2_1, .wan22_5b,
       .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+      .cosmos2_5_2_9b,
       .ltx2, .ltx2_3,
       .seedvr2_3b, .seedvr2_7b, .hiDreamO1, .ideogram4, .krea2, .longcatVideoAvatar1_5:
       fatalError()
@@ -291,7 +295,8 @@ final class TeaCache<FloatType: TensorNumeric & BinaryFloatingPoint> {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .sd3Large, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
       .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2,
-      .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4, .krea2, .ltx2,
+      .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .cosmos2_5_2_9b,
+      .ideogram4, .krea2, .ltx2,
       .ltx2_3,
       .seedvr2_3b,
       .seedvr2_7b, .longcatVideoAvatar1_5:

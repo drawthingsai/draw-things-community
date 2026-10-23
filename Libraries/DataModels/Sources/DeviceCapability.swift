@@ -857,7 +857,8 @@ public struct DeviceCapability {
       else {
         return false
       }
-    case .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .seedvr2_3b, .seedvr2_7b:
+    case .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .seedvr2_3b,
+      .seedvr2_7b:
       guard
         (!isMaxPerformance && !(isHighPerformance && is8BitModel)) || force
       else {
