@@ -39,4 +39,21 @@ common:release --apple_generate_dsym
 common:release --swiftcopt=-Xfrontend
 common:release --swiftcopt=-internalize-at-link
 
+# Developer ID distribution: Sparkle updates and no App Store-only features.
+common:direct --define=distribution=direct
+
+# Mac Catalyst release builds with the patched Bazel on the maccatalyst branch. Pass
+# --catalyst_cpus per app: arm64 for Local Code, arm64,x86_64 for Draw Things.
+build:catalyst --config=release
+build:catalyst --apple_platform_type=catalyst
+build:catalyst --features=disable_legacy_signing
+build:catalyst --linkopt=-L/System/iOSSupport/usr/lib/swift
+build:catalyst --swiftcopt=-Fsystem
+build:catalyst --swiftcopt=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/iOSSupport/System/Library/Frameworks/
+build:catalyst --swiftcopt=-disable-autolinking-runtime-compatibility
+build:catalyst --linkopt=-weak_library
+build:catalyst --linkopt=/usr/lib/swift/libswiftPhotosUI.dylib
+build:catalyst --linkopt=-weak_library
+build:catalyst --linkopt=/usr/lib/swift/libswiftPhotos.dylib
+
 try-import %workspace%/.bazelrc.local

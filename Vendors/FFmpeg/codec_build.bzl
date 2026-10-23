@@ -42,16 +42,17 @@ def _codec_impl(ctx):
     output = ctx.actions.declare_directory(ctx.label.name)
     platform = ctx.fragments.apple.single_arch_platform
     xcode = ctx.attr._xcode_config[apple_common.XcodeVersionConfig]
-    sdk = {
-        apple_common.platform.ios_device: "iphoneos",
-        apple_common.platform.ios_simulator: "iphonesimulator",
-        apple_common.platform.macos: "macosx",
+    platform_configuration = {
+        apple_common.platform.ios_device: ("iphoneos", "ios"),
+        apple_common.platform.ios_simulator: ("iphonesimulator", "ios-simulator"),
+        apple_common.platform.macos: ("macosx", "macos"),
+        apple_common.platform.catalyst: ("macosx", "catalyst"),
     }.get(platform)
-    if not sdk:
+    if not platform_configuration:
         fail("Unsupported FFmpeg platform: %s" % platform)
     args = [
         ctx.file._script.path, ctx.attr.codec, output.path, ctx.file._cmake.path,
-        sdk, ctx.fragments.apple.single_arch_cpu,
+        platform_configuration[0], platform_configuration[1], ctx.fragments.apple.single_arch_cpu,
         str(xcode.minimum_os_for_platform_type(platform.platform_type)),
         _source_root(ctx.files.sources), ctx.file._tools.path,
         _source_root(ctx.files._meson), "asan" if "asan" in ctx.features else "none",

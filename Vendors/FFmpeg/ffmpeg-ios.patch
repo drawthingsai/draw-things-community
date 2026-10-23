@@ -913,3 +913,31 @@
 +                        FF_CODEC_CAP_NOT_INIT_THREADSAFE |
                          FF_CODEC_CAP_AUTO_THREADS,
  };
+--- a/libavformat/tls_securetransport.c
++++ b/libavformat/tls_securetransport.c
+@@ -37,3 +37,4 @@
+ #include <Security/Security.h>
+ #include <Security/SecureTransport.h>
++#include <TargetConditionals.h>
+ #include <CoreFoundation/CoreFoundation.h>
+@@ -70,6 +71,6 @@ static int print_tls_error(URLContext *h, int ret)
+ static int import_pem(URLContext *h, char *path, CFArrayRef *array)
+ {
+-#if !HAVE_SECITEMIMPORT
++#if !HAVE_SECITEMIMPORT || TARGET_OS_MACCATALYST
+     return AVERROR_PATCHWELCOME;
+ #else
+     AVIOContext *s = NULL;
+--- a/libavcodec/videotoolbox.c
++++ b/libavcodec/videotoolbox.c
+@@ -819,7 +819,9 @@ static CFDictionaryRef videotoolbox_buffer_attributes_create(int width,
+     CFDictionarySetValue(buffer_attributes, kCVPixelBufferIOSurfacePropertiesKey, io_surface_properties);
+     CFDictionarySetValue(buffer_attributes, kCVPixelBufferWidthKey, w);
+     CFDictionarySetValue(buffer_attributes, kCVPixelBufferHeightKey, h);
+-#if TARGET_OS_IPHONE
++#if TARGET_OS_MACCATALYST
++    CFDictionarySetValue(buffer_attributes, kCVPixelBufferMetalCompatibilityKey, kCFBooleanTrue);
++#elif TARGET_OS_IPHONE
+     CFDictionarySetValue(buffer_attributes, kCVPixelBufferOpenGLESCompatibilityKey, kCFBooleanTrue);
+ #else
+     CFDictionarySetValue(buffer_attributes, kCVPixelBufferIOSurfaceOpenGLTextureCompatibilityKey, kCFBooleanTrue);

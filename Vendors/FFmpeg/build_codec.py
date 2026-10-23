@@ -54,18 +54,23 @@ def main():
                     run(["make", "install"], src, env)
             return
 
-        sdk, arch, minimum, source, tools, meson, sanitizer = sys.argv[4:11]
+        sdk, platform, arch, minimum, source, tools, meson, sanitizer = sys.argv[4:12]
         tools = Path(tools).absolute()
         meson = Path(meson).absolute() / "meson.py"
         env["PATH"] = str(tools / "bin") + os.pathsep + env.get("PATH", "/usr/bin:/bin")
         sdkroot = capture("xcrun", "--sdk", sdk, "--show-sdk-path")
-        target = f"{arch}-apple-" + (f"macos{minimum}" if sdk == "macosx" else f"ios{minimum}")
-        if sdk == "iphonesimulator":
-            target += "-simulator"
+        if platform == "macos":
+            target = f"{arch}-apple-macos{minimum}"
+        elif platform == "catalyst":
+            target = f"{arch}-apple-ios{minimum}-macabi"
+        elif platform == "ios-simulator":
+            target = f"{arch}-apple-ios{minimum}-simulator"
+        else:
+            target = f"{arch}-apple-ios{minimum}"
         flags = ["-target", target, "-isysroot", sdkroot, "-O2", "-fPIC", "-fvisibility=hidden"]
         configure_object = work / "codec_configure.o"
-        run([clang] + flags + ["-c", str(Path(sys.argv[12]).absolute()), "-o", str(configure_object)], work, env)
-        flags += ["-include", str(Path(sys.argv[11]).absolute())]
+        run([clang] + flags + ["-c", str(Path(sys.argv[13]).absolute()), "-o", str(configure_object)], work, env)
+        flags += ["-include", str(Path(sys.argv[12]).absolute())]
         if sanitizer == "asan":
             # CMake also passes CFLAGS at link time. SVT treats unused driver
             # arguments as errors in feature probes; this LLVM option is only
@@ -175,7 +180,7 @@ def main():
         for file in src.iterdir():
             if file.is_file() and file.name.upper().startswith(("LICENSE", "COPYING", "PATENTS")):
                 shutil.copy2(file, notices / file.name)
-        (destination / "build.json").write_text(json.dumps(dict(codec=name, sdk=sdk, arch=arch,
+        (destination / "build.json").write_text(json.dumps(dict(codec=name, sdk=sdk, platform=platform, arch=arch,
             minimum_os=minimum, sanitizer=sanitizer), indent=2) + "\n")
 
 

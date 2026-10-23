@@ -3,22 +3,21 @@ set -euo pipefail
 export LC_ALL=C
 export COPYFILE_DISABLE=1
 
-if [[ $# -lt 7 ]]; then
-  echo "usage: $0 <sdk> <arch> <minimum-os> <symbols> <roots> <output> <archives...>" >&2
+if [[ $# -lt 8 ]]; then
+  echo "usage: $0 <sdk> <platform> <arch> <minimum-os> <symbols> <roots> <output> <archives...>" >&2
   exit 1
 fi
 sdk=$1
-arch=$2
-minimum_os=$3
-symbols=$4
-roots=$5
-output=$6
-shift 6
-case "$sdk" in
-  iphoneos) platform=ios ;;
-  iphonesimulator) platform=ios-simulator ;;
-  macosx) platform=macos ;;
-  *) echo "unsupported SDK: $sdk" >&2; exit 1 ;;
+platform=$2
+arch=$3
+minimum_os=$4
+symbols=$5
+roots=$6
+output=$7
+shift 7
+case "$sdk:$platform" in
+  iphoneos:ios | iphonesimulator:ios-simulator | macosx:macos | "macosx:mac catalyst") ;;
+  *) echo "unsupported SDK/platform: $sdk/$platform" >&2; exit 1 ;;
 esac
 
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/lean-encapsulation.XXXXXX")

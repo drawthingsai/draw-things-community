@@ -6,17 +6,19 @@ def _ffmpeg_archive_impl(ctx):
     output = ctx.actions.declare_file("lib%s.a" % ctx.label.name)
     platform = ctx.fragments.apple.single_arch_platform
     xcode_config = ctx.attr._xcode_config[apple_common.XcodeVersionConfig]
-    sdk = {
-        apple_common.platform.ios_device: "iphoneos",
-        apple_common.platform.ios_simulator: "iphonesimulator",
-        apple_common.platform.macos: "macosx",
+    platform_configuration = {
+        apple_common.platform.ios_device: ("iphoneos", "ios"),
+        apple_common.platform.ios_simulator: ("iphonesimulator", "ios-simulator"),
+        apple_common.platform.macos: ("macosx", "macos"),
+        apple_common.platform.catalyst: ("macosx", "mac catalyst"),
     }.get(platform)
-    if not sdk:
+    if not platform_configuration:
         fail("Unsupported FFmpeg platform: %s" % platform)
     configure = [f for f in ctx.files.sources if f.basename == "configure" and f.short_path.endswith("/configure")][0]
     args = ctx.actions.args()
     args.add(ctx.file._script)
-    args.add(sdk)
+    args.add(platform_configuration[0])
+    args.add(platform_configuration[1])
     args.add(ctx.fragments.apple.single_arch_cpu)
     args.add(str(xcode_config.minimum_os_for_platform_type(platform.platform_type)))
     args.add(configure.dirname)

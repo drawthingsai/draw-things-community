@@ -4,16 +4,17 @@ export LC_ALL=C
 export COPYFILE_DISABLE=1
 
 sdk=$1
-arch=$2
-minimum_os=$3
-source_dir=$(cd "$4" && pwd)
-support_dir=$(cd "$5" && pwd)
-output="$PWD/$6"
-[[ "$6" = /* ]] && output=$6
-sanitizer=${7:-none}
-license=$8
-tools_dir=$(cd "$9" && pwd)
-shift 9
+platform=$2
+arch=$3
+minimum_os=$4
+source_dir=$(cd "$5" && pwd)
+support_dir=$(cd "$6" && pwd)
+output="$PWD/$7"
+[[ "$7" = /* ]] && output=$7
+sanitizer=${8:-none}
+license=$9
+tools_dir=$(cd "${10}" && pwd)
+shift 10
 codec_flags=()
 codec_archives=()
 codec_include_flags=""
@@ -39,11 +40,12 @@ done
 [[ "$license" == gpl ]] && codec_flags+=(--enable-gpl)
 export PKG_CONFIG_LIBDIR="$pkgconfig_dirs"
 export PKG_CONFIG_PATH=""
-case "$sdk" in
-  iphoneos) platform=ios; target="$arch-apple-ios$minimum_os" ;;
-  iphonesimulator) platform=ios-simulator; target="$arch-apple-ios$minimum_os-simulator" ;;
-  macosx) platform=macos; target="$arch-apple-macos$minimum_os" ;;
-  *) echo "Unsupported FFmpeg SDK: $sdk" >&2; exit 1 ;;
+case "$sdk:$platform" in
+  iphoneos:ios) target="$arch-apple-ios$minimum_os" ;;
+  iphonesimulator:ios-simulator) target="$arch-apple-ios$minimum_os-simulator" ;;
+  macosx:macos) target="$arch-apple-macos$minimum_os" ;;
+  "macosx:mac catalyst") target="$arch-apple-ios$minimum_os-macabi" ;;
+  *) echo "Unsupported FFmpeg SDK/platform: $sdk/$platform" >&2; exit 1 ;;
 esac
 
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/ffmpeg-build.XXXXXX")

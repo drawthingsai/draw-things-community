@@ -3,11 +3,24 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load(":codec_sources.bzl", "CODEC_SOURCES")
 
 def _host_tools_impl(ctx):
-    for name in ["cmake", "python3"]:
-        path = ctx.which(name)
-        if not path:
-            fail("FFmpeg codec builds require %s on PATH" % name)
-        ctx.symlink(path, name)
+    cmake = ctx.which("cmake")
+    if not cmake:
+        fail("FFmpeg codec builds require cmake on PATH")
+    ctx.symlink(cmake, "cmake")
+
+    python = None
+    for name in ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"]:
+        candidate = ctx.which(name)
+        if candidate and ctx.execute([
+            candidate,
+            "-c",
+            "import sys; raise SystemExit(sys.version_info < (3, 10))",
+        ]).return_code == 0:
+            python = candidate
+            break
+    if not python:
+        fail("FFmpeg codec builds require Python 3.10+ on PATH")
+    ctx.symlink(python, "python3")
     ctx.file("BUILD.bazel", 'exports_files(["cmake", "python3"], visibility = ["//visibility:public"])')
 
 _ffmpeg_host_tools = repository_rule(implementation = _host_tools_impl, local = True)

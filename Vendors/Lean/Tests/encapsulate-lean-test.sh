@@ -16,7 +16,7 @@ status=0
 "$work_dir/unencapsulated" || status=$?
 [[ "$status" == 1 ]] || { echo "fixture did not demonstrate a collision" >&2; exit 1; }
 
-bash "$vendor_dir/encapsulate_lean.sh" macosx arm64 13.5 \
+bash "$vendor_dir/encapsulate_lean.sh" macosx macos arm64 13.5 \
   "$fixture/symbols.txt" "$fixture/roots.rsp" "$work_dir/encapsulated.a" "$work_dir/input.a"
 xcrun --sdk macosx clang -arch arm64 -mmacosx-version-min=13.5 \
   "$work_dir/main.o" "$work_dir/encapsulated.a" -o "$work_dir/encapsulated"
