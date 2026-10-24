@@ -198,7 +198,12 @@ struct Converter: ParsableCommand {
       if autoencoder == nil {
         autoencoder = "seedvr2_vae_f16.ckpt"
       }
-    case .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
+    case .mossImage:
+      textEncoder = "qwen_3.5_9b_i5x.ckpt"
+      if autoencoder == nil {
+        autoencoder = "flux_2_vae_f16.ckpt"
+      }
+    case .flux2, .flux2_9b, .flux2_4b, .flux3_5b:
       fatalError()
     case .ltx2, .ltx2_3:
       fatalError()

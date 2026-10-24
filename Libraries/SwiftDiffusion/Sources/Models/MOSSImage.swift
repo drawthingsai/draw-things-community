@@ -216,6 +216,9 @@ private func MOSSImageBlock<T: TensorNumeric>(
     mapping["\(prefix).proj.k.weight"] = ModelWeightElement(
       [toKeys.weight.name], interleavedIndices: [0], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).proj.v.weight"] = [toValues.weight.name]
+    mapping["\(prefix).proj.qkv.weight"] = ModelWeightElement(
+      [toQueries.weight.name, toKeys.weight.name, toValues.weight.name],
+      interleavedIndices: [0, 1], numberOfHeads: h, headDimension: k)
     mapping["\(prefix).proj.o.weight"] = [unifyheads.weight.name]
     // The packed projection is the hidden (up) half followed by the gate half.
     mapping["\(prefix).proj.ffn_up_gate.weight"] = [ffnUp.weight.name, ffnGate.weight.name]
