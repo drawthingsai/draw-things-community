@@ -183,7 +183,10 @@ build_and_stage() {
 # Uploads through R2's S3 API, which takes single objects up to 5 GB; wrangler stops at 300 MiB.
 r2_put() {
   local file=$1 key=$2 content_type=$3 cache_control=$4
-  curl -fsS -K - --aws-sigv4 "aws:amz:auto:s3" -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+  # R2 occasionally answers a large upload with 500; --retry resends on that and other
+  # transient errors.
+  curl -sS --fail-with-body --retry 3 -K - --aws-sigv4 "aws:amz:auto:s3" \
+    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
     -H "Content-Type: $content_type" -H "Cache-Control: $cache_control" -T "$file" \
     "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$SPARKLE_BUCKET/$key" \
     <<<"user = \"$R2_ACCESS_KEY_ID:$R2_SECRET_ACCESS_KEY\""
