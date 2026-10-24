@@ -441,6 +441,8 @@ public struct LoRAZoo: DownloadZoo {
       return " (MOSS Image)"
     case .cosmos2_5_2b:
       return " (Cosmos 2.5 2B)"
+    case .cosmos2_5_2_9b:
+      return " (Cosmos 2.5 2.9B)"
     case .ltx2:
       return " (LTX-2)"
     case .ltx2_3:

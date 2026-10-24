@@ -159,7 +159,7 @@ struct Converter: ParsableCommand {
       fatalError()
     case .qwenImage, .qwenImage2_1:
       fatalError()
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
       textEncoder = "qwen_3_0.6b_f16.ckpt"
       clipEncoder = "\(fileName)_f16.ckpt"
       if autoencoder == nil {

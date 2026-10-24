@@ -2,9 +2,13 @@ import DiffusionMappings
 import Foundation
 import NNC
 
-private let CosmosLayerCount = 28
-public let CosmosFixedTimeConditionCount = CosmosLayerCount * 9 + 2
-public let CosmosFixedKVConditionCount = CosmosLayerCount * 2
+public func CosmosFixedTimeConditionCount(layers: Int) -> Int {
+  layers * 9 + 2
+}
+
+public func CosmosFixedKVConditionCount(layers: Int) -> Int {
+  layers * 2
+}
 
 public func AnimaRotaryPositionEmbedding(
   sequenceLengths: (Int, Int), headDimension: Int = 64, theta: Double = 10_000

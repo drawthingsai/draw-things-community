@@ -280,7 +280,7 @@ public struct TextualInversionZoo: DownloadZoo {
       count = 7680
     case .flux3_5b:
       count = 20480
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
       count = 1024
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
@@ -317,7 +317,7 @@ public struct TextualInversionZoo: DownloadZoo {
         case .gemma3:
           tensorName = "string_to_param_gemma3"
         }
-      case .cosmos2_5_2b:
+      case .cosmos2_5_2b, .cosmos2_5_2_9b:
         tensorName = "string_to_param_qwen3"
       case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
         .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,

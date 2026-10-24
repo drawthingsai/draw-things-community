@@ -195,7 +195,8 @@ extension FirstStage {
     case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4,
+      .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+      .cosmos2_5_2_9b, .ideogram4,
       .krea2,
       .seedvr2_3b,
       .seedvr2_7b, .longcatVideoAvatar1_5:
@@ -274,6 +275,7 @@ extension FirstStage {
       scaleFactor = 16
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+      .cosmos2_5_2_9b,
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       scaleFactor = 8
       scaleFactorZ = 4
@@ -641,10 +643,11 @@ extension FirstStage {
       }
       outputChannels = 4
       causalAttentionMask = nil
-    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b, .cosmos2_5_2_9b,
       .longcatVideoAvatar1_5:
       let startDepth =
-        version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b ? 1 : shape[0]
+        version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
+          || version == .cosmos2_5_2_9b ? 1 : shape[0]
       var startWidth = tiledDecoding ? decodingTileSize.width : startWidth
       var startHeight = tiledDecoding ? decodingTileSize.height : startHeight
       let sizeLimit: Int
@@ -1114,6 +1117,7 @@ extension FirstStage {
           .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
           .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
           .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+          .cosmos2_5_2_9b,
           .ideogram4, .krea2,
           .seedvr2_3b,
           .seedvr2_7b, .longcatVideoAvatar1_5:
@@ -1249,7 +1253,8 @@ extension FirstStage {
       case .v1, .v2, .kandinsky21, .sdxlBase, .sdxlRefiner, .ssd1b, .svdI2v, .wurstchenStageC,
         .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hunyuanVideo, .wan21_1_3b,
         .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
-        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b, .ideogram4,
+        .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+        .cosmos2_5_2_9b, .ideogram4,
         .krea2,
         .ltx2,
         .ltx2_3, .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
@@ -1510,6 +1515,7 @@ extension FirstStage {
       scaleFactor = 16
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+      .cosmos2_5_2_9b,
       .seedvr2_3b, .seedvr2_7b, .longcatVideoAvatar1_5:
       scaleFactor = 8
       scaleFactorZ = 4
@@ -1775,10 +1781,11 @@ extension FirstStage {
       }
       outputChannels = 128
       causalAttentionMask = nil
-    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
+    case .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b, .cosmos2_5_2_9b,
       .longcatVideoAvatar1_5:
       let startDepth =
         version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
+          || version == .cosmos2_5_2_9b
         ? 1 : (shape[0] - 1) / 4 + 1
       var startWidth = tiledEncoding ? encodingTileSize.width : startWidth
       var startHeight = tiledEncoding ? encodingTileSize.height : startHeight
@@ -1832,7 +1839,8 @@ extension FirstStage {
       if existingEncoder == nil {
         encoder.maxConcurrency = .limit(4)
         let batchSize =
-          version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b ? 1 : batchSize
+          version == .qwenImage || version == .krea2 || version == .cosmos2_5_2b
+            || version == .cosmos2_5_2_9b ? 1 : batchSize
         if highPrecision {
           encoder.compile(
             inputs: DynamicGraph.Tensor<Float>(
@@ -2262,7 +2270,7 @@ extension FirstStage {
       of: T.self)
     if alternativeDecoderVersion == .transparent,
       version == .qwenImage || version == .qwenImage2_1 || version == .krea2
-        || version == .cosmos2_5_2b
+        || version == .cosmos2_5_2b || version == .cosmos2_5_2_9b
     {
       // If this is the case, we need to switch alpha channel with rgb channel.
       let shape = pixel.shape

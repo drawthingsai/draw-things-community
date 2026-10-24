@@ -31,6 +31,7 @@ public enum ModelVersion: String, Codable {
   case flux2_4b = "flux2_4b"
   case flux3_5b = "flux3_5b"
   case cosmos2_5_2b = "cosmos2.5_2b"
+  case cosmos2_5_2_9b = "cosmos2.5_2.9b"
   case ideogram4 = "ideogram_4"
   case krea2 = "krea_2"
   case ltx2 = "ltx2"
@@ -539,6 +540,7 @@ func isBatchEnabled(_ version: ModelVersion) -> Bool {
   case .auraflow, .flux1, .hiDreamI1, .hiDreamO1, .kandinsky21, .pixart, .sd3, .sd3Large, .sdxlBase,
     .sdxlRefiner, .ssd1b, .v1, .v2, .wurstchenStageB, .wurstchenStageC, .qwenImage, .qwenImage2_1,
     .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .cosmos2_5_2b,
+    .cosmos2_5_2_9b,
     .ideogram4,
     .krea2:
     return true

@@ -204,6 +204,13 @@ public final class ModelImporter {
         || $0.contains("blocks.5.self_attn.q_proj.")
         || $0.contains("blocks_5_self_attn_q_proj")
     }
+    let isCosmosAnima2_9B =
+      isCosmosAnima
+      && stateDict.keys.contains {
+        $0.contains("blocks.39.self_attn.q_proj.")
+          || $0.contains("blocks_39_self_attn_q_proj")
+          || $0.contains("transformer_blocks.39.attn1.to_q.")
+      }
     var isIdeogram4 =
       stateDict.keys.contains {
         $0.contains("layers.33.attention.to_q.weight")
@@ -428,10 +435,10 @@ public final class ModelImporter {
       expectedTotalAccess = 421
       isDiffusersFormat = false
     } else if isCosmosAnima {
-      modelVersion = .cosmos2_5_2b
+      modelVersion = isCosmosAnima2_9B ? .cosmos2_5_2_9b : .cosmos2_5_2b
       modifier = .none
       inputDim = 16
-      expectedTotalAccess = 856
+      expectedTotalAccess = isCosmosAnima2_9B ? 1_168 : 856
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("patch_embed.proj.")
       }
@@ -544,7 +551,7 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .wan21_1_3b, .wan21_14b, .wan22_5b:
         throw Error.noTextEncoder
-      case .qwenImage, .cosmos2_5_2b:
+      case .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b:
         throw Error.noTextEncoder
       case .hiDreamI1, .hiDreamO1, .qwenImage2_1:
         throw Error.noTextEncoder
@@ -627,7 +634,8 @@ public final class ModelImporter {
               "\(modelName)_open_clip_vit_bigg14_f16.ckpt")
           case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v, .wurstchenStageC,
             .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1,
-            .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2,
+            .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage,
+            .ernieImage, .flux2,
             .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
             .ideogram4,
             .krea2:
@@ -672,8 +680,9 @@ public final class ModelImporter {
               }
             case .sd3, .sd3Large, .pixart, .auraflow, .flux1, .kandinsky21, .svdI2v,
               .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b, .wan21_14b,
-              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b, .wan22_5b, .zImage,
-              .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+              .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage, .cosmos2_5_2b,
+              .cosmos2_5_2_9b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+              .flux3_5b, .mossImage, .ltx2, .ltx2_3,
               .seedvr2_3b,
               .seedvr2_7b,
               .ideogram4, .krea2:
@@ -829,7 +838,7 @@ public final class ModelImporter {
     case .ernieImage:
       conditionalLength = 3072
       batchSize = 1
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
       conditionalLength = 1024
       batchSize = 1
     case .flux2:
@@ -920,7 +929,8 @@ public final class ModelImporter {
           vectors = [graph.variable(.CPU, .WC(batchSize, 768), of: FloatType.self)]
         case .wurstchenStageC, .wurstchenStageB, .pixart, .sd3, .sd3Large, .auraflow, .flux1,
           .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
-          .cosmos2_5_2b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
+          .cosmos2_5_2b, .cosmos2_5_2_9b, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b,
+          .flux2_4b, .flux3_5b,
           .mossImage,
           .ltx2,
           .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
@@ -1068,7 +1078,8 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .cosmos2_5_2b:
+      case .cosmos2_5_2b, .cosmos2_5_2_9b:
+        let layers = modelVersion == .cosmos2_5_2_9b ? 40 : 28
         cArr =
           [
             graph.variable(
@@ -1076,7 +1087,7 @@ public final class ModelImporter {
                 from: CosmosRotaryPositionEmbedding(height: 32, width: 32)))
           ]
           + CosmosFixedOutputShapes(
-            timesteps: 1, batchSize: 1, textLength: 512
+            timesteps: 1, batchSize: 1, textLength: 512, layers: layers
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
@@ -1385,12 +1396,14 @@ public final class ModelImporter {
           batchSize: 1, height: 64, width: 64, textLength: 512, layers: 36, channels: 4_096,
           usesFlashAttention: .scale1)
         (unetFixedMapper, unetFixed) = ErnieImageFixed(timesteps: 1, channels: 4_096)
-      case .cosmos2_5_2b:
+      case .cosmos2_5_2b, .cosmos2_5_2_9b:
+        let layers = modelVersion == .cosmos2_5_2_9b ? 40 : 28
         (unetMapper, unet) = Cosmos(
           batchSize: 1, height: 64, width: 64, textLength: 512,
-          usesFlashAttention: .scale1)
+          layers: layers, usesFlashAttention: .scale1)
         (unetFixedMapper, unetFixed) = CosmosFixed(
-          timesteps: 1, batchSize: 1, textLength: 512, usesFlashAttention: .scale1)
+          timesteps: 1, batchSize: 1, textLength: 512, layers: layers,
+          usesFlashAttention: .scale1)
         let (adapterMapper, adapter) = AnimaLLMAdapter(
           targetLength: (16, 16), sourceLength: (16, 16), usesFlashAttention: true)
         let sourceHiddenStates = graph.variable(.CPU, .WC(32, 1024), of: FloatType.self)
@@ -1581,7 +1594,7 @@ public final class ModelImporter {
           graph.variable(.CPU, .HWC(1, 1, 4096), of: FloatType.self),
         ]
         tEmb = nil
-      case .cosmos2_5_2b:
+      case .cosmos2_5_2b, .cosmos2_5_2_9b:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 512, 1024), of: FloatType.self),
           graph.variable(
@@ -1774,7 +1787,7 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(6))] = value
           }
         }
-      } else if modelVersion == .cosmos2_5_2b {
+      } else if modelVersion == .cosmos2_5_2b || modelVersion == .cosmos2_5_2_9b {
         // Remove the model.diffusion_model / model / net prefix.
         for (key, value) in stateDict {
           if key.hasPrefix("model.diffusion_model.") {
@@ -1880,8 +1893,9 @@ public final class ModelImporter {
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .hiDreamO1, .qwenImage2_1, .wan22_5b, .qwenImage, .cosmos2_5_2b, .auraflow, .zImage,
-            .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+            .hiDreamO1, .qwenImage2_1, .wan22_5b, .qwenImage, .cosmos2_5_2b,
+            .cosmos2_5_2_9b, .auraflow, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
+            .flux3_5b, .mossImage, .ltx2, .ltx2_3,
             .longcatVideoAvatar1_5,
             .ideogram4, .krea2:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
@@ -2253,8 +2267,9 @@ public final class ModelImporter {
           if $0.keys.count != 421 {
             throw Error.tensorWritesFailed
           }
-        case .cosmos2_5_2b:
-          if $0.keys.count != 856 {
+        case .cosmos2_5_2b, .cosmos2_5_2_9b:
+          let expectedKeyCount = modelVersion == .cosmos2_5_2_9b ? 1_168 : 856
+          if $0.keys.count != expectedKeyCount {
             throw Error.tensorWritesFailed
           }
         case .flux2:
@@ -2537,7 +2552,7 @@ extension ModelImporter {
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_2.5_vl_7b_f16.ckpt")
       }
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
       textEncoder = fileNames.first {
         $0.hasSuffix("_qwen_3_0.6b_q8p.ckpt")
       }
@@ -2809,7 +2824,7 @@ extension ModelImporter {
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
       specification.isBf16 = true
-    case .cosmos2_5_2b:
+    case .cosmos2_5_2b, .cosmos2_5_2_9b:
       if specification.textEncoder == nil {
         specification.textEncoder = "qwen_3_0.6b_q8p.ckpt"
       }

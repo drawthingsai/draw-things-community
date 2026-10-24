@@ -183,7 +183,7 @@ public struct ImageGeneratorUtils {
       .wurstchenStageB, .sd3, .pixart, .auraflow, .flux1, .sd3Large, .hiDreamI1, .hiDreamO1,
       .qwenImage, .qwenImage2_1, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
       .mossImage,
-      .cosmos2_5_2b,
+      .cosmos2_5_2b, .cosmos2_5_2_9b,
       .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
       return false
     case .hunyuanVideo, .svdI2v, .wan21_1_3b, .wan21_14b, .wan22_5b, .ltx2, .ltx2_3,
