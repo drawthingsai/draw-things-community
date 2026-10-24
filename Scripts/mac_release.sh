@@ -9,8 +9,9 @@
 # The version comes from the app's SupportingFiles/Info.plist. Results go to
 # ~/Releases/<App>-<version>/: <App>.pkg for the App Store, and a notarized, stapled
 # <App>-<version>-<digest>.zip for direct downloads, plus appcast.xml when the app updates through
-# Sparkle. Once both are built, --upload publishes the zip and appcast.xml to the app's Sparkle
-# bucket, then sends the App Store package to App Store Connect.
+# Sparkle and a notarized <App>-<version>-<digest>.dmg when it has a disk image layout. Once both
+# are built, --upload publishes the zip, disk image and appcast.xml to the app's release bucket,
+# then sends the App Store package to App Store Connect.
 
 set -euo pipefail
 
@@ -44,9 +45,14 @@ ASC_API_ISSUER="69a6de83-36b3-47e3-e053-5b8c7c11a4d1"
 SPARKLE_VERSION="2.10.0"
 SPARKLE_SHA256="c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c"
 R2_ACCOUNT_ID="cd96f610b0bb2657da157aca332052ec"
+DMGBUILD_VERSION="1.6.7"
+DMGBUILD_REQUIREMENTS="\
+dmgbuild==$DMGBUILD_VERSION --hash=sha256:37ee5771c377beb3203d9164aae8046ffed8531c06edf9227f5788b3c599b1bf
+ds-store==1.3.3 --hash=sha256:b92a371efbf1b4ccce2a04d1ed13fceacc4736c81ba09cf5aefb74c088160a35
+mac-alias==2.2.3 --hash=sha256:7362b521d2132ef92f606a37abfed5fcd849ceb2f28b6f9743e014b02af92f0d"
 
-# EXCLUDED_RESOURCES are Bazel resources that the Mac app has not shipped so far. SPARKLE_BUCKET is
-# the R2 bucket behind the app's SUFeedURL.
+# EXCLUDED_RESOURCES are Bazel resources that the Mac app has not shipped so far. RELEASE_BUCKET is
+# the R2 bucket that serves direct downloads and the app's SUFeedURL.
 case $APP in
   localcode)
     SOURCE=Apps/LocalCode
@@ -58,7 +64,7 @@ case $APP in
     BUNDLE_ID=com.liuliu.local-code
     CPUS=arm64
     EXCLUDED_RESOURCES=(AppIcon.icns LICENSE local-code-banner-launch@2x.png Notices)
-    SPARKLE_BUCKET=local-code-releases
+    RELEASE_BUCKET=local-code-releases
     ;;
   drawthings)
     SOURCE=Apps/DrawThings
@@ -70,15 +76,17 @@ case $APP in
     BUNDLE_ID=com.liuliu.draw-things
     CPUS=arm64,x86_64
     EXCLUDED_RESOURCES=(AppIcon.icns queue-icon.json)
-    SPARKLE_BUCKET=""
+    RELEASE_BUCKET=""
     ;;
   *) usage ;;
 esac
 MAC_FILES=$SOURCE/SupportingFiles/Mac
 APP_STORE_PROFILE=$SOURCE/ProvisioningFiles/${ARCHIVE_NAME}_macOS_Distribution.provisionprofile
 DEVELOPER_ID_PROFILE=$SOURCE/ProvisioningFiles/${ARCHIVE_NAME}_Developer_ID_Distribution.provisionprofile
-# Apps with Sparkle.plist update through Sparkle in their direct builds.
+# Apps with Sparkle.plist update through Sparkle in their direct builds, and apps with
+# DiskImage.py (dmgbuild settings) also ship them as a disk image.
 SPARKLE_KEYS=$MAC_FILES/Sparkle.plist
+DISK_IMAGE_SETTINGS=$MAC_FILES/DiskImage.py
 
 for profile in "$APP_STORE_PROFILE" "$DEVELOPER_ID_PROFILE"; do
   [[ -f $profile ]] || {
@@ -124,13 +132,34 @@ if [[ -f $SPARKLE_KEYS ]]; then
     echo "SUPublicEDKey in $SPARKLE_KEYS does not match the keychain's Sparkle key" >&2
     exit 1
   }
-  if [[ $UPLOAD == 1 ]]; then
-    # An R2 API token for the bucket, stored with
-    # `security add-generic-password -s r2-<bucket> -a <access key ID> -w`.
-    R2_ACCESS_KEY_ID=$(security find-generic-password -s "r2-$SPARKLE_BUCKET" |
-      sed -n 's/^ *"acct"<blob>="\(.*\)"$/\1/p')
-    R2_SECRET_ACCESS_KEY=$(security find-generic-password -s "r2-$SPARKLE_BUCKET" -w)
+fi
+if [[ -f $DISK_IMAGE_SETTINGS ]]; then
+  DMGBUILD_DIR=$HOME/Library/Caches/mac_release/dmgbuild-$DMGBUILD_VERSION
+  if [[ ! -x $DMGBUILD_DIR/bin/dmgbuild ]]; then
+    PYTHON=""
+    for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+      if command -v "$candidate" >/dev/null &&
+        "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+        PYTHON=$candidate
+        break
+      fi
+    done
+    [[ -n $PYTHON ]] || {
+      echo "dmgbuild needs Python 3.10 or newer on PATH" >&2
+      exit 1
+    }
+    rm -rf "$DMGBUILD_DIR"
+    "$PYTHON" -m venv "$DMGBUILD_DIR"
+    "$DMGBUILD_DIR/bin/pip" install --quiet --disable-pip-version-check --only-binary :all: \
+      --require-hashes -r /dev/stdin <<<"$DMGBUILD_REQUIREMENTS"
   fi
+fi
+if [[ $UPLOAD == 1 && -n $RELEASE_BUCKET ]]; then
+  # An R2 API token for the bucket, stored with
+  # `security add-generic-password -s r2-<bucket> -a <access key ID> -w`.
+  R2_ACCESS_KEY_ID=$(security find-generic-password -s "r2-$RELEASE_BUCKET" |
+    sed -n 's/^ *"acct"<blob>="\(.*\)"$/\1/p')
+  R2_SECRET_ACCESS_KEY=$(security find-generic-password -s "r2-$RELEASE_BUCKET" -w)
 fi
 
 # Builds the app with the given Bazel configs and stages it as $BUNDLE with the given profile.
@@ -188,7 +217,7 @@ r2_put() {
   curl -sS --fail-with-body --retry 3 -K - --aws-sigv4 "aws:amz:auto:s3" \
     -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
     -H "Content-Type: $content_type" -H "Cache-Control: $cache_control" -T "$file" \
-    "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$SPARKLE_BUCKET/$key" \
+    "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$RELEASE_BUCKET/$key" \
     <<<"user = \"$R2_ACCESS_KEY_ID:$R2_SECRET_ACCESS_KEY\""
 }
 
@@ -196,6 +225,19 @@ sign() {
   local identity=$1
   shift
   codesign --force --timestamp --options runtime --sign "$identity" "$@"
+}
+
+# Submits a zip or disk image for notarization and waits; prints Apple's log when it is rejected.
+notarize() {
+  local result
+  result=$(xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait \
+    --output-format json)
+  if [[ $(plutil -extract status raw -o - - <<<"$result") != Accepted ]]; then
+    echo "$result" >&2
+    xcrun notarytool log "$(plutil -extract id raw -o - - <<<"$result")" \
+      --keychain-profile "$NOTARY_PROFILE" >&2
+    exit 1
+  fi
 }
 
 build_and_stage appstore "$APP_STORE_PROFILE" --config=catalyst
@@ -224,20 +266,25 @@ sign "$DEVELOPER_ID_IDENTITY" --entitlements "$MAC_FILES/Direct.entitlements" "$
 codesign --verify --strict --deep "$BUNDLE"
 # ditto keeps the framework's Versions/Current symlinks, which zip -r would flatten.
 ditto -c -k --sequesterRsrc --keepParent "$BUNDLE" "$OUTPUT/notarize.zip"
-RESULT=$(xcrun notarytool submit "$OUTPUT/notarize.zip" --keychain-profile "$NOTARY_PROFILE" \
-  --wait --output-format json)
+notarize "$OUTPUT/notarize.zip"
 rm "$OUTPUT/notarize.zip"
-if [[ $(plutil -extract status raw -o - - <<<"$RESULT") != Accepted ]]; then
-  echo "$RESULT" >&2
-  xcrun notarytool log "$(plutil -extract id raw -o - - <<<"$RESULT")" \
-    --keychain-profile "$NOTARY_PROFILE" >&2
-  exit 1
-fi
 xcrun stapler staple "$BUNDLE"
 spctl --assess --type execute "$BUNDLE"
 ditto -c -k --sequesterRsrc --keepParent "$BUNDLE" "$OUTPUT/archive.zip"
 ARCHIVE=$OUTPUT/$ARCHIVE_NAME-$VERSION-$(shasum -a 256 "$OUTPUT/archive.zip" | cut -c1-8).zip
 mv "$OUTPUT/archive.zip" "$ARCHIVE"
+DISK_IMAGE=""
+if [[ -f $DISK_IMAGE_SETTINGS ]]; then
+  # The disk image holds the stapled app, so a first launch from it needs no network check either.
+  "$DMGBUILD_DIR/bin/dmgbuild" -s "$DISK_IMAGE_SETTINGS" -D app="$BUNDLE" "$APP_NAME" \
+    "$OUTPUT/disk.dmg"
+  codesign --force --timestamp --sign "$DEVELOPER_ID_IDENTITY" "$OUTPUT/disk.dmg"
+  notarize "$OUTPUT/disk.dmg"
+  xcrun stapler staple "$OUTPUT/disk.dmg"
+  spctl --assess --type open --context context:primary-signature "$OUTPUT/disk.dmg"
+  DISK_IMAGE=$OUTPUT/$ARCHIVE_NAME-$VERSION-$(shasum -a 256 "$OUTPUT/disk.dmg" | cut -c1-8).dmg
+  mv "$OUTPUT/disk.dmg" "$DISK_IMAGE"
+fi
 rm -rf "$OUTPUT/direct"
 if [[ -f $SPARKLE_KEYS ]]; then
   FEED_URL=$(plutil -extract SUFeedURL raw "$SPARKLE_KEYS")
@@ -255,13 +302,21 @@ if [[ -f $SPARKLE_KEYS ]]; then
 fi
 
 if [[ $UPLOAD == 1 ]]; then
-  if [[ -f $SPARKLE_KEYS ]]; then
-    # The zip goes first so the feed never points at a missing archive.
-    r2_put "$ARCHIVE" "${ARCHIVE##*/}" application/zip "public, max-age=31536000, immutable"
-    r2_put "$OUTPUT/appcast.xml" appcast.xml application/xml "public, max-age=300"
+  if [[ -n $RELEASE_BUCKET ]]; then
+    IMMUTABLE="public, max-age=31536000, immutable"
+    # Files go up before appcast.xml so the feed never points at a missing archive.
+    r2_put "$ARCHIVE" "${ARCHIVE##*/}" application/zip "$IMMUTABLE"
+    if [[ -n $DISK_IMAGE ]]; then
+      r2_put "$DISK_IMAGE" "${DISK_IMAGE##*/}" application/x-apple-diskimage "$IMMUTABLE"
+      # A stable name for download links, replaced by each release.
+      r2_put "$DISK_IMAGE" "$ARCHIVE_NAME.dmg" application/x-apple-diskimage "public, max-age=300"
+    fi
+    if [[ -f $SPARKLE_KEYS ]]; then
+      r2_put "$OUTPUT/appcast.xml" appcast.xml application/xml "public, max-age=300"
+    fi
   fi
   xcrun altool --upload-app -f "$PACKAGE" -t macos --apiKey "$ASC_API_KEY" \
     --apiIssuer "$ASC_API_ISSUER"
 fi
 echo "App Store package: $PACKAGE"
-echo "Direct download: $ARCHIVE"
+echo "Direct download: ${DISK_IMAGE:-$ARCHIVE}"
