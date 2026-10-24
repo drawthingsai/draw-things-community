@@ -240,9 +240,15 @@ if [[ -f $SPARKLE_KEYS ]]; then
   FEED_URL=$(plutil -extract SUFeedURL raw "$SPARKLE_KEYS")
   mkdir -p "$OUTPUT/appcast"
   ln "$ARCHIVE" "$OUTPUT/appcast/"
-  "$SPARKLE_DIR/bin/generate_appcast" --maximum-deltas 0 \
+  # Only generate_keys, which created the keychain item, reads the key without an Allow prompt,
+  # and SSH sessions cannot show that prompt. It exports the key to a private folder for
+  # generate_appcast, which deletes it afterwards.
+  KEY_DIR=$(mktemp -d)
+  trap 'rm -rf "$KEY_DIR"' EXIT
+  "$SPARKLE_DIR/bin/generate_keys" -x "$KEY_DIR/ed25519" >/dev/null
+  "$SPARKLE_DIR/bin/generate_appcast" --ed-key-file "$KEY_DIR/ed25519" --maximum-deltas 0 \
     --download-url-prefix "${FEED_URL%/*}/" -o "$OUTPUT/appcast.xml" "$OUTPUT/appcast"
-  rm -rf "$OUTPUT/appcast"
+  rm -rf "$KEY_DIR" "$OUTPUT/appcast"
 fi
 
 if [[ $UPLOAD == 1 ]]; then
