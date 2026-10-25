@@ -60,7 +60,7 @@ int main(void)
         CHECK([version containsString:@"ffmpeg version 9.0.2"]);
         CHECK(ios_system_osh("ffprobe -v error -select_streams a:0 "
             "-show_entries stream=codec_name,sample_rate:format=duration "
-            "-of json /home/Project/tone.wav > probe.json") == 0);
+            "-of json ~/Project/tone.wav > probe.json") == 0);
         NSData *probeData = [NSData dataWithContentsOfURL:[project URLByAppendingPathComponent:@"probe.json"]];
         CHECK(probeData);
         NSDictionary *probe = [NSJSONSerialization JSONObjectWithData:probeData options:0 error:nil];
@@ -77,7 +77,7 @@ int main(void)
         CHECK(ios_system_osh("ffprobe -v error -show_format tone.wav > /dev/null") == 0);
         CHECK(ios_system_osh("FFREPORT=file=session-report.log:level=32 ffmpeg -version > /dev/null") == 0);
         CHECK([fm fileExistsAtPath:[project URLByAppendingPathComponent:@"session-report.log"].path]);
-        CHECK(ios_system_osh("ffmpeg -v error -i /home/Project/tone.wav -f null -") == 0);
+        CHECK(ios_system_osh("ffmpeg -v error -i ~/Project/tone.wav -f null -") == 0);
         CHECK(ios_system_osh("ffmpeg -v error -i missing.wav -f null -") != 0);
         CHECK(ios_system_osh("ffmpeg -v error -i tone.wav -f null -") == 0);
 

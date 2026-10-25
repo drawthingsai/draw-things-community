@@ -158,9 +158,9 @@ static const char *command_path(const char *path, char buffer[PATH_MAX])
     if (*path != '/') {
         prefix = active->directory;
     } else {
-        const char *aliases[] = {"/home", "/tmp", "/app_bundle"};
-        const char *targets[] = {active->home, active->temporaryDirectory, active->appBundle};
-        for (int i = 0; i < 3; ++i) {
+        const char *aliases[] = {"/app_bundle"};
+        const char *targets[] = {active->appBundle};
+        for (int i = 0; i < 1; ++i) {
             size_t length = strlen(aliases[i]);
             if (targets[i] && !strncmp(path, aliases[i], length) &&
                 (path[length] == '/' || path[length] == '\0')) {

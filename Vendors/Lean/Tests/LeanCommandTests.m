@@ -171,7 +171,7 @@ int main(int argc, char **argv) {
     check("printf 'module\\nprelude\\npublic import Init.Prelude\\npublic theorem proof : True := "
           "True.intro\\n' > 'proof file.lean'; lean 'proof file.lean'",
           0, @"");
-    check("lean '/home/proof file.lean'", 0, @"");
+    check("lean ~/'proof file.lean'", 0, @"");
     check("check_lean --stdin < 'proof file.lean' > audit.txt; cat audit.txt", 0, @"status: valid");
     check("lean --stdin < 'proof file.lean'", 0, @"");
     check("printf 'theorem hole : False := by sorry\\n' | lean --stdin", 0, @"sorry");

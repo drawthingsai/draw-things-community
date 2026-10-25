@@ -169,7 +169,7 @@ struct DrawThingsCLICommandTests {
       try expectEqual(ios_system_osh("draw-things-cli --not-a-flag"), 64)
       try expect(contents().1.contains("--not-a-flag"))
       try expectEqual(
-        ios_system_osh("draw-things-cli completion bash --output /home/Project/completion.sh"), 0)
+        ios_system_osh("draw-things-cli completion bash --output ~/Project/completion.sh"), 0)
       try expect(
         FileManager.default.fileExists(atPath: project.appendingPathComponent("completion.sh").path)
       )

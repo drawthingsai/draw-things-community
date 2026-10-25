@@ -22,8 +22,8 @@ int z3_main(int argc, char **argv) {
   try {
     const char *pwd = ios_getenv("PWD");
     std::string directory = pwd ? pwd : std::filesystem::current_path().string();
-    std::array<std::pair<std::string, std::string>, 3> aliases;
-    const char *names[] = {"/home", "/tmp", "/app_bundle"};
+    std::array<std::pair<std::string, std::string>, 1> aliases;
+    const char *names[] = {"/app_bundle"};
     for (size_t i = 0; i < aliases.size(); ++i) {
       char resolved[PATH_MAX];
       int result = ios_resolveDirectoryAlias(names[i], resolved, sizeof(resolved));

@@ -14,7 +14,6 @@ typedef struct {
     FILE *output;
     FILE *error;
     const char *directory;
-    const char *home;
     const char *temporaryDirectory;
     const char *appBundle;
     const char *const *environment;

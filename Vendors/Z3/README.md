@@ -11,7 +11,7 @@ Local Code registers `z3_main` using the generic `ios_registerCommand("z3", z3_m
 ## In-process behavior
 
 - `Z3ShellRun` owns invocation streams and fresh CLI parameters. It restores host parameters afterward and never finalizes the shared solver runtime. `Z3BridgeCheckSMT` and shell invocations share a runtime lock; they cannot execute simultaneously because upstream CLI settings are process-global. New direct callers must use the same serialization boundary.
-- `z3_main` snapshots the session working directory and `/home`, `/tmp`, `/app_bundle` aliases. Z3 file streams use those paths, including `(include ...)` and output-channel files. `/app_bundle` writes are rejected.
+- `z3_main` snapshots the session working directory and the `/app_bundle` alias. Z3 file streams use those paths, including `(include ...)` and output-channel files. `/app_bundle` writes are rejected.
 - No process-wide signal handlers or standard-stream buffer swaps are installed. On Darwin, command pipes are temporarily nonblocking and suppress SIGPIPE per descriptor, with original flags restored on return.
 - Z3's `-t:` per-query timeout retains its upstream implementation. `-T:` is a cooperative invocation deadline, checked during parsing, resource-limit checks, and command I/O; expiration returns 124. It is not a separate-process hard kill.
 - App cancellation uses a generic ios_system cancellation context, returns 130, and unwinds solver objects before pthread cancellation is reenabled. Waiting for the shared runtime lock is cancellable too.

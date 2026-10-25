@@ -93,7 +93,7 @@ int main(void) {
     check("printf '(check-sat)\\n' | z3 -in", 0, @"sat\n");
     check("printf '(assert false)\\n(check-sat)\\n' | /usr/bin/z3 -in", 0, @"unsat\n");
     check("printf '(check-sat)\\n' > 'input file.smt2'; z3 -file:'input file.smt2'", 0, @"sat\n");
-    check("z3 /home/Project/'input file.smt2'", 0, @"sat\n");
+    check("z3 ~/Project/'input file.smt2'", 0, @"sat\n");
     check("printf '(include \"input file.smt2\")\\n' | z3 -in", 0, @"sat\n");
     check("printf '(check-sat)\\n' | z3 -in > result.txt; cat result.txt", 0, @"sat\n");
     check("z3 -invalid >/dev/null 2>error.txt; test -s error.txt", 0, @"");

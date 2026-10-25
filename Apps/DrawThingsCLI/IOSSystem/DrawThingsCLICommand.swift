@@ -22,7 +22,7 @@ public func draw_things_main(
     let directory =
       ios_getenv("PWD").map { String(cString: $0) }
       ?? FileManager.default.currentDirectoryPath
-    let aliases = ["/home", "/tmp", "/app_bundle"].map { alias -> (String, String) in
+    let aliases = ["/app_bundle"].map { alias -> (String, String) in
       var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
       let resolved = ios_resolveDirectoryAlias(alias, &buffer, buffer.count)
       return (alias, resolved > 0 ? String(cString: buffer) : alias)

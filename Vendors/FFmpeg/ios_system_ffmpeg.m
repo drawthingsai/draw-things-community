@@ -29,16 +29,15 @@ static int run_command(int argc, char **argv,
         }
         for (NSUInteger i = 0; i < environment.count; ++i)
             entries[i] = environment[i].UTF8String;
-        char home[PATH_MAX] = "", temporary[PATH_MAX] = "", bundle[PATH_MAX] = "";
-        ios_resolveDirectoryAlias("/home", home, sizeof(home));
-        ios_resolveDirectoryAlias("/tmp", temporary, sizeof(temporary));
+        char temporary[PATH_MAX] = "", bundle[PATH_MAX] = "";
+        const char *temporaryDirectory = ios_getenv("TMPDIR");
+        if (temporaryDirectory) strlcpy(temporary, temporaryDirectory, sizeof(temporary));
         ios_resolveDirectoryAlias("/app_bundle", bundle, sizeof(bundle));
         const FFmpegCommandContext context = {
             .input = thread_stdin,
             .output = thread_stdout,
             .error = thread_stderr,
             .directory = directory,
-            .home = home[0] ? home : NULL,
             .temporaryDirectory = temporary[0] ? temporary : NULL,
             .appBundle = bundle[0] ? bundle : NULL,
             .environment = entries,

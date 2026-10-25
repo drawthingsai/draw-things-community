@@ -40,7 +40,7 @@ static FFmpegCommandContext context(void)
 {
     FFmpegCommandContext c = {
         .input = tmpfile(), .output = tmpfile(), .error = tmpfile(),
-        .directory = directory, .home = directory, .temporaryDirectory = directory,
+        .directory = directory, .temporaryDirectory = directory,
         .environment = environment,
     };
     CHECK(c.input && c.output && c.error);
@@ -118,7 +118,7 @@ static const char *version[] = {"ffmpeg", "-version", NULL};
 static const char *probe_version[] = {"ffprobe", "-version", NULL};
 static const char *probe_audio[] = {"ffprobe", "-v", "error", "-select_streams", "a:0",
     "-show_entries", "stream=codec_name,sample_rate:format=duration", "-of", "json",
-    "/home/tone.wav", NULL};
+    "tone.wav", NULL};
 static const char *probe_failure[] = {"ffprobe", "-v", "error", "-select_streams", "a:0",
     "-show_data_hash", "sha256", "-codec:a", "pcm_s16le", "-read_intervals", "%+1",
     "-show_entries", "stream=codec_name", "-of", "json=invalid_option=1",
@@ -378,7 +378,7 @@ static void test_codec_sessions(void)
     // Interleave two passes with identical relative filenames in two sessions.
     // Pass 2 must read that session's statistics, including encoder sidecars.
     for (int pass = 1; pass <= 2; ++pass) for (int session = 0; session < 2; ++session) {
-        FFmpegCommandContext c = context(); c.directory = paths[session]; c.home = paths[session];
+        FFmpegCommandContext c = context(); c.directory = paths[session];
         CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
             session ? "testsrc2=size=96x64:rate=10" : "testsrc2=size=64x64:rate=10",
             "-frames:v", "6", "-threads", "1", "-c:v", "libx264", "-b:v", "100k",
@@ -388,9 +388,9 @@ static void test_codec_sessions(void)
         struct stat st; CHECK(!stat(path, &st) && st.st_size > 0);
     }
     for (int session = 0; session < 2; ++session) {
-        FFmpegCommandContext c = context(); c.directory = paths[session]; c.home = paths[session];
+        FFmpegCommandContext c = context(); c.directory = paths[session];
         CHECK(!run(&c, (const char *[]){"ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width", "-of", "csv=p=0", "/home/out.mkv", NULL}));
+            "-show_entries", "stream=width", "-of", "csv=p=0", "out.mkv", NULL}));
         rewind(c.output); char width[32]; CHECK(fgets(width, sizeof(width), c.output));
         CHECK(!strcmp(width, session ? "96\n" : "64\n")); close_context(&c);
     }
@@ -490,7 +490,7 @@ int main(void)
 
     // Media output must go to the command descriptor, with exact sample count.
     FFmpegCommandContext c = context();
-    CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-i", "/home/tone.wav",
+    CHECK(!run(&c, (const char *[]){"ffmpeg", "-v", "error", "-i", tone,
         "-f", "s16le", "pipe:1", NULL}));
     CHECK(ftell(c.output) == 1600);
     // Feed the same media back through command stdin.
