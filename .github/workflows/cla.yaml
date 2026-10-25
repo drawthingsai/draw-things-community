@@ -17,7 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: "CLA Assistant"
-        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        # contains() is case-insensitive, matching the action's own check (trimmed, lowercased,
+        # surrounding text allowed), so a trailing period or newline no longer skips signing.
+        if: (github.event.comment.body == 'recheck' || contains(github.event.comment.body, 'I have read the CLA Document and I hereby sign the CLA')) || github.event_name == 'pull_request_target'
         uses: contributor-assistant/github-action@v2.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
