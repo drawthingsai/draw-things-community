@@ -3,6 +3,9 @@
 // the wordmark and a row of callouts. Writes one TIFF holding the 1x and 2x renderings, which
 // Finder picks between.
 //
+// The landscape is framed for the window: about 660:428, horizon about halfway down, Earth top
+// right, open sky top left for the wordmark.
+//
 //   xcrun swift Scripts/dmg_background.swift <landscape.png> \
 //     Apps/LocalCode/Resources/Assets.xcassets/local-code-banner.imageset/local-code.svg \
 //     Apps/LocalCode/SupportingFiles/Mac/DiskImageBackground.tiff
@@ -30,8 +33,6 @@ guard arguments.count == 4 else {
 // 8 pt further so a shorter title bar shows more ground rather than a blank strip.
 let width = 660.0
 let height = 428.0
-// The landscape's top rows are empty sky; this keeps Earth whole and puts the icons on the plain.
-let cropTop = 170.0
 let horizon = 205.0
 
 guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: arguments[1]) as CFURL, nil),
@@ -39,13 +40,13 @@ guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: arguments[1])
 else {
   fatalError("cannot read \(arguments[1])")
 }
-let cropHeight = (Double(landscape.width) * height / width).rounded()
-guard
-  let scene = landscape.cropping(
-    to: CGRect(x: 0, y: cropTop, width: Double(landscape.width), height: cropHeight))
-else {
-  fatalError("the landscape is too short for the crop")
-}
+// Fill the window, trimming any aspect mismatch evenly from the sides or from the bottom.
+let sceneWidth = min(Double(landscape.width), (Double(landscape.height) * width / height).rounded())
+let sceneHeight = (sceneWidth * height / width).rounded()
+let scene = landscape.cropping(
+  to: CGRect(
+    x: ((Double(landscape.width) - sceneWidth) / 2).rounded(), y: 0, width: sceneWidth,
+    height: sceneHeight))!
 
 guard let wordmark = NSImage(contentsOf: URL(fileURLWithPath: arguments[2])) else {
   fatalError("cannot read \(arguments[2])")
@@ -132,7 +133,7 @@ func render(scale: Double) -> CGImage {
   // Soft middle-grey patches even out the regolith under the labels.
   let patch = CGGradient(
     colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
-    colors: [color(0x767676, alpha: 0.85), color(0x767676, alpha: 0.7), color(0x767676, alpha: 0)]
+    colors: [color(0x7B7B7B, alpha: 0.95), color(0x7B7B7B, alpha: 0.8), color(0x7B7B7B, alpha: 0)]
       as CFArray, locations: [0, 0.55, 1])!
   for center in labelCenters {
     ctx.saveGState()
