@@ -1,12 +1,6 @@
 import Foundation
 import NNC
 
-#if canImport(C_ccv)
-  import C_ccv
-#elseif canImport(C_swiftpm_ccv)
-  import C_swiftpm_ccv
-#endif
-
 /// GLM-5.3-Flash vision tower: a 24-block ViT with per-head Q/K RMSNorm and axial 2D
 /// RoPE, a 2x2 convolutional downsample to the text width, and a clamped SwiGLU merger.
 /// Its outputs replace the embeddings of `<|image|>` placeholders; the NoPE text model
@@ -97,8 +91,71 @@ public func GLM5_3VisionSize(
   return ((alignedHeight, alignedWidth), (contentHeight, contentWidth))
 }
 
-/// Resizes RGB `[1, height, width, 3]` values in `[0, 1]`, pads to the canvas, normalizes
-/// (padding becomes `-mean / std`, as in the reference) and emits block-major patches
+/// Fixed-point weights for one axis of PyTorch's antialiased bicubic resize of 8-bit
+/// images: Keys cubic convolution (a = -0.5), widened by the downscale factor and
+/// normalized per output, with the most fractional bits (at most 22) that keep every weight
+/// within int16.
+private func GLM5_3VisionResampleWeights(inputSize: Int, outputSize: Int) -> (
+  starts: [Int], weights: [[Int]], precision: Int
+) {
+  func cubic(_ x: Double) -> Double {
+    let a = -0.5
+    let x = abs(x)
+    if x < 1 { return ((a + 2) * x - (a + 3)) * x * x + 1 }
+    if x < 2 { return ((a * x - 5 * a) * x + 8 * a) * x - 4 * a }
+    return 0
+  }
+  let scale = Double(inputSize) / Double(outputSize)
+  let support = scale >= 1 ? 2 * scale : 2
+  let inverseScale = scale >= 1 ? 1 / scale : 1
+  var starts = [Int]()
+  var rows = [[Double]]()
+  for i in 0..<outputSize {
+    let center = scale * (Double(i) + 0.5)
+    // Int(_:) truncates toward zero, as the C casts do.
+    let start = max(Int(center - support + 0.5), 0)
+    let end = min(Int(center + support + 0.5), inputSize)
+    var weights = (start..<end).map { cubic((Double($0) - center + 0.5) * inverseScale) }
+    let total = weights.reduce(0, +)
+    if total != 0 { weights = weights.map { $0 / total } }
+    starts.append(start)
+    rows.append(weights)
+  }
+  let maximum = rows.joined().max() ?? 0
+  var precision = 0
+  while precision < 22 && Int(0.5 + maximum * Double(1 << (precision + 1))) < 1 << 15 {
+    precision += 1
+  }
+  let one = Double(1 << precision)
+  return (starts, rows.map { $0.map { Int($0 * one + ($0 < 0 ? -0.5 : 0.5)) } }, precision)
+}
+
+/// Resamples the middle axis of `[outer, inputSize, inner]` 8-bit values to `outputSize`.
+private func GLM5_3VisionResample(
+  _ source: [UInt8], outer: Int, inputSize: Int, outputSize: Int, inner: Int
+) -> [UInt8] {
+  let (starts, weights, precision) = GLM5_3VisionResampleWeights(
+    inputSize: inputSize, outputSize: outputSize)
+  var output = [UInt8](repeating: 0, count: outer * outputSize * inner)
+  var sums = [Int](repeating: 0, count: inner)
+  for o in 0..<outer {
+    for i in 0..<outputSize {
+      for k in 0..<inner { sums[k] = 1 << (precision - 1) }
+      for (j, weight) in weights[i].enumerated() {
+        let base = (o * inputSize + starts[i] + j) * inner
+        for k in 0..<inner { sums[k] += Int(source[base + k]) * weight }
+      }
+      let base = (o * outputSize + i) * inner
+      for k in 0..<inner { output[base + k] = UInt8(clamping: sums[k] >> precision) }
+    }
+  }
+  return output
+}
+
+/// Resizes RGB `[1, height, width, 3]` values in `[0, 1]` as the reference processor does:
+/// torchvision runs PyTorch's antialiased bicubic on the 8-bit image, the width pass
+/// rounded to 8 bits before the height pass. Then pads to the canvas, normalizes (padding
+/// becomes `-mean / std`, as in the reference) and emits block-major patches
 /// `[h * w, 3 * temporal * patch * patch]` with the frame repeated temporally.
 public func GLM5_3VisionPreprocess(
   _ input: Tensor<Float>, configuration: GLM5_3VisionConfiguration = .glm5_3Flash
@@ -111,18 +168,20 @@ public func GLM5_3VisionPreprocess(
   if content.height == shape[1] && content.width == shape[2] {
     resized = input.reshaped(.NHWC(1, shape[1], shape[2], 3)).copied()
   } else {
-    let source = input.reshaped(.HWC(shape[1], shape[2], 3)).copied()
-    var output: UnsafeMutablePointer<ccv_dense_matrix_t>? = ccv_dense_matrix_new(
-      Int32(content.height), Int32(content.width), Int32(CCV_C3 | CCV_32F), nil, 0)
-    ccv_resample(
-      UnsafeMutableRawPointer(source.cTensor).assumingMemoryBound(to: ccv_dense_matrix_t.self),
-      &output, 0, Double(content.height) / Double(shape[1]),
-      Double(content.width) / Double(shape[2]), Int32(CCV_INTER_AREA | CCV_INTER_CUBIC))
+    var pixels = input.reshaped(.NHWC(1, shape[1], shape[2], 3)).copied().withUnsafeBytes {
+      $0.bindMemory(to: Float.self).map { UInt8(clamping: Int(($0 * 255).rounded())) }
+    }
+    if content.width != shape[2] {
+      pixels = GLM5_3VisionResample(
+        pixels, outer: shape[1], inputSize: shape[2], outputSize: content.width, inner: 3)
+    }
+    if content.height != shape[1] {
+      pixels = GLM5_3VisionResample(
+        pixels, outer: 1, inputSize: shape[1], outputSize: content.height,
+        inner: content.width * 3)
+    }
     resized = Tensor<Float>(
-      .CPU, format: .NHWC, shape: [1, content.height, content.width, 3],
-      unsafeMutablePointer: output!.pointee.data.f32, bindLifetimeOf: output!
-    ).copied()
-    ccv_matrix_free(output)
+      pixels.map { Float($0) / 255 }, .CPU, .NHWC(1, content.height, content.width, 3))
   }
   let patch = configuration.patchSize
   let temporal = configuration.temporalPatchSize

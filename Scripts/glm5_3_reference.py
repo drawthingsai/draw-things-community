@@ -6,6 +6,10 @@ first N decoder layers of the original FP8 checkpoint, dequantized to FP32. Writ
 `tokens.json`, `layer_<i>.f32` residual streams ([T, 4, hidden]) after each layer,
 and `logits.f32` ([T, vocab]) computed from the last converted layer.
 
+With `--layers 0` (needs `--image`), only the vision outputs and `tokens.json` are written, so
+the checkpoint needs just the vision shard, `config.json`, `processor_config.json` and
+`tokenizer.json`.
+
 With `--image`, the prompt becomes `<|begin_of_image|>`, one `<|image|>` per merged
 patch and `<|end_of_image|>` followed by the prompt text. The official image processor
 and FP32 vision tower produce `pixel_values.f32`, `vision.f32` and `grid` in tokens.json,
@@ -90,18 +94,21 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     torch.set_grad_enabled(False)
 
-    text = json.loads((args.checkpoint / "config.json").read_text())["text_config"]
-    for key in ("layer_types", "mlp_layer_types", "indexer_types"):
-        text[key] = text[key][: args.layers]
-    text["num_hidden_layers"] = args.layers
-    config = Glm5NextTextConfig(**text)
-    config._attn_implementation = "eager"
-    with torch.device("meta"):
-        model = Glm5NextTextModel(config)
+    if args.layers == 0 and args.image is None:
+        parser.error("--layers 0 compares only the vision tower and needs --image")
     checkpoint = Checkpoint(args.checkpoint)
-    model.load_state_dict(state_dict(checkpoint, model), strict=True, assign=True)
-    model = model.float().eval()
-    head = checkpoint.tensor("lm_head.weight")
+    if args.layers > 0:
+        text = json.loads((args.checkpoint / "config.json").read_text())["text_config"]
+        for key in ("layer_types", "mlp_layer_types", "indexer_types"):
+            text[key] = text[key][: args.layers]
+        text["num_hidden_layers"] = args.layers
+        config = Glm5NextTextConfig(**text)
+        config._attn_implementation = "eager"
+        with torch.device("meta"):
+            model = Glm5NextTextModel(config)
+        model.load_state_dict(state_dict(checkpoint, model), strict=True, assign=True)
+        model = model.float().eval()
+        head = checkpoint.tensor("lm_head.weight")
 
     full_config = json.loads((args.checkpoint / "config.json").read_text())
     tokens = Tokenizer.from_file(str(args.checkpoint / "tokenizer.json")).encode(args.prompt).ids
@@ -138,6 +145,8 @@ def main():
         print(f"image grid {grid[0].tolist()}: {count} tokens, vision rms={image_embeds.square().mean().sqrt():.4f}")
     meta["tokens"] = tokens
     (args.output / "tokens.json").write_text(json.dumps(meta))
+    if args.layers == 0:
+        return
     outputs = {}
     for index, layer in enumerate(model.layers):
         layer.register_forward_hook(

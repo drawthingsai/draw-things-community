@@ -22,6 +22,19 @@ swift_test(
 )
 
 swift_test(
+    name = "GLM5_3VisionTests",
+    srcs = ["Tests/GLM5_3VisionTests.swift"],
+    tags = [
+        "manual",
+        "requires-gpu",
+    ],
+    deps = [
+        ":SwiftLLM",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
     name = "PerplexityDeciderFlashDecisionTests",
     srcs = ["Tests/PerplexityDeciderFlashDecisionTests.swift"],
     tags = [
