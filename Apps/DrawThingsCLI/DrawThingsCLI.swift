@@ -621,6 +621,13 @@ struct GenerateExecutionOptions: ParsableArguments {
       "Disable network access. Uses cached community catalogs and recommended settings only, and never downloads models."
   )
   var offline: Bool = false
+
+  @Flag(
+    name: .long,
+    help:
+      "Local generation: run the model of every sampling step image by image for a batch (batch size > 1) instead of as one tensor batch: step 1 for all images, then step 2, and so on. Same noise and sampler as the tensor batch; the prompt and reference images are encoded once; peak memory stays close to a single image. For --remote, start gRPCServerCLI with --sequential-batch instead."
+  )
+  var sequentialBatch: Bool = false
 }
 
 struct GenerateBackendOptions: ParsableArguments {
@@ -4492,6 +4499,11 @@ extension DrawThingsCLI {
           negativeText: resolvedNegativePrompt, configuration: configuration,
           version: modelSpecification.version, memorizedBy: Set(files)))
       defer { context.finishImageGeneration(generationID) }
+      if execution.sequentialBatch && backend.isRemoteOrCloud {
+        context.write(
+          "--sequential-batch only affects local generation; start gRPCServerCLI with --sequential-batch.\n",
+          to: .standardError)
+      }
       try context.checkCancellation()
       let canvasImage = try canvasIndex.map {
         try loadInputImageTensor(
@@ -4570,6 +4582,7 @@ extension DrawThingsCLI {
             videoFrames: videoFrames, framesPerSecond: fps)
         }
       }
+      LocalImageGenerator.isSequentialBatchEnabled = execution.sequentialBatch
       let runner = try LocalGenerationRunner(context: context)
       let livePreviewSession =
         livePreviewEnabled

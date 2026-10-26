@@ -114,6 +114,8 @@ extension UNetProtocol {
   public func timeEmbed(graph: DynamicGraph, batchSize: Int, timestep: Float, version: ModelVersion)
     -> DynamicGraph.Tensor<FloatType>?
   {
+    // Inside SequentialBatchScope the model forward runs one image at a time.
+    let batchSize = SequentialBatchScope.perImageBatchSize(batchSize)
     switch version {
     case .v1, .v2, .sdxlBase, .sdxlRefiner, .kandinsky21, .ssd1b, .svdI2v:
       let timeEmbeddingSize = version == .kandinsky21 || version == .sdxlRefiner ? 384 : 320
@@ -174,6 +176,8 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
 )
   -> [DynamicGraph.AnyTensor]
 {
+  // Inside SequentialBatchScope the conditions were encoded for one image.
+  let batchSize = SequentialBatchScope.perImageBatchSize(batchSize)
   switch version {
   case .minimaxH3:
     let fixedConditionCount =
