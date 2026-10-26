@@ -204,13 +204,14 @@ public func GLM5_3Indexer<FloatType: TensorNumeric>(
     flags: [.disableOpt])
   // Keep one graph for every chunk: with no complete pool yet, the same ops (and the ape
   // parameter) run on zero-sized tensors, and selection pads with -1.
-  func slice(_ offset: Int) -> Model.IO {
-    indexerCache.reshaped(
-      [pools, pool, dim], offset: [0, 0, offset], strides: [pool * 2 * dim, 2 * dim, 1]
-    ).contiguous()
-  }
-  let keys = slice(0)
-  let logits = slice(dim)
+  // 2-D views with the cache's row stride take ccv's strided-copy fast path; 3-D views fall
+  // back to building a new MPSGraph on every call.
+  let keys = indexerCache.reshaped(
+    [pools * pool, dim], offset: [0, 0], strides: [2 * dim, 1]
+  ).contiguous().reshaped([pools, pool, dim])
+  let logits = indexerCache.reshaped(
+    [pools * pool, dim], offset: [0, dim], strides: [2 * dim, 1]
+  ).contiguous().reshaped([pools, pool, dim])
   keys.add(dependencies: [cacheWrite])
   logits.add(dependencies: [cacheWrite])
   let ape = Parameter<FloatType>(
