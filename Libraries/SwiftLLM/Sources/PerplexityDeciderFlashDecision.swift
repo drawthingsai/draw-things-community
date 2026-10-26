@@ -34,6 +34,12 @@ public final class PerplexityDeciderFlashDecision<FloatType: TensorNumeric & Bin
   public func logits(tokenIds: [Int32], markers: [Int]) throws -> [[Float]] {
     precondition(!tokenIds.isEmpty && !markers.isEmpty)
     precondition(markers.allSatisfy { $0 >= 0 && $0 < tokenIds.count })
+    // Requests come in every length; GEMM kernels specialized on M would compile again for each one.
+    let flags = DynamicGraph.flags
+    defer {
+      DynamicGraph.flags = flags
+    }
+    DynamicGraph.flags.insert(.disableMFAGEMMSpecializingM)
     return try graph.withNoGrad {
       let tokens = graph.variable(Tensor<Int32>(tokenIds, .CPU, .C(tokenIds.count)).toGPU(0))
       let markerTensor = graph.variable(
