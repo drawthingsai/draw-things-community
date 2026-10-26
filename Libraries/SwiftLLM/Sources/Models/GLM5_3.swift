@@ -162,14 +162,14 @@ public func GLM5_3LinearAttention<FloatType: TensorNumeric>(
     state: recurrentState)
   let gate = Dense(count: linearDim, noBias: true, name: "\(prefix).g_b_proj")(
     Dense(count: headDim, noBias: true, name: "\(prefix).g_a_proj")(x)
-  ).reshaped([tokenLength * heads, headDim]).to(.Float32)
-  // The reference gated norm runs in FP32 and gates with sigmoid, unlike Qwen3.5's SiLU.
-  let normalized = RMSNorm(
-    epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).o_norm")(
-      recurrent.output.reshaped([tokenLength * heads, headDim]).to(.Float32))
-  let gated = (normalized .* gate.sigmoid()).reshaped([tokenLength, linearDim])
+  ).reshaped([tokenLength * heads, headDim])
+  // The reference gated norm runs in FP32 and gates with sigmoid, unlike Qwen3.5's SiLU; the
+  // fused kernel computes in FP32 and rounds once.
+  let gated = RMSNormGated(
+    epsilon: configuration.normEpsilon, axis: [1], sigmoid: true, name: "\(prefix).o_norm")(
+      recurrent.output.reshaped([tokenLength * heads, headDim]), gate)
   let out = Dense(count: configuration.hiddenSize, noBias: true, name: "\(prefix).o_proj")(
-    gated.to(FloatType.dataType))
+    gated.reshaped([tokenLength, linearDim]))
   return (out, convStateNext, recurrent.state)
 }
 
