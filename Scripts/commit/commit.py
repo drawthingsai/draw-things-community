@@ -4,24 +4,29 @@ import os
 
 # Each SYNCLIST line is either a path that keeps the same name in both repositories, or
 # `source -> destination` when the path is named differently in the destination repository.
+# A `!path` line leaves that path out of the paths above; it matches in either repository.
 # Paths match whole path components, so `SYNCLIST` does not match `SYNCLIST.local-code-community`.
 
-def read_mappings_from_file(file_path, reverse):
+def read_synclist(file_path, reverse):
     try:
         with open(file_path, 'r') as file:
             lines = [line.strip() for line in file.readlines() if line.strip()]
     except FileNotFoundError:
         print(f'File not found: {file_path}')
-        return []
+        return [], []
     mappings = []
+    exclusions = []
     for line in lines:
+        if line.startswith('!'):
+            exclusions.append(line[1:].strip().rstrip('/'))
+            continue
         source, arrow, destination = line.partition('->')
         source = source.strip().rstrip('/')
         destination = destination.strip().rstrip('/') if arrow else source
         mappings.append((destination, source) if reverse else (source, destination))
     # Prefer the most specific mapping when entries nest.
     mappings.sort(key=lambda mapping: len(mapping[0]), reverse=True)
-    return mappings
+    return mappings, exclusions
 
 def map_path(file, mappings):
     for source, destination in mappings:
@@ -30,6 +35,9 @@ def map_path(file, mappings):
         if file.startswith(source + '/'):
             return destination + file[len(source):]
     return None
+
+def is_excluded(file, exclusions):
+    return any(file == exclusion or file.startswith(exclusion + '/') for exclusion in exclusions)
 
 def retarget_diff(diff_output, file, mapped_file):
     if file == mapped_file:
@@ -48,7 +56,7 @@ def retarget_diff(diff_output, file, mapped_file):
             lines[i] = f'+++ b/{mapped_file}'
     return '\n'.join(lines)
 
-def generate_custom_patch(mappings):
+def generate_custom_patch(mappings, exclusions):
     try:
         commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
 
@@ -64,7 +72,7 @@ def generate_custom_patch(mappings):
         filtered_files = []
         for file in modified_files:
             mapped_file = map_path(file, mappings)
-            if mapped_file is not None:
+            if mapped_file is not None and not is_excluded(file, exclusions) and not is_excluded(mapped_file, exclusions):
                 filtered_files.append((file, mapped_file))
 
         # Generate diff for the filtered files and write to a patch file
@@ -97,9 +105,9 @@ root_dir = subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).deco
 sync_list_path = os.path.join(root_dir, args.synclist)
 
 # Read paths to filter from the SYNCLIST file
-mappings = read_mappings_from_file(sync_list_path, args.reverse)
+mappings, exclusions = read_synclist(sync_list_path, args.reverse)
 
 if mappings:
-    generate_custom_patch(mappings)
+    generate_custom_patch(mappings, exclusions)
 else:
     print('No paths to filter. Please check the SYNCLIST file.')
