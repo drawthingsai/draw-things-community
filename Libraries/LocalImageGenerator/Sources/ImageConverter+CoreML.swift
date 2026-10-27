@@ -8,6 +8,19 @@ import Foundation
 
 #if canImport(CoreML)
   extension ImageConverter {
+    /// Locates a TAE archive (`<name>.<ext>`). The Draw Things app ships them in its bundle; the
+    /// standalone CLI has none, so fall back to the installed app's resources directory, which
+    /// DRAWTHINGS_APP_RESOURCES overrides. Returns nil when neither has the archive, so callers
+    /// fall back to the linear latent preview instead of trapping.
+    static func taeArchiveURL(forResource name: String, withExtension ext: String) -> URL? {
+      if let url = Bundle.main.url(forResource: name, withExtension: ext) { return url }
+      let override = ProcessInfo.processInfo.environment["DRAWTHINGS_APP_RESOURCES"] ?? ""
+      let resources = override.isEmpty ? "/Applications/Draw Things.app/Contents/Resources" : override
+      let url = URL(fileURLWithPath: resources, isDirectory: true)
+        .appendingPathComponent("\(name).\(ext)")
+      return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     static let flux1UnzipItem: URL? = {
       let fileManager = FileManager.default
       let urls = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
@@ -18,10 +31,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("flux_1_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "flux_1_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "flux_1_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("flux_1_tae/weight.bin"),
@@ -87,10 +99,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("sd_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "sd_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "sd_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("sd_tae/weight.bin"),
@@ -156,10 +167,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("sd3_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "sd3_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "sd3_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("sd3_tae/weight.bin"),
@@ -225,10 +235,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("sdxl_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "sdxl_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "sdxl_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("sdxl_tae/weight.bin"),
@@ -295,10 +304,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("qwenimage_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "qwenimage_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "qwenimage_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("qwenimage_tae/weight.bin"),
@@ -363,7 +371,7 @@ import Foundation
         try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
         guard !fileManager.fileExists(atPath: modelUrl.path) else { return modelUrl }
         guard
-          let archiveUrl = Bundle.main.url(forResource: "qwen_image_2.1_tae", withExtension: "zip")
+          let archiveUrl = taeArchiveURL(forResource: "qwen_image_2.1_tae", withExtension: "zip")
         else { return nil }
         try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         for size in [768, 1024, 1280, 1536, 1792] {
@@ -398,10 +406,8 @@ import Foundation
           return coreMLUrl.appendingPathComponent("wan_2.1_tae")
         }
         guard
-          let qwenImageTAEArchiveURL = Bundle.main.url(
-            forResource: "qwenimage_tae", withExtension: "zip"),
-          let wan21TAEArchiveURL = Bundle.main.url(
-            forResource: "wan_2.1_tae", withExtension: "zip")
+          let qwenImageTAEArchiveURL = taeArchiveURL(forResource: "qwenimage_tae", withExtension: "zip"),
+          let wan21TAEArchiveURL = taeArchiveURL(forResource: "wan_2.1_tae", withExtension: "zip")
         else {
           return nil
         }
@@ -468,10 +474,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("flux_2_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "flux_2_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "flux_2_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("flux_2_tae/weight.bin"),
@@ -535,7 +540,7 @@ import Foundation
       do {
         try fileManager.createDirectory(at: coreMLUrl, withIntermediateDirectories: true)
         guard !fileManager.fileExists(atPath: modelUrl.path) else { return modelUrl }
-        guard let archiveUrl = Bundle.main.url(forResource: "minimax_h3_tae", withExtension: "zip")
+        guard let archiveUrl = taeArchiveURL(forResource: "minimax_h3_tae", withExtension: "zip")
         else { return nil }
         try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         for size in [768, 1024, 1280, 1536, 1792] {
@@ -569,10 +574,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("ltx_2_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "ltx_2_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "ltx_2_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("ltx_2_tae/weight.bin"),
@@ -638,10 +642,9 @@ import Foundation
         else {
           return coreMLUrl.appendingPathComponent("ltx_2.3_tae")
         }
-        try fileManager.unzipItem(
-          at: Bundle.main.url(
-            forResource: "ltx_2.3_tae", withExtension: "zip")!,
-          to: coreMLUrl)
+        guard let archiveUrl = taeArchiveURL(forResource: "ltx_2.3_tae", withExtension: "zip")
+        else { return nil }
+        try fileManager.unzipItem(at: archiveUrl, to: coreMLUrl)
         do {
           try fileManager.linkItem(
             at: coreMLUrl.appendingPathComponent("ltx_2.3_tae/weight.bin"),
