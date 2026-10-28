@@ -1,5 +1,5 @@
-load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_interop_hint", "swift_library", "swift_test")
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_binary", "swift_interop_hint", "swift_library", "swift_test")
 
 config_setting(
     name = "macos_build",
@@ -158,6 +158,26 @@ swift_library(
         "@SwiftCrypto//:CryptoBoringWrapper",
         "@SwiftLog//:Logging",
         "@grpc-swift//:GRPC",
+    ],
+)
+
+swift_library(
+    name = "GRPCCommandExecutionModels",
+    srcs = glob(["Models/Sources/commandExecution/*.swift"]),
+    module_name = "GRPCCommandExecutionModels",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@grpc-swift//:GRPC",
+    ],
+)
+
+swift_library(
+    name = "GRPCCommandExecution",
+    srcs = glob(["CommandExecution/Sources/*.swift"]),
+    module_name = "GRPCCommandExecution",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@SwiftNIO//:NIOCore",
     ],
 )
 

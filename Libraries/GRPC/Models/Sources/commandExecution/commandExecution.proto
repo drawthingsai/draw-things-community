@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+// Local Code runs Bash calls on the user's Mac through Local Code Computer, over a Unix domain
+// socket in their shared App Group container. See Apps/LocalCode/DDDoc/LocalCodeComputer.md.
+//
+// Every call but Echo carries the session secret as `session-secret` metadata. Computer writes the
+// secret in a preamble at the start of the first connection from each Local Code process.
+service CommandExecutionService {
+  rpc Echo(EchoRequest) returns (EchoReply);
+  rpc Run(RunRequest) returns (stream RunResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+}
+
+message EchoRequest {
+  uint32 protocolVersion = 1;
+}
+
+message EchoReply {
+  uint32 protocolVersion = 1;
+}
+
+enum Grant {
+  GPU = 0;
+  NETWORK = 1;
+  UNSANDBOXED = 2;
+}
+
+message RunRequest {
+  int64 jobId = 1; // Unique within the Local Code process.
+  string command = 2;
+  string projectRoot = 3;
+  repeated string permittedFolders = 4;
+  string workingDirectory = 5;
+  repeated Grant escalation = 6; // The tiers the model requested.
+  string justification = 7; // The model's reason for the escalation.
+  repeated string userMessages = 8; // The user's own messages in the thread, oldest first.
+}
+
+message RunResponse {
+  oneof event {
+    Waiting waiting = 1;
+    Started started = 2;
+    Exited exited = 3;
+  }
+}
+
+message Waiting {
+  enum Reason {
+    APPROVAL = 0; // The approval panel asks the user.
+    FOLDER = 1; // Computer asks the user to confirm a project root or permitted folder.
+    REVIEW = 2; // The reviewer checks the call in an Approve-for-me project.
+  }
+  Reason reason = 1;
+}
+
+message Started {
+  string stdoutPath = 1;
+  string stderrPath = 2;
+  repeated Grant grants = 3; // What the job runs with.
+}
+
+message Exited {
+  optional int32 exitCode = 1; // Absent when the job never started or a signal ended it.
+  optional int32 signal = 2;
+  string stopReason = 3; // Why Computer or the user stopped the job, or never started it.
+  repeated string denials = 4; // What the sandbox blocked, as hints for the model.
+}
+
+message StopRequest {
+  int64 jobId = 1;
+}
+
+message StopResponse {
+}

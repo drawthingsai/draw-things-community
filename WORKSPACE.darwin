@@ -304,6 +304,20 @@ new_git_repository(
 )
 
 new_git_repository(
+    name = "TreeSitter",
+    build_file = "tree-sitter.BUILD",
+    commit = "10eb5ac119eec9cb4267a8e035066473983f5f3a",
+    remote = "https://github.com/tree-sitter/tree-sitter.git",
+)
+
+new_git_repository(
+    name = "TreeSitterBash",
+    build_file = "tree-sitter-bash.BUILD",
+    commit = "a06c2e4415e9bc0346c6b86d401879ffb44058f7",
+    remote = "https://github.com/tree-sitter/tree-sitter-bash.git",
+)
+
+new_git_repository(
     name = "SwiftToolsSupportCore",
     build_file = "swift-tools-support-core.BUILD",
     commit = "930e82e5ae2432c71fe05f440b5d778285270bdb",

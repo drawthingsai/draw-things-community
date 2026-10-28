@@ -2,7 +2,7 @@ import Foundation
 import NNC
 
 /// Runs pplx-decider-flash on tokenized requests. The checkpoint is read on the first request and stays loaded.
-/// Not thread-safe: callers serialize requests.
+/// Not thread-safe: callers serialize requests. Only `cancel()` may be called from another thread.
 public final class PerplexityDeciderFlashDecision<FloatType: TensorNumeric & BinaryFloatingPoint> {
   /// The calibrated temperature saved with pplx-decider-flash-v1.2 (`decision_config.json`).
   public static var temperature: Double { 1.5539092221462472 }
@@ -83,6 +83,13 @@ public final class PerplexityDeciderFlashDecision<FloatType: TensorNumeric & Bin
         (0..<Self.optionCount).map { Float(output[row, $0]) }
       }
     }
+  }
+
+  /// Asks the request being evaluated to stop, from another thread. A stopped request returns garbage logits, so a
+  /// caller that cancels discards them. It does not always stop, and a request whose evaluation has not started yet
+  /// runs as usual.
+  public func cancel() {
+    model.cancel()
   }
 
   /// Option probabilities of a question with `count` options, from its readout logits.
