@@ -296,11 +296,12 @@ public func GLM5_3MLP(
 }
 
 /// Sigmoid-scored MoE with a shared expert. Experts evaluate and accumulate in FP32.
-/// Input: normalized FP32 hidden `[T, hidden]`.
+/// Input: normalized FP32 hidden `[T, hidden]`. Outputs: the routed experts' sum and the shared
+/// expert, which the layer adds in its expansion.
 public func GLM5_3MoE<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, x: Model.IO, tokenLength: Int,
   configuration: GLM5_3ModelConfiguration = .glm5_3Flash
-) -> Model.IO {
+) -> (routed: Model.IO, shared: Model.IO) {
   let logits = Dense(count: configuration.expertCount, noBias: true, name: "\(prefix).gate")(x)
   let bias = Parameter<Float>(
     .GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.e_score_correction_bias")
@@ -309,21 +310,25 @@ public func GLM5_3MoE<FloatType: TensorNumeric>(
     normalizationEpsilon: 1e-20, singleInputToken: true, sigmoid: true,
     name: "\(prefix).routing")(logits, bias, x)
   let pairs = tokenLength * configuration.routedExperts
-  let shared = GLM5_3MLP(
-    prefix: "\(prefix).shared_experts", x: x,
-    intermediateSize: configuration.sharedIntermediateSize, configuration: configuration)
+  // The shared expert joins the routed decode dispatch with the routed experts' intermediate
+  // width. Its gate and up weights follow theirs as `experts-0-2` and `experts-0-3`, which
+  // loaders map to the checkpoint's `shared_experts-0-0` and `shared_experts-0-1`.
+  precondition(configuration.sharedIntermediateSize == configuration.expertIntermediateSize)
   let hidden = SegmentedSwiGLU(
     segments: configuration.expertCount, count: configuration.expertIntermediateSize,
-    clamp: configuration.swigluLimit, name: "\(prefix).experts")([
-      prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+    clamp: configuration.swigluLimit, sharedExpertFused: true, name: "\(prefix).experts")([
+      prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]), x,
     ])
+  let shared = Dense(
+    count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.down_proj")(
+      hidden[1])
   let routed = SegmentedDense(
     segments: configuration.expertCount, count: configuration.hiddenSize, noBias: true,
-    name: "\(prefix).experts.down_proj")(hidden, prepared[3], prepared[4])
+    name: "\(prefix).experts.down_proj")(hidden[0], prepared[3], prepared[4])
   let scattered = Functional.scatterAdd(
     count: tokenLength, countPerOutput: configuration.routedExperts, routed, index: prepared[2]
   ).reshaped([tokenLength, configuration.hiddenSize])
-  return scattered + shared
+  return (scattered, shared)
 }
 
 /// One decoder layer. Inputs: FP32 residual streams `[T, hc, hidden]`, followed by
@@ -371,19 +376,23 @@ public func GLM5_3Layer<FloatType: TensorNumeric>(
   let normalizedFFN = RMSNorm(
     epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).post_attention_layernorm")(
       ffnCollapsed)
-  let ffn: Model.IO
+  let expanded: Model.IO
   if configuration.isSparseLayer(layerIndex) {
-    ffn = GLM5_3MoE(
+    let moe = GLM5_3MoE(
       dataType, prefix: "\(prefix).mlp", x: normalizedFFN, tokenLength: tokenLength,
       configuration: configuration)
+    expanded =
+      HyperConnection(count: configuration.hcCount, operation: .expandSum)(
+        moe.routed, afterAttention, ffnPost, ffnCombination, moe.shared)[0]
   } else {
-    ffn = GLM5_3MLP(
+    let ffn = GLM5_3MLP(
       prefix: "\(prefix).mlp", x: normalizedFFN.to(FloatType.dataType),
       intermediateSize: configuration.intermediateSize, configuration: configuration
     ).to(.Float32)
+    expanded =
+      HyperConnection(count: configuration.hcCount, operation: .expand)(
+        ffn, afterAttention, ffnPost, ffnCombination)[0]
   }
-  let expanded = HyperConnection(count: configuration.hcCount, operation: .expand)(
-    ffn, afterAttention, ffnPost, ffnCombination)[0]
   return Model(inputs, [expanded] + outputs)
 }
 

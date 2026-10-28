@@ -213,33 +213,38 @@ public func DeepSeek4_1Engram<FloatType: TensorNumeric>(
   return residual + gate .* value
 }
 
-/// Inputs: FP32 HC residual and incoming pre-mix. Outputs: next pre-mix, post-mix,
-/// combination matrix, and the residual collapsed with the *incoming* pre-mix.
+/// Inputs: FP32 HC residual and incoming pre-mix. One hyper-connection mix normalizes the
+/// flattened residual, projects and splits it, and collapses the residual with the *incoming*
+/// pre-mix followed by the sublayer RMSNorm `normName`. The mix covers every row and its trailing
+/// mixTokenLength rows are returned, so the graph is the same for every length. Outputs: next
+/// pre-mix, post-mix, combination matrix, and the normalized collapse for all tokenLength rows.
 public func DeepSeek4_1HCMix(
-  prefix: String, residual: Model.IO, incomingPre: Model.IO, tokenLength: Int,
-  mixTokenLength: Int? = nil,
-  configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
-) -> (Model.IO, Model.IO, Model.IO, Model.IO) {
+  prefix: String, normName: String, residual: Model.IO, incomingPre: Model.IO, tokenLength: Int,
+  mixTokenLength: Int? = nil, configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
+) -> (pre: Model.IO, post: Model.IO, combination: Model.IO, normalized: Model.IO) {
   precondition(tokenLength >= 0)
   let hc = configuration.hcCount
   let hidden = configuration.hiddenSize
   let mixTokenLength = mixTokenLength ?? tokenLength
   precondition((0...tokenLength).contains(mixTokenLength))
-  let flat = residual.reshaped(
-    mixTokenLength > 0 ? [mixTokenLength, hc * hidden] : [0],
-    offset: [tokenLength - mixTokenLength, 0], strides: [hc * hidden, 1])
-  let normalized = RMSNorm(
-    epsilon: configuration.normEpsilon, axis: [1], elementwiseAffine: false)(flat)
-  let mix = Dense(count: configuration.hcMixDim, noBias: true, name: "\(prefix)_fn")(
-    normalized)
+  let projection = Parameter<Float>(
+    .GPU(0), .WC(configuration.hcMixDim, hc * hidden), name: "\(prefix)_fn")
   let scale = Parameter<Float>(.GPU(0), .C(3), name: "\(prefix)_scale")
   let base = Parameter<Float>(.GPU(0), .C(configuration.hcMixDim), name: "\(prefix)_base")
+  let normScale = Parameter<Float>(.GPU(0), .C(hidden), name: normName)
   let parts = HyperConnection(
     count: hc, sinkhornIterations: configuration.hcSinkhornIterations,
-    epsilon: configuration.hcEpsilon, operation: .split)(mix, scale, base)
-  let collapsed = (residual .* incomingPre.reshaped([tokenLength, hc, 1]))
-    .reduced(.sum, axis: [1]).reshaped([tokenLength, hidden])
-  return (parts[0], parts[1], parts[2], collapsed)
+    epsilon: configuration.hcEpsilon, operation: .mix(normEpsilon: configuration.normEpsilon))(
+      residual, incomingPre.reshaped([tokenLength, hc]), projection, scale, base, normScale)
+  let offset = tokenLength - mixTokenLength
+  let pre = parts[0].reshaped(
+    mixTokenLength > 0 ? [mixTokenLength, hc] : [0], offset: [offset, 0], strides: [hc, 1])
+  let post = parts[1].reshaped(
+    mixTokenLength > 0 ? [mixTokenLength, hc] : [0], offset: [offset, 0], strides: [hc, 1])
+  let combination = parts[2].reshaped(
+    mixTokenLength > 0 ? [mixTokenLength, hc * hc] : [0], offset: [offset, 0],
+    strides: [hc * hc, 1])
+  return (pre, post, combination, parts[3])
 }
 
 /// Inputs: normalized sublayer input and RoPE. Outputs: rotated query, raw
@@ -631,9 +636,11 @@ private func DeepSeek4_1SharedFFN(
     count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")(hidden)
 }
 
-/// FP32 expert evaluation and accumulation with fused SwiGLU, as in V4 Flash.
+/// FP32 expert evaluation and accumulation with fused SwiGLU, as in V4 Flash. Outputs: the
+/// routed experts' sum and the shared expert, which the layer adds in its expansion.
 /// When resident slots are fewer than experts, load the three expert banks with
-/// `.jit` and `.externalOnDemand` so MoEWeightStreaming can read their source regions.
+/// `.jit` and `.externalOnDemand` so MoEWeightStreaming can read their source regions. The
+/// shared expert then runs separately, before the routed experts wait for their weights.
 public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, tokenLength: Int, layerIndex: Int,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
@@ -644,22 +651,28 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
     count: configuration.expertCount, noBias: true, name: "\(prefix).gate")(
       x.to(FloatType.dataType))
   let bias = Parameter<Float>(.GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.bias")
+  // Routing widens FP16 logits itself and scores them in FP32 with the FP32 bias.
   let prepared = MoERouting(
     kth: configuration.routedExperts, weightScale: 1.5, normalizationEpsilon: 1e-20,
-    singleInputToken: true, name: "\(prefix).routing")(logits.to(of: x), bias, x)
+    singleInputToken: true, name: "\(prefix).routing")(logits, bias, x)
   let pairs = tokenLength * configuration.routedExperts
   let shared: Model.IO
   let routed: Model.IO
   if configuration.expertResidentSlots[layerIndex] == configuration.expertCount {
-    shared = DeepSeek4_1SharedFFN(prefix: prefix, x: x, configuration: configuration)
+    // The shared expert joins the routed decode dispatch with the routed experts' intermediate
+    // width. Its gate and up weights follow theirs as `experts-0-2` and `experts-0-3`, which
+    // loaders map to the checkpoint's `shared_experts-0-0` and `shared_experts-0-1`.
+    precondition(configuration.sharedIntermediateSize == configuration.expertIntermediateSize)
     let hidden = SegmentedSwiGLU(
       segments: configuration.expertCount, count: configuration.expertIntermediateSize,
-      clamp: 10, name: "\(prefix).experts")([
-        prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+      clamp: 10, sharedExpertFused: true, name: "\(prefix).experts")([
+        prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]), x,
       ])
+    shared = Dense(
+      count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")(hidden[1])
     routed = SegmentedDense(
-      segments: configuration.expertCount, count: configuration.hiddenSize,
-      noBias: true, name: "\(prefix).experts.w2")(hidden, prepared[3], prepared[4])
+      segments: configuration.expertCount, count: configuration.hiddenSize, noBias: true,
+      name: "\(prefix).experts.w2")(hidden[0], prepared[3], prepared[4])
   } else {
     precondition(configuration.expertResidentSlots[layerIndex] >= configuration.routedExperts)
     let gateWeight = Parameter<Float>(
@@ -708,7 +721,7 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
     count: tokenLength, countPerOutput: configuration.routedExperts,
     routed, index: prepared[2]
   ).reshaped([tokenLength, configuration.hiddenSize])
-  return (Model([x], [scattered + shared]), bias.parameters)
+  return (Model([x], [scattered, shared]), bias.parameters)
 }
 
 /// Expands text or image embeddings into the initial HC residual streams. The caller
@@ -777,13 +790,11 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
   }
   // The decoder's global KV/index projections consume every encoder output.
   // Only its local residual mixing, attention, and FFN use the replay suffix.
-  let (attnPre, attnPost, attnCombination, attnCollapsed) = DeepSeek4_1HCMix(
-    prefix: "\(prefix).hc_attn", residual: beforeAttention, incomingPre: incomingPre,
-    tokenLength: tokenLength, mixTokenLength: attentionTokenLength, configuration: configuration)
-  let normalizedAttention = RMSNorm(
-    epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).attn_norm")(
-      attnCollapsed
-    ).to(FloatType.dataType)
+  let (attnPre, attnPost, attnCombination, attnNormalized) = DeepSeek4_1HCMix(
+    prefix: "\(prefix).hc_attn", normName: "\(prefix).attn_norm", residual: beforeAttention,
+    incomingPre: incomingPre, tokenLength: tokenLength, mixTokenLength: attentionTokenLength,
+    configuration: configuration)
+  let normalizedAttention = attnNormalized.to(FloatType.dataType)
   let rotary = Input()
   let rawKeyValue = Input()
   inputs.append(contentsOf: [rotary, rawKeyValue])
@@ -857,19 +868,15 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
     ffnResidual = afterAttention
     incomingFFNPre = attnPre
   }
-  let (ffnPre, ffnPost, ffnCombination, ffnCollapsed) = DeepSeek4_1HCMix(
-    prefix: "\(prefix).hc_ffn", residual: ffnResidual, incomingPre: incomingFFNPre,
-    tokenLength: ffnTokenLength, configuration: configuration)
-  let normalizedFFN = RMSNorm(
-    epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).ffn_norm")(
-      ffnCollapsed
-    )
+  let (ffnPre, ffnPost, ffnCombination, normalizedFFN) = DeepSeek4_1HCMix(
+    prefix: "\(prefix).hc_ffn", normName: "\(prefix).ffn_norm", residual: ffnResidual,
+    incomingPre: incomingFFNPre, tokenLength: ffnTokenLength, configuration: configuration)
   let moe = DeepSeek4_1MoE(
     dataType, prefix: "\(prefix).ffn", tokenLength: ffnTokenLength, layerIndex: layerIndex,
     configuration: configuration)
   let ffn = moe.model(normalizedFFN)
-  let expanded = HyperConnection(count: configuration.hcCount, operation: .expand)(
-    ffn, ffnResidual, ffnPost, ffnCombination)[0]
+  let expanded = HyperConnection(count: configuration.hcCount, operation: .expandSum)(
+    ffn[0], ffnResidual, ffnPost, ffnCombination, ffn[1])[0]
   var outputs = [expanded, ffnPre]
   if let indices { outputs.append(indices) }
   if let candidates { outputs.append(candidates) }

@@ -847,28 +847,33 @@ private func DeepSeek4RoutedMoE(
     ])
   }
   let pairs = tokenLength * configuration.routedExperts
+  // Routing widens FP16 logits itself and scores them in FP32.
   let prepared = MoERouting(
     kth: configuration.routedExperts, weightScale: 1.5,
     preselected: routerKind == .tokenHash, singleInputToken: true,
     name: "\(prefix).routing"
-  )(logits.to(of: x), route, x)
+  )(logits, route, x)
   if configuration.expertResidentSlots[layerIndex] == configuration.expertCount {
+    // The shared expert joins the routed decode dispatch with the routed experts' intermediate
+    // width. Its gate and up weights follow theirs as `experts-0-2` and `experts-0-3`, which
+    // loaders map to the checkpoint's `shared_experts-0-0` and `shared_experts-0-1`.
+    precondition(configuration.sharedIntermediateSize == configuration.expertIntermediateSize)
     let hidden = SegmentedSwiGLU(
       segments: configuration.expertCount, count: configuration.expertIntermediateSize,
-      clamp: 10, name: "\(prefix).experts"
+      clamp: 10, sharedExpertFused: true, name: "\(prefix).experts"
     )([
-      prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+      prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]), x,
     ])
     let down = SegmentedDense(
       segments: configuration.expertCount, count: configuration.hiddenSize,
       noBias: true, name: "\(prefix).experts.w2")
-    let routed = down(hidden, prepared[3], prepared[4])
+    let routed = down(hidden[0], prepared[3], prepared[4])
     let scattered = Functional.scatterAdd(
       count: tokenLength, countPerOutput: configuration.routedExperts,
       routed, index: prepared[2]
     ).reshaped([tokenLength, configuration.hiddenSize])
-    let shared = DeepSeek4SharedFFN(
-      prefix: prefix, x: x, tokenLength: tokenLength, configuration: configuration)
+    let shared = Dense(
+      count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")(hidden[1])
     return (scattered, shared)
   }
   let gateWeight = Parameter<Float>(
@@ -1033,10 +1038,8 @@ private func DeepSeek4Layer<FloatType: TensorNumeric>(
     prefix: "\(prefix).ffn", x: ffnBranch, routerInput: ffnNorm.to(FloatType.dataType),
     tokens: tokens, layerIndex: layerIndex, tokenLength: tokenLength, routerKind: routerKind,
     configuration: configuration)
-  let ffnBlock = moe.routed + moe.shared
-  return DeepSeek4HCExpand(
-    block: ffnBlock, residualHC: afterAttn, post: ffnParts.post,
-    comb: ffnParts.comb, tokenLength: tokenLength, configuration: configuration)
+  return HyperConnection(count: hc, operation: .expandSum)(
+    moe.routed, afterAttn, ffnParts.post, ffnParts.comb, moe.shared)[0]
 }
 
 private func DeepSeek4OutputHead<FloatType: TensorNumeric>(
