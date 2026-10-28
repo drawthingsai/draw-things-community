@@ -791,6 +791,88 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       dependencies: ["CLICloudAuth", "Downloader", "ImageGenerator", "ios_system"],
       path: "Libraries/BashToolContext/Sources"
     ),
+    // libdatachannel and its parts, data channels only. Vendors/libdatachannel/BUILD.bazel has
+    // the same settings for Bazel.
+    .target(
+      name: "CMbedTLS",
+      path: "Vendors/libdatachannel/mbedtls",
+      exclude: ["LICENSE"],
+      sources: ["library"],
+      publicHeadersPath: "SwiftPM",
+      cSettings: [
+        .headerSearchPath("include"),
+        .headerSearchPath("../Config"),
+        .define("MBEDTLS_USER_CONFIG_FILE", to: "<mbedtls_user_config.h>"),
+        .unsafeFlags(["-w"]),
+      ]
+    ),
+    .target(
+      name: "CUsrsctp",
+      path: "Vendors/libdatachannel/usrsctp",
+      exclude: ["LICENSE.md"],
+      sources: ["usrsctplib"],
+      publicHeadersPath: "SwiftPM",
+      cSettings: [
+        .headerSearchPath("usrsctplib"),
+        .define("__Userspace__"),
+        .define("__APPLE_USE_RFC_2292"),
+        .define("SCTP_SIMPLE_ALLOCATOR"),
+        .define("SCTP_PROCESS_LEVEL_LOCKS"),
+        .define("HAVE_SA_LEN"),
+        .define("HAVE_SIN_LEN"),
+        .define("HAVE_SIN6_LEN"),
+        .define("HAVE_SCONN_LEN"),
+        .define("HAVE_SYS_QUEUE_H"),
+        .define("HAVE_STDATOMIC_H"),
+        .define("HAVE_NETINET_IP_ICMP_H"),
+        // usrsctp defines its own struct inpcb, which clashes with the system's under clang modules.
+        .unsafeFlags(["-w", "-fno-modules"]),
+      ]
+    ),
+    .target(
+      name: "CJuice",
+      path: "Vendors/libdatachannel/libjuice",
+      exclude: ["LICENSE"],
+      sources: ["src"],
+      publicHeadersPath: "include",
+      cSettings: [
+        .headerSearchPath("include/juice"),
+        .define("JUICE_STATIC"),
+        .define("USE_NETTLE", to: "0"),
+        .define("NO_SERVER"),
+        .define("RELEASE", to: "1"),
+        .unsafeFlags(["-w"]),
+      ]
+    ),
+    .target(
+      name: "LibDataChannel",
+      dependencies: ["CJuice", "CMbedTLS", "CUsrsctp"],
+      path: "Vendors/libdatachannel/libdatachannel",
+      exclude: ["LICENSE"],
+      sources: ["src"],
+      publicHeadersPath: "include",
+      cxxSettings: [
+        .headerSearchPath("include/rtc"),
+        .headerSearchPath("src"),
+        .headerSearchPath("../plog/include"),
+        .headerSearchPath("../mbedtls/include"),
+        .headerSearchPath("../usrsctp/usrsctplib"),
+        .headerSearchPath("../Config"),
+        .define("MBEDTLS_USER_CONFIG_FILE", to: "<mbedtls_user_config.h>"),
+        .define("JUICE_STATIC"),
+        .define("USE_MBEDTLS", to: "1"),
+        .define("RTC_SYSTEM_SRTP", to: "0"),
+        .define("RTC_STATIC"),
+        .define("RTC_ENABLE_MEDIA", to: "0"),
+        .define("RTC_ENABLE_WEBSOCKET", to: "0"),
+        .unsafeFlags(["-std=c++17", "-w"]),
+      ]
+    ),
+    .target(
+      name: "DataChannel",
+      dependencies: ["LibDataChannel"],
+      path: "Libraries/DataChannel/Sources"
+    ),
     .target(
       name: "LocalCodeApp",
       dependencies: [

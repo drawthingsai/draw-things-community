@@ -1,0 +1,44 @@
+{
+  "about": "What the libdatachannel upstream watch (Scripts/libdatachannel/vendor.mjs watch) has already reviewed, with the decision for each. The watch reports anything else it finds until a reviewed change adds it here.",
+  "firefoxSctpPatches": {
+    "flush-before-process-init.patch": "Carried as patches/usrsctp-flush-before-process-init.patch.",
+    "interleaving-supported-define.patch": "Defines SCTP_INTERLEAVING_SUPPORTED in usrsctp.h for Firefox's build. Not a fix.",
+    "tsn-gap-check.patch": "Carried as patches/usrsctp-tsn-gap-check.patch."
+  },
+  "mozillaBugs": {
+    "792068": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "834395": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "905080": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1080312": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1290314": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1293347": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1294095": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1311380": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1395241": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1400563": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1408485": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1445448": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1458048": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1470236": "Open since 2018: Firefox disabling SCTP extensions WebRTC doesn't use. A hardening idea, not a bug fix.",
+    "1550133": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1613765": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1632241": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1666570": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1736220": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1736224": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1737218": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1750307": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1762202": "An intermittent ThreadSanitizer race in sctp_pcb_init reported in 2022, closed in 2026 without a fix.",
+    "1791296": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1795697": "Fixed in sctplab/usrsctp before its 2025-03-31 base, or in Firefox's own code.",
+    "1907806": "In Firefox's DataChannel.cpp, not usrsctp.",
+    "2027501": "In dcSCTP, which libdatachannel doesn't use.",
+    "2029734": "Carried as patches/usrsctp-flush-before-process-init.patch.",
+    "2045773": "Carried as patches/usrsctp-tsn-gap-check.patch.",
+    "2045848": "In Firefox's DataChannel teardown, which re-initialized usrsctp while it was still running. libdatachannel's Cleanup() waits for usrsctp_finish() under its init lock."
+  },
+  "advisories": {
+    "OSV-2021-343": "A use-after-free in sctp_sorecvmsg that OSV matches to the sctplab base. Its recorded fix, fd070e05, only adds MinGW includes, so the match is likely a bisection artifact, and the OSS-Fuzz report isn't public. Reachable only after DTLS authentication."
+  },
+  "mbedtlsAdvisoriesThrough": "2026-07"
+}
