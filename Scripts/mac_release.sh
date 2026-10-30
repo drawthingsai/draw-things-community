@@ -4,19 +4,22 @@
 # ../bazel/bazel-dev, in a login shell (Terminal, or `zsh -lc` over SSH) so Bazel sees the same
 # PATH as other builds:
 #
-#   Scripts/mac_release.sh <localcode|drawthings> [--upload]
+#   Scripts/mac_release.sh <localcode|drawthings> [--upload] [--publish]
 #
-# The version comes from the app's SupportingFiles/Info.plist. Results go to
-# ~/Releases/<App>-<version>/: <App>.pkg for the App Store, and a notarized, stapled
+# The version comes from the app's SupportingFiles/Info.plist. Without flags, this builds. Results
+# go to ~/Releases/<App>-<version>/: <App>.pkg for the App Store, and a notarized, stapled
 # <App>-<version>-<digest>.zip for direct downloads, plus appcast.xml when the app updates through
-# Sparkle and a notarized <App>-<version>-<digest>.dmg when it has a disk image layout. Once both
-# are built, --upload publishes the zip, disk image and appcast.xml to the app's release bucket,
-# then sends the App Store package to App Store Connect.
+# Sparkle and a notarized <App>-<version>-<digest>.dmg when it has a disk image layout.
+#
+# The flags ship that build and never rebuild:
+#   --upload sends the versioned disk image to the app's release bucket and the App Store package
+#     to App Store Connect for TestFlight. No existing user sees it yet.
+#   --publish makes it available: it uploads the zip, replaces the stable <App>.dmg and appcast.xml.
 
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 <localcode|drawthings> [--upload]" >&2
+  echo "Usage: $0 <localcode|drawthings> [--upload] [--publish]" >&2
   exit 64
 }
 
@@ -24,9 +27,11 @@ usage() {
 APP=$1
 shift
 UPLOAD=0
+PUBLISH=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --upload) UPLOAD=1 ;;
+    --publish) PUBLISH=1 ;;
     *) usage ;;
   esac
   shift
@@ -88,6 +93,78 @@ DEVELOPER_ID_PROFILE=$SOURCE/ProvisioningFiles/${ARCHIVE_NAME}_Developer_ID_Dist
 SPARKLE_KEYS=$MAC_FILES/Sparkle.plist
 DISK_IMAGE_SETTINGS=$MAC_FILES/DiskImage.py
 
+# Uploads through R2's S3 API, which takes single objects up to 5 GB; wrangler stops at 300 MiB.
+r2_put() {
+  local file=$1 key=$2 content_type=$3 cache_control=$4
+  # R2 occasionally answers a large upload with 500; --retry resends on that and other
+  # transient errors.
+  curl -sS --fail-with-body --retry 3 -K - --aws-sigv4 "aws:amz:auto:s3" \
+    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+    -H "Content-Type: $content_type" -H "Cache-Control: $cache_control" -T "$file" \
+    "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$RELEASE_BUCKET/$key" \
+    <<<"user = \"$R2_ACCESS_KEY_ID:$R2_SECRET_ACCESS_KEY\""
+}
+
+# Codesign, notarytool and the R2 credentials read the login keychain, which is locked in SSH
+# sessions.
+security show-keychain-info "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 ||
+  security unlock-keychain "$HOME/Library/Keychains/login.keychain-db"
+
+if [[ $UPLOAD == 1 || $PUBLISH == 1 ]]; then
+  [[ $PUBLISH == 0 || -n $RELEASE_BUCKET ]] || {
+    echo "$APP_NAME has no release bucket to publish to" >&2
+    exit 1
+  }
+  VERSION=$(plutil -extract CFBundleShortVersionString raw "$SOURCE/SupportingFiles/Info.plist")
+  OUTPUT=$HOME/Releases/$ARCHIVE_NAME-$VERSION
+  # The build writes this file last, so it only exists when every artifact does.
+  [[ -f $OUTPUT/commit ]] || {
+    echo "No finished build in $OUTPUT; run $0 $APP first" >&2
+    exit 1
+  }
+  BUILT_COMMIT=$(<"$OUTPUT/commit")
+  # Publishing can follow an upload by days, after the checkout has moved on. A new upload from a
+  # different commit is more likely a forgotten rebuild.
+  [[ $UPLOAD == 0 || $BUILT_COMMIT == "$(git rev-parse HEAD)" ]] || {
+    echo "$OUTPUT was built from $BUILT_COMMIT, not HEAD; rebuild it or check out that commit" >&2
+    exit 1
+  }
+  echo "Shipping $APP_NAME $VERSION built from $BUILT_COMMIT"
+  PACKAGE=$OUTPUT/$ARCHIVE_NAME.pkg
+  ARCHIVES=("$OUTPUT/$ARCHIVE_NAME-$VERSION"-*.zip)
+  ARCHIVE=${ARCHIVES[0]}
+  DISK_IMAGES=("$OUTPUT/$ARCHIVE_NAME-$VERSION"-*.dmg)
+  DISK_IMAGE=${DISK_IMAGES[0]}
+  if [[ -n $RELEASE_BUCKET ]]; then
+    # An R2 API token for the bucket, stored with
+    # `security add-generic-password -s r2-<bucket> -a <access key ID> -w`.
+    R2_ACCESS_KEY_ID=$(security find-generic-password -s "r2-$RELEASE_BUCKET" |
+      sed -n 's/^ *"acct"<blob>="\(.*\)"$/\1/p')
+    R2_SECRET_ACCESS_KEY=$(security find-generic-password -s "r2-$RELEASE_BUCKET" -w)
+  fi
+  IMMUTABLE="public, max-age=31536000, immutable"
+  if [[ $UPLOAD == 1 ]]; then
+    if [[ -n $RELEASE_BUCKET && -f $DISK_IMAGE ]]; then
+      r2_put "$DISK_IMAGE" "${DISK_IMAGE##*/}" application/x-apple-diskimage "$IMMUTABLE"
+    fi
+    xcrun altool --upload-app -f "$PACKAGE" -t macos --apiKey "$ASC_API_KEY" \
+      --apiIssuer "$ASC_API_ISSUER"
+  fi
+  if [[ $PUBLISH == 1 ]]; then
+    # The zip goes up before appcast.xml so the feed never points at a missing archive.
+    r2_put "$ARCHIVE" "${ARCHIVE##*/}" application/zip "$IMMUTABLE"
+    if [[ -f $DISK_IMAGE ]]; then
+      # A stable name for download links, replaced by each release.
+      r2_put "$DISK_IMAGE" "$ARCHIVE_NAME.dmg" application/x-apple-diskimage "public, max-age=300"
+    fi
+    if [[ -f $OUTPUT/appcast.xml ]]; then
+      r2_put "$OUTPUT/appcast.xml" appcast.xml application/xml "public, max-age=300"
+    fi
+    echo "Published $APP_NAME $VERSION"
+  fi
+  exit 0
+fi
+
 for profile in "$APP_STORE_PROFILE" "$DEVELOPER_ID_PROFILE"; do
   [[ -f $profile ]] || {
     echo "Missing provisioning profile $profile" >&2
@@ -105,9 +182,6 @@ for identity in "$APP_STORE_IDENTITY" "$DEVELOPER_ID_IDENTITY" "$INSTALLER_IDENT
     exit 1
   }
 done
-# Codesign and notarytool read the login keychain, which is locked in SSH sessions.
-security show-keychain-info "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 ||
-  security unlock-keychain "$HOME/Library/Keychains/login.keychain-db"
 
 if [[ -f $SPARKLE_KEYS ]]; then
   SPARKLE_DIR=$HOME/Library/Caches/mac_release/Sparkle-$SPARKLE_VERSION
@@ -153,13 +227,6 @@ if [[ -f $DISK_IMAGE_SETTINGS ]]; then
     "$DMGBUILD_DIR/bin/pip" install --quiet --disable-pip-version-check --only-binary :all: \
       --require-hashes -r /dev/stdin <<<"$DMGBUILD_REQUIREMENTS"
   fi
-fi
-if [[ $UPLOAD == 1 && -n $RELEASE_BUCKET ]]; then
-  # An R2 API token for the bucket, stored with
-  # `security add-generic-password -s r2-<bucket> -a <access key ID> -w`.
-  R2_ACCESS_KEY_ID=$(security find-generic-password -s "r2-$RELEASE_BUCKET" |
-    sed -n 's/^ *"acct"<blob>="\(.*\)"$/\1/p')
-  R2_SECRET_ACCESS_KEY=$(security find-generic-password -s "r2-$RELEASE_BUCKET" -w)
 fi
 
 # Builds the app with the given Bazel configs and stages it as $BUNDLE with the given profile.
@@ -207,18 +274,6 @@ build_and_stage() {
   plutil -replace CFBundleVersion -string "$bundle_version" "$BUNDLE/Contents/Info.plist"
   cp "$profile" "$BUNDLE/Contents/embedded.provisionprofile"
   rm -rf "$unzipped"
-}
-
-# Uploads through R2's S3 API, which takes single objects up to 5 GB; wrangler stops at 300 MiB.
-r2_put() {
-  local file=$1 key=$2 content_type=$3 cache_control=$4
-  # R2 occasionally answers a large upload with 500; --retry resends on that and other
-  # transient errors.
-  curl -sS --fail-with-body --retry 3 -K - --aws-sigv4 "aws:amz:auto:s3" \
-    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
-    -H "Content-Type: $content_type" -H "Cache-Control: $cache_control" -T "$file" \
-    "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/$RELEASE_BUCKET/$key" \
-    <<<"user = \"$R2_ACCESS_KEY_ID:$R2_SECRET_ACCESS_KEY\""
 }
 
 sign() {
@@ -300,23 +355,7 @@ if [[ -f $SPARKLE_KEYS ]]; then
     --download-url-prefix "${FEED_URL%/*}/" -o "$OUTPUT/appcast.xml" "$OUTPUT/appcast"
   rm -rf "$KEY_DIR" "$OUTPUT/appcast"
 fi
+git rev-parse HEAD >"$OUTPUT/commit"
 
-if [[ $UPLOAD == 1 ]]; then
-  if [[ -n $RELEASE_BUCKET ]]; then
-    IMMUTABLE="public, max-age=31536000, immutable"
-    # Files go up before appcast.xml so the feed never points at a missing archive.
-    r2_put "$ARCHIVE" "${ARCHIVE##*/}" application/zip "$IMMUTABLE"
-    if [[ -n $DISK_IMAGE ]]; then
-      r2_put "$DISK_IMAGE" "${DISK_IMAGE##*/}" application/x-apple-diskimage "$IMMUTABLE"
-      # A stable name for download links, replaced by each release.
-      r2_put "$DISK_IMAGE" "$ARCHIVE_NAME.dmg" application/x-apple-diskimage "public, max-age=300"
-    fi
-    if [[ -f $SPARKLE_KEYS ]]; then
-      r2_put "$OUTPUT/appcast.xml" appcast.xml application/xml "public, max-age=300"
-    fi
-  fi
-  xcrun altool --upload-app -f "$PACKAGE" -t macos --apiKey "$ASC_API_KEY" \
-    --apiIssuer "$ASC_API_ISSUER"
-fi
 echo "App Store package: $PACKAGE"
 echo "Direct download: ${DISK_IMAGE:-$ARCHIVE}"
