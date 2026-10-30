@@ -6,23 +6,37 @@ public struct LLMZoo: DownloadZoo {
     public let name: String
     public let file: String
     public let engram: String?
+    /// The speculative-decoding drafter's checkpoint. It downloads with the model, but the model
+    /// runs without it.
+    public let draftFile: String?
     public let version: LLMVersion
     public let deprecated: Bool?
     public let huggingFaceLink: String?
     public let note: String?
 
     public init(
-      name: String, file: String, engram: String? = nil, version: LLMVersion,
-      deprecated: Bool? = nil,
+      name: String, file: String, engram: String? = nil, draftFile: String? = nil,
+      version: LLMVersion, deprecated: Bool? = nil,
       huggingFaceLink: String? = nil, note: String? = nil
     ) {
       self.name = name
       self.file = file
       self.engram = engram
+      self.draftFile = draftFile
       self.version = version
       self.deprecated = deprecated
       self.huggingFaceLink = huggingFaceLink
       self.note = note
+    }
+
+    /// Every file the model downloads: the checkpoint, then its companions.
+    public var files: [String] {
+      [file] + [engram, draftFile].compactMap { $0 }
+    }
+
+    /// The files the model cannot run without. The drafter is not one.
+    public var requiredFiles: [String] {
+      [file] + [engram].compactMap { $0 }
     }
   }
 
@@ -54,6 +68,7 @@ public struct LLMZoo: DownloadZoo {
     Specification(
       name: "DeepSeek 4.1 Flash 1017 (2-bit S)", file: "deepseek_4.1_flash_1017_i2x.ckpt",
       engram: "deepseek_4.1_flash_1017_i2x.engram",
+      draftFile: "deepseek_4.1_flash_1017_dspark_i4x.ckpt",
       version: .deepseek_4_1_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       note:
         "The most capable model, with frontier intelligence and image understanding. Built for long-horizon work and the most complex problems."
@@ -61,6 +76,7 @@ public struct LLMZoo: DownloadZoo {
     Specification(
       name: "DeepSeek 4.1 Flash 1017 (3-bit S)", file: "deepseek_4.1_flash_1017_i3x.ckpt",
       engram: "deepseek_4.1_flash_1017_i2x.engram",
+      draftFile: "deepseek_4.1_flash_1017_dspark_i4x.ckpt",
       version: .deepseek_4_1_flash, huggingFaceLink: "deepseek-ai/DeepSeek-V4.1-Flash-1017",
       note:
         "The most capable model, with frontier intelligence and image understanding. Built for long-horizon work and the most complex problems."
@@ -128,14 +144,13 @@ public struct LLMZoo: DownloadZoo {
     return ModelZoo.isModelDownloaded(name, memorizedBy: memorizedBy)
   }
 
+  /// Selecting a model downloads all of its files; sending to it needs only `required` ones.
   public static func isModelDownloaded(
-    _ specification: Specification, memorizedBy: Set<String> = []
+    _ specification: Specification, required: Bool = false, memorizedBy: Set<String> = []
   ) -> Bool {
-    guard isModelDownloaded(specification.file, memorizedBy: memorizedBy) else { return false }
-    if let engram = specification.engram {
-      return isModelDownloaded(engram, memorizedBy: memorizedBy)
+    return (required ? specification.requiredFiles : specification.files).allSatisfy {
+      isModelDownloaded($0, memorizedBy: memorizedBy)
     }
-    return true
   }
 
   public static func humanReadableNameForModel(_ name: String) -> String {
@@ -167,10 +182,7 @@ public struct LLMZoo: DownloadZoo {
     for specification in builtinSpecifications {
       guard specification.file != file, LLMZoo.isModelDownloaded(specification.file)
       else { continue }
-      files.insert(specification.file)
-      if let engram = specification.engram {
-        files.insert(engram)
-      }
+      files.formUnion(specification.files)
     }
     return files
   }

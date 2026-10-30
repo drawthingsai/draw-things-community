@@ -23,7 +23,27 @@ final class ModelZooTests: XCTestCase {
       LLMZoo.Specification.self, from: Data(json.utf8))
 
     XCTAssertNil(specification.engram)
+    XCTAssertNil(specification.draftFile)
     XCTAssertTrue(LLMZoo.isModelDownloaded(specification, memorizedBy: [specification.file]))
+  }
+
+  func testLLMCanRunWithoutDownloadingOptionalDrafter() {
+    let file = "\(UUID().uuidString).ckpt"
+    let engram = "\(UUID().uuidString).engram"
+    let drafter = "\(UUID().uuidString).ckpt"
+    let specification = LLMZoo.Specification(
+      name: "Drafting model", file: file, engram: engram, draftFile: drafter,
+      version: .deepseek_4_1_flash)
+
+    XCTAssertTrue(
+      LLMZoo.isModelDownloaded(specification, required: true, memorizedBy: [file, engram]))
+    XCTAssertFalse(LLMZoo.isModelDownloaded(specification, memorizedBy: [file, engram]))
+    XCTAssertTrue(LLMZoo.isModelDownloaded(specification, memorizedBy: [file, engram, drafter]))
+
+    XCTAssertFalse(
+      LLMZoo.isModelDownloaded(specification, required: true, memorizedBy: [file, drafter]))
+    XCTAssertFalse(
+      LLMZoo.isModelDownloaded(specification, required: true, memorizedBy: [engram, drafter]))
   }
 
   func testMiniMaxH3FirstBlockCacheUsesIdentityCoefficients() {
