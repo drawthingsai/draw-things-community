@@ -12,12 +12,6 @@ COMMON_COPTS = [
     "-DIOS_SYSTEM_OPENSSH=1",
     "-D__progname=openssh_progname",
     "-Dxasprintf=openssh_xasprintf",
-    # config.h sets BROKEN_POLL as configure does on Darwin, so openbsd-compat/bsd-poll.c defines
-    # poll and ppoll over pselect. Renamed, they stay OpenSSH's: under their own names they would
-    # replace the system poll for every library in the app, libjuice's ICE included, with one that
-    # reports no errors or hangups and fails on descriptors past FD_SETSIZE.
-    "-Dpoll=openssh_poll",
-    "-Dppoll=openssh_ppoll",
     "-include",
     "OpenSSHPort.h",
     "-Wno-deprecated-declarations",
