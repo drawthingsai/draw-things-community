@@ -874,6 +874,16 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       path: "Libraries/DataChannel/Sources"
     ),
     .target(
+      name: "DeviceLink",
+      dependencies: [
+        "DataChannel", .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+        .product(name: "GRPC", package: "grpc-swift"),
+      ],
+      path: "Libraries/DeviceLink",
+      exclude: ["BUILD", "Protos", "Tests"],
+      sources: ["Sources"]
+    ),
+    .target(
       name: "LocalCodeApp",
       dependencies: [
         "Advance",
@@ -883,6 +893,7 @@ if FileManager.default.fileExists(atPath: localCodePath) {
         "CLICloudAuth",
         "Components",
         "DataModels",
+        "DeviceLink",
         "Diffusion",
         "Downloader",
         "ImageGenerator",
