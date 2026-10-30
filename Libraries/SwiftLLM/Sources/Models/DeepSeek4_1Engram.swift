@@ -194,6 +194,20 @@ public struct DeepSeek4_1EngramReader<FloatType: TensorNumeric & BinaryFloatingP
     var packed = [UInt8](repeating: 0, count: rowBytes)
     var output = [FloatType](repeating: 0, count: rows.count * width)
     var decoded = [Int32: Int]()
+    #if canImport(Darwin)
+      // A decode step or a verify misses a few rows per worker, at most 24 for six tokens, so
+      // start every read before the first blocking one: the batch waits about one device latency
+      // rather than one per row. A prefill chunk misses thousands, where one advisory per row
+      // costs more than it saves.
+      if rows.count > 1 && rows.count <= 32 {
+        for row in Set(rows) {
+          var advisory = radvisory(
+            ra_offset: off_t(tableOffset + UInt64(row) * UInt64(rowBytes)),
+            ra_count: Int32(rowBytes))
+          _ = fcntl(file.fileDescriptor, F_RDADVISE, &advisory)
+        }
+      }
+    #endif
     output.withUnsafeMutableBufferPointer { destination in
       for (index, row) in rows.enumerated() {
         precondition(row >= 0 && Int(row) < rowCount)

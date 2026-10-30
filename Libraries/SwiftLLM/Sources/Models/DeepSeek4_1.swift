@@ -899,15 +899,16 @@ public func DeepSeek4_1OutputHead<FloatType: TensorNumeric>(
   return head(norm(collapsed).to(FloatType.dataType))
 }
 
-/// Attention rows at each layer, followed by the output row count.
+/// Attention rows at each layer, followed by the output row count: the trailing
+/// logitTokenLength rows of the replay, which a speculative verify sets to every row.
 /// boundedReplay maps to "SWA Bounded Replay" in the paper: only the trailing
 /// boundedReplayTokens traverse the decoder. Zero skips decoder work while
 /// still publishing this chunk's encoder-derived global KV and index keys.
 public func DeepSeek4_1CausalLMTokenLengths(
-  tokenLength: Int, boundedReplayTokens: Int? = nil,
+  tokenLength: Int, boundedReplayTokens: Int? = nil, logitTokenLength: Int = 1,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> [Int] {
-  precondition(tokenLength > 0 && configuration.layers > 0)
+  precondition(tokenLength > 0 && configuration.layers > 0 && logitTokenLength > 0)
   let replayTokens = boundedReplayTokens ?? tokenLength
   precondition((0...tokenLength).contains(replayTokens))
   if boundedReplayTokens != nil {
@@ -918,15 +919,15 @@ public func DeepSeek4_1CausalLMTokenLengths(
   }
   return (0..<configuration.layers).map {
     $0 < configuration.candidateSourceLayer ? tokenLength : replayTokens
-  } + [min(1, replayTokens)]
+  } + [min(logitTokenLength, replayTokens)]
 }
 
 private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, boundedReplayTokens: Int?,
-  cachedRawTokenLengths: [Int],
+  logitTokenLength: Int, dsparkTargetLayers: [Int], cachedRawTokenLengths: [Int],
   configuration: DeepSeek4_1ModelConfiguration
 ) -> (
-  inputs: [Input], hidden: Model.IO, pre: Model.IO,
+  inputs: [Input], hidden: Model.IO, pre: Model.IO, targets: Model.IO?,
   biases: [(key: String, bias: Model.Parameters)]
 ) {
   precondition(tokenLength > 0 && cachedTokenLength >= 0)
@@ -963,8 +964,9 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
   var candidates: Model.IO?
   var biases = [(key: String, bias: Model.Parameters)]()
   let lengths = DeepSeek4_1CausalLMTokenLengths(
-    tokenLength: tokenLength, boundedReplayTokens: boundedReplayTokens, configuration: configuration
-  )
+    tokenLength: tokenLength, boundedReplayTokens: boundedReplayTokens,
+    logitTokenLength: logitTokenLength, configuration: configuration)
+  var targets = [Model.IO]()
   for layer in 0..<configuration.layers {
     // The first decoder layer projects global KV/index keys from the complete
     // encoder chunk before slicing queries, raw KV, and the residual to replay.
@@ -1024,6 +1026,13 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
         args.append(indices!)
       }
     }
+    if dsparkTargetLayers.contains(layer) {
+      // DSpark reads the mean of the HC copies entering its target layers.
+      targets.append(
+        layerTokenLength > 0
+          ? hidden.reduced(.mean, axis: [1]).reshaped([layerTokenLength, configuration.hiddenSize])
+          : hidden.reshaped([0]))
+    }
     let (decoderLayer, bias) = DeepSeek4_1Layer(
       dataType, tokenLength: layerTokenLength, cachedTokenLength: layerCachedTokenLength,
       layerIndex: layer, cachedRawTokenLength: cachedRawTokenLengths[layer],
@@ -1039,10 +1048,17 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
       if layer == configuration.candidateSourceLayer { candidates = outputs[3] }
     }
   }
-  return (inputs, hidden, pre, biases)
+  precondition(targets.count == dsparkTargetLayers.count)
+  let rows = dsparkTargetLayers.first.map { lengths[$0] } ?? 0
+  let concatenated: Model.IO? =
+    targets.isEmpty
+    ? nil
+    : rows > 0 ? Concat(axis: 1)(targets) : targets[0].reshaped([0])
+  return (inputs, hidden, pre, concatenated, biases)
 }
 
-/// Complete text model, returning FP16/FP32 logits for the last query token.
+/// Complete text model, returning FP16/FP32 logits for the last logitTokenLength query tokens,
+/// then, with dsparkTargetLayers, the DSpark rows [replay rows, targets * hidden] in FP32.
 /// Inputs: text token IDs, image embeddings (one input is empty), initial FP32
 /// pre-mix [T, hc] with rows [1, 0, ...], raw rotary
 /// (if used), compressed and indexer rotary (if used), then compressor/indexer
@@ -1054,19 +1070,21 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
 /// binding a growing cache prefix. Input order depends only on the architecture.
 public func DeepSeek4_1CausalLM<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
-  cachedRawTokenLengths: [Int]? = nil, boundedReplayTokens: Int? = nil,
+  cachedRawTokenLengths: [Int]? = nil, boundedReplayTokens: Int? = nil, logitTokenLength: Int = 1,
+  dsparkTargetLayers: [Int] = [],
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> (model: Model, biases: [(key: String, bias: Model.Parameters)]) {
   let prefix = DeepSeek4_1Prefix(
     dataType, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-    boundedReplayTokens: boundedReplayTokens,
+    boundedReplayTokens: boundedReplayTokens, logitTokenLength: logitTokenLength,
+    dsparkTargetLayers: dsparkTargetLayers,
     cachedRawTokenLengths: cachedRawTokenLengths
       ?? Array(
         repeating: min(cachedTokenLength, configuration.rawWindow), count: configuration.layers),
     configuration: configuration)
   let output = DeepSeek4_1OutputHead(
     x: prefix.hidden, incomingPre: prefix.pre,
-    tokenLength: min(1, boundedReplayTokens ?? tokenLength),
+    tokenLength: min(logitTokenLength, boundedReplayTokens ?? tokenLength),
     configuration: configuration, of: dataType)
-  return (Model(prefix.inputs, [output]), prefix.biases)
+  return (Model(prefix.inputs, [output] + (prefix.targets.map { [$0] } ?? [])), prefix.biases)
 }
