@@ -30,16 +30,19 @@ public struct DeepSeek4_1DSparkConfiguration: Codable, Sendable {
 /// [1, 1, blockSize, rawWindow + mainRows + blockSize] (a column per view row), the min-p window
 /// [1, 1] (FP32: logits further than this below a position's best are never picked), then each
 /// stage's view [rawWindow + mainRows + blockSize, head dim]. A temperature of 0 drafts greedily;
-/// a positive one samples softmax(logits / temperature) within the window. Outputs: the drafted tokens [blockSize] (Int32, picked in order after the
-/// Markov bias of the token before), the confidence logits [blockSize, 1] (FP32), and the logits
-/// the picks were drawn from [blockSize, vocabulary] (FP32, Markov bias included).
+/// a positive one samples softmax(logits / temperature) within the window. The stages always run
+/// the whole block; only its first sequenceLength - 1 positions, at most blockSize, reach the head.
+/// Outputs: the drafted tokens [sequenceLength - 1] (Int32, picked in order after the Markov bias of
+/// the token before), the confidence logits [sequenceLength - 1, 1] (FP32), and the logits the picks
+/// were drawn from [sequenceLength - 1, vocabulary] (FP32, Markov bias included).
 public func DeepSeek4_1DSpark<FloatType: TensorNumeric>(
-  _ dataType: FloatType.Type, mainRows: Int, temperature: Float,
+  _ dataType: FloatType.Type, mainRows: Int, temperature: Float, sequenceLength: Int,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash,
   draft: DeepSeek4_1DSparkConfiguration = .deepSeekV4_1Flash
 ) -> Model {
   let windowRows = configuration.rawWindow
   precondition(mainRows > 0)
+  precondition((2...(draft.blockSize + 1)).contains(sequenceLength))
   let hidden = configuration.hiddenSize
   let dim = configuration.attentionHeadDim
   let heads = configuration.attentionHeads
@@ -128,7 +131,7 @@ public func DeepSeek4_1DSpark<FloatType: TensorNumeric>(
   }
   let last = "layers.\(configuration.layers + draft.stages - 1)"
   let collapsed = (residual .* pre.reshaped([block, hc, 1])).reduced(.sum, axis: [1])
-    .reshaped([block, hidden])
+    .reshaped([sequenceLength - 1, hidden], offset: [0, 0], strides: [hidden, 1])
   let logits = Dense(count: configuration.vocabularySize, noBias: true, name: "head")(
     RMSNorm(epsilon: configuration.normEpsilon, axis: [1], name: "\(last).norm")(collapsed)
       .to(FloatType.dataType)
@@ -143,7 +146,7 @@ public func DeepSeek4_1DSpark<FloatType: TensorNumeric>(
   var picks = [Model.IO]()
   var markovEmbeddings = [Model.IO]()
   var biasedRows = [Model.IO]()
-  for position in 0..<block {
+  for position in 0..<(sequenceLength - 1) {
     let embedded = markovEmbedding(previous)
     markovEmbeddings.append(embedded)
     let row = logits.reshaped(
