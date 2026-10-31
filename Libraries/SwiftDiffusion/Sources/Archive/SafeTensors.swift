@@ -134,9 +134,48 @@ public final class SafeTensors {
         storageOffset: offsetStart, shape: shape, strides: strides)
       states[key] = tensorDescriptor
     }
+    for (key, descriptor) in states
+    where descriptor.storage.FP8_E4M3 || descriptor.storage.FP8_E5M2 {
+      let scaleKeys =
+        key.hasSuffix(".weight")
+        ? [key + "_scale", String(key.dropLast("weight".count)) + "scale_weight"] : [key + "_scale"]
+      guard
+        let scale = scaleKeys.compactMap({ states[$0] }).first(where: {
+          [DataType.Float32, .Float16].contains($0.storage.dataType)
+            && [1, descriptor.shape[0]].contains($0.shape[0])
+            && $0.shape.dropFirst().allSatisfy { $0 == 1 }
+            && $0.storage.size == $0.shape[0] * ($0.storage.dataType == .Float32 ? 4 : 2)
+            && 8 + Int(headerSize) + $0.storageOffset + $0.storage.size <= data.count
+        })
+      else { continue }
+      states[key]?.storage.scales = data.withUnsafeBytes {
+        scale.floats(in: $0, at: 8 + Int(headerSize))
+      }
+    }
     self.data = data
     self.states = states
     bufferStart = 8 + Int(headerSize)
+  }
+}
+
+extension TensorDescriptor {
+  fileprivate func floats(in bytes: UnsafeRawBufferPointer, at start: Int) -> [Float] {
+    let offset = start + storageOffset
+    let count = shape.reduce(1, *)
+    guard storage.dataType == .Float16 else {
+      return (0..<count).map {
+        bytes.loadUnaligned(fromByteOffset: offset + $0 * 4, as: Float.self)
+      }
+    }
+    var halves = (0..<count).map {
+      bytes.loadUnaligned(fromByteOffset: offset + $0 * 2, as: UInt16.self)
+    }
+    guard !storage.BF16 else {
+      return halves.map { Float(bitPattern: UInt32($0) << 16) }
+    }
+    var floats = [Float](repeating: 0, count: count)
+    ccv_half_precision_to_float(&halves, &floats, count)
+    return floats
   }
 }
 
@@ -205,13 +244,19 @@ extension TensorDataArchive {
           )
           f32.withUnsafeMutableBytes {
             guard let f32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+            let scales = tensorDescriptor.storage.scales
+            let columns = count / scales.count
             if tensorDescriptor.storage.FP8_E4M3 {
-              for i in 0..<count {
-                f32[i] = F8_E4M3[Int(fp8[i])]
+              for (start, scale) in zip(stride(from: 0, to: count, by: columns), scales) {
+                for i in start..<(start + columns) {
+                  f32[i] = F8_E4M3[Int(fp8[i])] * scale
+                }
               }
             } else if tensorDescriptor.storage.FP8_E5M2 {
-              for i in 0..<count {
-                f32[i] = F8_E5M2[Int(fp8[i])]
+              for (start, scale) in zip(stride(from: 0, to: count, by: columns), scales) {
+                for i in start..<(start + columns) {
+                  f32[i] = F8_E5M2[Int(fp8[i])] * scale
+                }
               }
             }
           }
@@ -265,13 +310,19 @@ extension TensorDataArchive {
           )
           f32.withUnsafeMutableBytes {
             guard let f32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+            let scales = tensorDescriptor.storage.scales
+            let columns = count / scales.count
             if tensorDescriptor.storage.FP8_E4M3 {
-              for i in 0..<count {
-                f32[i] = F8_E4M3[Int(fp8[i])]
+              for (start, scale) in zip(stride(from: 0, to: count, by: columns), scales) {
+                for i in start..<(start + columns) {
+                  f32[i] = F8_E4M3[Int(fp8[i])] * scale
+                }
               }
             } else if tensorDescriptor.storage.FP8_E5M2 {
-              for i in 0..<count {
-                f32[i] = F8_E5M2[Int(fp8[i])]
+              for (start, scale) in zip(stride(from: 0, to: count, by: columns), scales) {
+                for i in start..<(start + columns) {
+                  f32[i] = F8_E5M2[Int(fp8[i])] * scale
+                }
               }
             }
           }
