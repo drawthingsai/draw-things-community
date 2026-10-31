@@ -1028,10 +1028,11 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
     }
     if dsparkTargetLayers.contains(layer) {
       // DSpark reads the mean of the HC copies entering its target layers.
+      let mean = hidden.reduced(.mean, axis: [1])
       targets.append(
         layerTokenLength > 0
-          ? hidden.reduced(.mean, axis: [1]).reshaped([layerTokenLength, configuration.hiddenSize])
-          : hidden.reshaped([0]))
+          ? mean.reshaped([layerTokenLength, configuration.hiddenSize])
+          : mean.reshaped([0]))
     }
     let (decoderLayer, bias) = DeepSeek4_1Layer(
       dataType, tokenLength: layerTokenLength, cachedTokenLength: layerCachedTokenLength,
@@ -1049,11 +1050,7 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
     }
   }
   precondition(targets.count == dsparkTargetLayers.count)
-  let rows = dsparkTargetLayers.first.map { lengths[$0] } ?? 0
-  let concatenated: Model.IO? =
-    targets.isEmpty
-    ? nil
-    : rows > 0 ? Concat(axis: 1)(targets) : targets[0].reshaped([0])
+  let concatenated: Model.IO? = targets.isEmpty ? nil : Concat(axis: 1)(targets)
   return (inputs, hidden, pre, concatenated, biases)
 }
 
