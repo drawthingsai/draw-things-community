@@ -19,29 +19,31 @@ public struct DeepSeek4_1DSparkConfiguration: Codable, Sendable {
 }
 
 /// One draft. Each stage keeps the keys of the committed positions in a cache it reads through a
-/// view of rawWindow + mainRows + blockSize rows: the rawWindow positions before the first
-/// committed row, then rows the draft fills in place with the main rows' keys and with the
-/// block's. Attention spans the view with no causal mask, and the mask leaves open only the block
-/// and the rawWindow positions ending at the last committed row, so the caller moves the view
-/// along the cache while the graph keeps its shape.
+/// view of rawWindow + mainRows + blockSize rows from `historyOffset`: the rawWindow positions
+/// before the first committed row, then rows the draft fills in place with the main rows' keys and
+/// with the block's. Attention spans the view with no causal mask, and the mask leaves open only
+/// the block and the rawWindow positions ending at the last committed row, so the caller moves the
+/// view along the cache while the graph keeps its shape. The cache is bound whole, as a bound
+/// tensor can't start past its buffer's base, so the view's start is part of the graph.
 /// Inputs: target rows [mainRows, targets * hidden] (FP32; committed rows first, then any the
 /// mask closes), their raw RoPE [mainRows, head dim], the block tokens [blockSize] ([pending,
 /// noise...]), their raw RoPE, the one-hot pre-mix [blockSize, hc], the additive attention mask
 /// [1, 1, blockSize, rawWindow + mainRows + blockSize] (a column per view row), the min-p window
 /// [1, 1] (FP32: logits further than this below a position's best are never picked), then each
-/// stage's view [rawWindow + mainRows + blockSize, head dim]. A temperature of 0 drafts greedily;
-/// a positive one samples softmax(logits / temperature) within the window. The stages always run
-/// the whole block; only its first sequenceLength - 1 positions, at most blockSize, reach the head.
+/// stage's cache [at least historyOffset + rawWindow + mainRows + blockSize, head dim]. A
+/// temperature of 0 drafts greedily; a positive one samples softmax(logits / temperature) within
+/// the window. The stages always run the whole block; only its first sequenceLength - 1
+/// positions, at most blockSize, reach the head.
 /// Outputs: the drafted tokens [sequenceLength - 1] (Int32, picked in order after the Markov bias of
 /// the token before), the confidence logits [sequenceLength - 1, 1] (FP32), and the logits the picks
 /// were drawn from [sequenceLength - 1, vocabulary] (FP32, Markov bias included).
 public func DeepSeek4_1DSpark<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, mainRows: Int, temperature: Float, sequenceLength: Int,
-  configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash,
+  historyOffset: Int, configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash,
   draft: DeepSeek4_1DSparkConfiguration = .deepSeekV4_1Flash
 ) -> Model {
   let windowRows = configuration.rawWindow
-  precondition(mainRows > 0)
+  precondition(mainRows > 0 && historyOffset >= 0)
   precondition((2...(draft.blockSize + 1)).contains(sequenceLength))
   let hidden = configuration.hiddenSize
   let dim = configuration.attentionHeadDim
@@ -95,9 +97,11 @@ public func DeepSeek4_1DSpark<FloatType: TensorNumeric>(
     // Both write into the view in place, and attention reads it after them.
     let history = histories[stage]
     let mainWrite = mainKeys.moved(
-      to: history.reshaped([mainRows, dim], offset: [windowRows, 0], strides: [dim, 1]))
+      to: history.reshaped(
+        [mainRows, dim], offset: [historyOffset + windowRows, 0], strides: [dim, 1]))
     let blockWrite = blockKeys.moved(
-      to: history.reshaped([block, dim], offset: [windowRows + mainRows, 0], strides: [dim, 1]))
+      to: history.reshaped(
+        [block, dim], offset: [historyOffset + windowRows + mainRows, 0], strides: [dim, 1]))
     let low = Dense(count: configuration.queryLowRank, noBias: true, name: "\(prefix).attn.wq_a")(x)
     let rank = RMSNorm(
       epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).attn.q_norm")(low)
@@ -105,7 +109,9 @@ public func DeepSeek4_1DSpark<FloatType: TensorNumeric>(
       left: Dense(count: heads * dim, noBias: true, name: "\(prefix).attn.wq_b")(rank)
         .reshaped([1, block, heads, dim]),
       right: blockRotary.reshaped([1, block, 1, dim]))
-    let keys = history.reshaped([1, historyRows, 1, dim])
+    let keys = history.reshaped(
+      [1, historyRows, 1, dim], offset: [0, historyOffset, 0, 0],
+      strides: [historyRows * dim, dim, dim, 1])
     let sinks = Parameter<FloatType>(
       .GPU(0), .NHWC(1, 1, heads, 1), name: "\(prefix).attn.attn_sink")
     let attended = ScaledDotProductAttention(
