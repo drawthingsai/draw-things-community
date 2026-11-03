@@ -81,35 +81,40 @@ public func GLM5_3Embedding<FloatType: TensorNumeric>(
     ])
 }
 
-/// Inputs: FP32 residual streams `[T, hc, hidden]`. Outputs: post-mix, combination
-/// matrix, and the residual collapsed with this sublayer's pre-mix.
+/// Inputs: FP32 residual streams `[T, hc, hidden]`. One fused op holds the RMSNorm before the
+/// mixing projection, the split, the collapse with this sublayer's pre-mix, and the sublayer RMSNorm
+/// `normName`. Outputs: post-mix, combination matrix, and the normalized collapse.
 public func GLM5_3HCMix(
-  prefix: String, residual: Model.IO, tokenLength: Int,
+  prefix: String, normName: String, residual: Model.IO, tokenLength: Int,
   configuration: GLM5_3ModelConfiguration = .glm5_3Flash
 ) -> (Model.IO, Model.IO, Model.IO) {
   let hc = configuration.hcCount
   let hidden = configuration.hiddenSize
-  let normalized = RMSNorm(
-    epsilon: configuration.normEpsilon, axis: [1], elementwiseAffine: false)(
-      residual.reshaped([tokenLength, hc * hidden]))
-  let mix = Dense(count: configuration.hcMixDim, noBias: true, name: "\(prefix)_fn")(normalized)
+  let projection = Parameter<Float>(
+    .GPU(0), .WC(configuration.hcMixDim, hc * hidden), name: "\(prefix)_fn")
   let scale = Parameter<Float>(.GPU(0), .C(3), name: "\(prefix)_scale")
   let base = Parameter<Float>(.GPU(0), .C(configuration.hcMixDim), name: "\(prefix)_base")
+  let normScale = Parameter<Float>(.GPU(0), .C(hidden), name: normName)
   let parts = HyperConnection(
     count: hc, sinkhornIterations: configuration.hcSinkhornIterations,
-    epsilon: configuration.hcEpsilon, operation: .splitWeightedSum)(mix, scale, base, residual)
-  return (parts[0], parts[1], parts[2].reshaped([tokenLength, hidden]))
+    epsilon: configuration.hcEpsilon, operation: .mixOwnPre(normEpsilon: configuration.normEpsilon))(
+      residual, projection, scale, base, normScale)
+  return (parts[1], parts[2], parts[3])
 }
 
 /// KDA. Inputs: normalized hidden `[T, hidden]`, the causal convolution state
 /// `[1, kernel - 1, 1, 3 * linearDim]` and the FP32 recurrent state
 /// `[1, heads, headDim (value), headDim (key)]`. Outputs: projection, next
-/// convolution state and next recurrent state.
+/// convolution state and next recurrent state. With state checkpoints, both also hold the states
+/// before each of the last rows: the recurrent state `[1, (1 + checkpoints) * heads, ...]` starts
+/// at the state after every row, and the convolution state runs `kernel - 1 + checkpoints` rows, so
+/// a speculative verify can keep any prefix of its rows.
 public func GLM5_3LinearAttention<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, x: Model.IO, convState: Model.IO,
-  recurrentState: Model.IO, tokenLength: Int,
+  recurrentState: Model.IO, tokenLength: Int, stateCheckpointCount: Int = 0,
   configuration: GLM5_3ModelConfiguration = .glm5_3Flash
 ) -> (Model.IO, Model.IO, Model.IO) {
+  precondition(stateCheckpointCount >= 0 && stateCheckpointCount < tokenLength)
   let heads = configuration.linearHeads
   let headDim = configuration.linearHeadDim
   let linearDim = configuration.linearDim
@@ -122,7 +127,8 @@ public func GLM5_3LinearAttention<FloatType: TensorNumeric>(
   concat.flags = [.disableOpt]
   let convContext = concat(convState, qkv)
   let convStateNext = convContext.reshaped(
-    [1, kernel - 1, 1, convDim], offset: [0, tokenLength, 0, 0],
+    [1, kernel - 1 + stateCheckpointCount, 1, convDim],
+    offset: [0, tokenLength - stateCheckpointCount, 0, 0],
     strides: [(kernel - 1 + tokenLength) * convDim, convDim, convDim, 1]
   ).contiguous()
   // Tiny chunks must keep unit stride; automatic hint inference can choose a larger stride.
@@ -157,9 +163,10 @@ public func GLM5_3LinearAttention<FloatType: TensorNumeric>(
     .* aLog.exp()).sigmoid()
   let beta = Dense(count: heads, noBias: true, name: "\(prefix).b_proj")(x).to(.Float32)
     .sigmoid().reshaped([1, tokenLength, heads])
-  let recurrent = GatedDelta(logDecay: true, name: "\(prefix).gated_delta")(
-    queries: query, keys: key, values: value, decay: logDecay, beta: beta,
-    state: recurrentState)
+  let recurrent = GatedDelta(
+    logDecay: true, stateCheckpointCount: stateCheckpointCount, name: "\(prefix).gated_delta")(
+      queries: query, keys: key, values: value, decay: logDecay, beta: beta,
+      state: recurrentState)
   let gate = Dense(count: linearDim, noBias: true, name: "\(prefix).g_b_proj")(
     Dense(count: headDim, noBias: true, name: "\(prefix).g_a_proj")(x)
   ).reshaped([tokenLength * heads, headDim])
@@ -174,12 +181,13 @@ public func GLM5_3LinearAttention<FloatType: TensorNumeric>(
 }
 
 /// KPool DSA indexer. Writes this chunk's per-token indexer key and pooling gate into the
-/// indexer cache, pools every complete 4-token group with a softmax over `gate + ape`, and
-/// selects up to `indexerTopK / indexerPool` pools per query among those it can see.
+/// indexer cache, pools the 4-token groups this chunk completes with a softmax over `gate + ape`
+/// into the pooled cache `[maximum pools, indexerHeadDim]`, and selects up to
+/// `indexerTopK / indexerPool` pools per query among those it can see.
 /// Returns pool ids `[T, kth]` ascending, padded with -1.
 public func GLM5_3Indexer<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, x: Model.IO, queryResidual: Model.IO,
-  indexerCache: Model.IO, tokenLength: Int, cachedTokenLength: Int,
+  indexerCache: Model.IO, pooledCache: Model.IO, tokenLength: Int, cachedTokenLength: Int,
   configuration: GLM5_3ModelConfiguration = .glm5_3Flash
 ) -> Model.IO {
   let heads = configuration.indexerHeads
@@ -187,6 +195,9 @@ public func GLM5_3Indexer<FloatType: TensorNumeric>(
   let pool = configuration.indexerPool
   let totalTokenLength = cachedTokenLength + tokenLength
   let pools = totalTokenLength / pool
+  // A pool only reads its own rows, so pools complete before this chunk stay as they are.
+  let firstPool = cachedTokenLength / pool
+  let newPools = pools - firstPool
   let query = Dense(count: heads * dim, noBias: true, name: "\(prefix).wq_b")(queryResidual)
   let key = LayerNorm(epsilon: 1e-6, axis: [1], name: "\(prefix).k_norm")(
     Dense(count: dim, noBias: true, name: "\(prefix).wk")(x))
@@ -202,24 +213,28 @@ public func GLM5_3Indexer<FloatType: TensorNumeric>(
       .NHWC(1, tokenLength, 1, 2 * dim), offset: [0, cachedTokenLength, 0, 0],
       strides: [totalTokenLength * 2 * dim, 2 * dim, 2 * dim, 1]),
     flags: [.disableOpt])
-  // Keep one graph for every chunk: with no complete pool yet, the same ops (and the ape
-  // parameter) run on zero-sized tensors, and selection pads with -1.
+  // Keep one graph for every chunk: with no pool to complete, the same ops (and the ape
+  // parameter) run on zero-sized tensors, and with none at all selection pads with -1.
   // 2-D views with the cache's row stride take ccv's strided-copy fast path; 3-D views fall
   // back to building a new MPSGraph on every call.
   let keys = indexerCache.reshaped(
-    [pools * pool, dim], offset: [0, 0], strides: [2 * dim, 1]
-  ).contiguous().reshaped([pools, pool, dim])
+    [newPools * pool, dim], offset: [firstPool * pool, 0], strides: [2 * dim, 1]
+  ).contiguous().reshaped([newPools, pool, dim])
   let logits = indexerCache.reshaped(
-    [pools * pool, dim], offset: [0, dim], strides: [2 * dim, 1]
-  ).contiguous().reshaped([pools, pool, dim])
+    [newPools * pool, dim], offset: [firstPool * pool, dim], strides: [2 * dim, 1]
+  ).contiguous().reshaped([newPools, pool, dim])
   keys.add(dependencies: [cacheWrite])
   logits.add(dependencies: [cacheWrite])
   let ape = Parameter<FloatType>(
     .GPU(0), .HWC(1, pool, dim), name: "\(prefix).index_kpool_compress_ape")
   let probabilities = (logits + ape).transposed(1, 2).contiguous()
-    .reshaped([pools * dim, pool]).softmax().reshaped([pools, dim, pool])
-  let pooled = (probabilities .* keys.transposed(1, 2).contiguous())
-    .reduced(.sum, axis: [2]).reshaped([pools, dim])
+    .reshaped([newPools * dim, pool]).softmax().reshaped([newPools, dim, pool])
+  let pooledWrite = (probabilities .* keys.transposed(1, 2).contiguous())
+    .reduced(.sum, axis: [2]).reshaped(.WC(newPools, dim)).moved(
+      to: pooledCache.reshaped(.WC(newPools, dim), offset: [firstPool, 0], strides: [dim, 1]),
+      flags: [.disableOpt])
+  let pooled = pooledCache.reshaped([pools, dim], offset: [0, 0], strides: [dim, 1])
+  pooled.add(dependencies: [pooledWrite])
   // GLM scores sum_h w_h * relu(q_h . k / sqrt(dim)) / sqrt(heads); the positive scales
   // factor out of the ReLU into one score scale.
   return ScaledDotProductArgPartition(
@@ -235,11 +250,13 @@ public func GLM5_3Indexer<FloatType: TensorNumeric>(
 /// Blocked sparse indexed attention attends to the indexer's selected 4-token pools plus
 /// the query's own incomplete pool, as the reference's top-k with its visible tail.
 /// Inputs: normalized hidden `[T, hidden]`, the latent cache bound as exactly
-/// `[1, cachedTokenLength + T, 1, keyValueLowRank]` and the indexer cache bound as
-/// `[1, cachedTokenLength + T, 1, 2 * indexerHeadDim]`; this call writes their last T rows.
+/// `[1, cachedTokenLength + T, 1, keyValueLowRank]`, the indexer cache bound as
+/// `[1, cachedTokenLength + T, 1, 2 * indexerHeadDim]`, and the pooled cache
+/// `[maximum pools, indexerHeadDim]`; this call writes the first two's last T rows and the pools
+/// it completes.
 public func GLM5_3Attention<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, x: Model.IO, latentCache: Model.IO,
-  indexerCache: Model.IO, tokenLength: Int, cachedTokenLength: Int,
+  indexerCache: Model.IO, pooledCache: Model.IO, tokenLength: Int, cachedTokenLength: Int,
   configuration: GLM5_3ModelConfiguration = .glm5_3Flash
 ) -> Model.IO {
   let heads = configuration.attentionHeads
@@ -273,8 +290,8 @@ public func GLM5_3Attention<FloatType: TensorNumeric>(
     flags: [.disableOpt])
   let indices = GLM5_3Indexer(
     dataType, prefix: "\(prefix).indexer", x: x, queryResidual: queryResidual,
-    indexerCache: indexerCache, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-    configuration: configuration)
+    indexerCache: indexerCache, pooledCache: pooledCache, tokenLength: tokenLength,
+    cachedTokenLength: cachedTokenLength, configuration: configuration)
   let latents = latentCache.reshaped(.NHWC(1, totalTokenLength, 1, rank))
   let attention = SparseIndexedAttention(
     scale: 1 / Float(qkDim).squareRoot(), isCausal: true, blockSize: configuration.indexerPool)(
@@ -336,19 +353,16 @@ public func GLM5_3MoE<FloatType: TensorNumeric>(
 /// for attention layers. Outputs: residual streams, then the next KDA states.
 public func GLM5_3Layer<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, layerIndex: Int,
-  configuration: GLM5_3ModelConfiguration = .glm5_3Flash
+  stateCheckpointCount: Int = 0, configuration: GLM5_3ModelConfiguration = .glm5_3Flash
 ) -> Model {
   let prefix = "layers.\(layerIndex)"
   let residual = Input()
   var inputs = [residual]
   var outputs = [Model.IO]()
-  let (attnPost, attnCombination, attnCollapsed) = GLM5_3HCMix(
-    prefix: "\(prefix).hc_attn", residual: residual, tokenLength: tokenLength,
-    configuration: configuration)
-  let normalizedAttention = RMSNorm(
-    epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).input_layernorm")(
-      attnCollapsed
-    ).to(FloatType.dataType)
+  let (attnPost, attnCombination, attnNormalized) = GLM5_3HCMix(
+    prefix: "\(prefix).hc_attn", normName: "\(prefix).input_layernorm", residual: residual,
+    tokenLength: tokenLength, configuration: configuration)
+  let normalizedAttention = attnNormalized.to(FloatType.dataType)
   let attention: Model.IO
   if configuration.isLinearAttentionLayer(layerIndex) {
     let convState = Input()
@@ -356,26 +370,25 @@ public func GLM5_3Layer<FloatType: TensorNumeric>(
     inputs.append(contentsOf: [convState, recurrentState])
     let (out, convStateNext, recurrentStateNext) = GLM5_3LinearAttention(
       dataType, prefix: "\(prefix).self_attn", x: normalizedAttention, convState: convState,
-      recurrentState: recurrentState, tokenLength: tokenLength, configuration: configuration)
+      recurrentState: recurrentState, tokenLength: tokenLength,
+      stateCheckpointCount: stateCheckpointCount, configuration: configuration)
     attention = out
     outputs.append(contentsOf: [convStateNext, recurrentStateNext])
   } else {
     let latentCache = Input()
     let indexerCache = Input()
-    inputs.append(contentsOf: [latentCache, indexerCache])
+    let pooledCache = Input()
+    inputs.append(contentsOf: [latentCache, indexerCache, pooledCache])
     attention = GLM5_3Attention(
       dataType, prefix: "\(prefix).self_attn", x: normalizedAttention, latentCache: latentCache,
-      indexerCache: indexerCache, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-      configuration: configuration)
+      indexerCache: indexerCache, pooledCache: pooledCache, tokenLength: tokenLength,
+      cachedTokenLength: cachedTokenLength, configuration: configuration)
   }
   let afterAttention = HyperConnection(count: configuration.hcCount, operation: .expand)(
     attention.to(.Float32), residual, attnPost, attnCombination)[0]
-  let (ffnPost, ffnCombination, ffnCollapsed) = GLM5_3HCMix(
-    prefix: "\(prefix).hc_ffn", residual: afterAttention, tokenLength: tokenLength,
-    configuration: configuration)
-  let normalizedFFN = RMSNorm(
-    epsilon: configuration.normEpsilon, axis: [1], name: "\(prefix).post_attention_layernorm")(
-      ffnCollapsed)
+  let (ffnPost, ffnCombination, normalizedFFN) = GLM5_3HCMix(
+    prefix: "\(prefix).hc_ffn", normName: "\(prefix).post_attention_layernorm",
+    residual: afterAttention, tokenLength: tokenLength, configuration: configuration)
   let expanded: Model.IO
   if configuration.isSparseLayer(layerIndex) {
     let moe = GLM5_3MoE(
@@ -402,14 +415,19 @@ public func GLM5_3Layer<FloatType: TensorNumeric>(
 /// `[1, cachedTokenLength + T, 1, keyValueLowRank]` and `[1, cachedTokenLength + T, 1,
 /// 2 * indexerHeadDim]` (updated in place). Outputs: logits
 /// for the last `logitTokenLength` tokens, the next KDA states in layer order, then each
-/// layer's residual streams when `outputResiduals` is set. Input order depends only on
-/// the architecture, so one graph serves every chunk.
+/// layer's residual streams when `outputResiduals` is set, then, with `targetLayers`, the mean
+/// streams entering those layers for the last `targetTokenLength` tokens, concatenated as FP32
+/// `[targetTokenLength, targetLayers.count * hidden]`. `stateCheckpointCount` keeps the KDA states
+/// before each of the last rows. Input order depends only on the architecture, so one graph serves
+/// every chunk.
 public func GLM5_3CausalLM<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
-  logitTokenLength: Int = 1, outputResiduals: Bool = false,
+  logitTokenLength: Int = 1, outputResiduals: Bool = false, targetLayers: [Int] = [],
+  targetTokenLength: Int = 0, stateCheckpointCount: Int = 0,
   configuration: GLM5_3ModelConfiguration = .glm5_3Flash
 ) -> Model {
   precondition(logitTokenLength >= 1 && logitTokenLength <= tokenLength)
+  precondition(targetLayers.isEmpty == (targetTokenLength == 0) && targetTokenLength <= tokenLength)
   let hc = configuration.hcCount
   let hidden = configuration.hiddenSize
   let tokens = Input()
@@ -419,12 +437,23 @@ public func GLM5_3CausalLM<FloatType: TensorNumeric>(
   var residuals = [Model.IO]()
   var residual = GLM5_3Embedding(
     dataType, tokenLength: tokenLength, configuration: configuration)(tokens, injected)
+  var targets = [Model.IO]()
   for layerIndex in 0..<configuration.layers {
-    let layerInputs = [Input(), Input()]
+    if targetLayers.contains(layerIndex) {
+      targets.append(
+        residual.reshaped(
+          [targetTokenLength, hc, hidden], offset: [tokenLength - targetTokenLength, 0, 0],
+          strides: [hc * hidden, hidden, 1]
+        ).reduced(.mean, axis: [1]).reshaped([targetTokenLength, hidden]))
+    }
+    let layerInputs = (0..<(configuration.isLinearAttentionLayer(layerIndex) ? 2 : 3)).map { _ in
+      Input()
+    }
     inputs.append(contentsOf: layerInputs)
     let outputs = GLM5_3Layer(
       dataType, tokenLength: tokenLength, cachedTokenLength: cachedTokenLength,
-      layerIndex: layerIndex, configuration: configuration)([residual] + layerInputs)
+      layerIndex: layerIndex, stateCheckpointCount: stateCheckpointCount,
+      configuration: configuration)([residual] + layerInputs)
     residual = outputs[0]
     if configuration.isLinearAttentionLayer(layerIndex) {
       states.append(contentsOf: [outputs[1], outputs[2]])
@@ -436,7 +465,13 @@ public func GLM5_3CausalLM<FloatType: TensorNumeric>(
     strides: [hc * hidden, hidden, 1])
   let logits = GLM5_3OutputHead(
     dataType, tokenLength: logitTokenLength, configuration: configuration)(last)
-  return Model(inputs, [logits] + states + residuals)
+  var targetOutputs = [Model.IO]()
+  if !targets.isEmpty {
+    let concat = Concat(axis: 1)
+    concat.flags = [.disableOpt]
+    targetOutputs.append(concat(targets))
+  }
+  return Model(inputs, [logits] + states + residuals + targetOutputs)
 }
 
 /// GLM-5.3 collapses the final streams with an unweighted mean, unlike DeepSeek-V4's
