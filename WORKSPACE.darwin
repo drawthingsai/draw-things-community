@@ -263,43 +263,50 @@ new_git_repository(
 new_git_repository(
     name = "SwiftNIO",
     build_file = "swift-nio.BUILD",
-    # SwiftNIO 2.97.1: includes accept-loop recovery; last release supporting Swift 6.0.
-    commit = "558f24a4647193b5a0e2104031b71c55d31ff83a",
+    # SwiftNIO 2.105.0.
+    commit = "2f58d8ef84438d6517fc78bcea2f8527e3c72936",
     remote = "https://github.com/apple/swift-nio.git",
 )
 
 new_git_repository(
     name = "SwiftNIOExtras",
     build_file = "swift-nio-extras.BUILD",
-    commit = "b4dbfacff47fb8d0f9e0a422d8d37935a9f10570",
+    # swift-nio-extras 1.35.2.
+    commit = "8e1249b29f92574e05e0d91637f239e378a9a95b",
     remote = "https://github.com/apple/swift-nio-extras.git",
 )
 
 new_git_repository(
     name = "SwiftNIOHTTP2",
     build_file = "swift-nio-http2.BUILD",
-    commit = "6d021a48483dbb273a9be43f65234bdc9185b364",
+    # swift-nio-http2 1.46.0. Since 1.42.0 the connection flow-control window has its own
+    # setting, which grpc-swift 1.16 never set (64 KB instead of its 8 MB). grpc-swift 1.27 sets
+    # both through HTTP2StreamMultiplexer, so keep the two upgraded together.
+    commit = "0f3e54e29c944c2e835ad52159da7d9e1c94ac69",
     remote = "https://github.com/apple/swift-nio-http2.git",
 )
 
 new_git_repository(
     name = "SwiftNIOSSL",
     build_file = "swift-nio-ssl.BUILD",
-    commit = "9d0d5d8798a576fbf674a823734e65e15ca5f2ec",
+    # swift-nio-ssl 2.37.6.
+    commit = "15e0b9e495786807272dd4891fa4bac76aa43034",
     remote = "https://github.com/apple/swift-nio-ssl.git",
 )
 
 new_git_repository(
     name = "SwiftNIOTransportService",
     build_file = "swift-nio-transport-services.BUILD",
-    commit = "c0d9a144cfaec8d3d596aadde3039286a266c15c",
+    # swift-nio-transport-services 1.28.0.
+    commit = "67787bb645a5e67d2edcdfbe48a216cc549222d5",
     remote = "https://github.com/apple/swift-nio-transport-services.git",
 )
 
 new_git_repository(
     name = "grpc-swift",
     build_file = "grpc-swift.BUILD",
-    commit = "4ab02e1ae5b4dfdd723773e955b62f35ccbaa7c7",
+    # grpc-swift 1.27.6.
+    commit = "65d0084f6d7db34b0dfcb1c956b8dd8da8ef9d23",
     remote = "https://github.com/grpc/grpc-swift.git",
 )
 

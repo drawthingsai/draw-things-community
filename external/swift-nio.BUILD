@@ -142,6 +142,19 @@ swift_interop_hint(
 )
 
 cc_library(
+    name = "CNIOFreeBSD",
+    srcs = glob(["Sources/CNIOFreeBSD/**/*.c"]),
+    hdrs = glob(["Sources/CNIOFreeBSD/**/*.h"]),
+    aspect_hints = [":CNIOFreeBSD_swift_interop"],
+    includes = ["Sources/CNIOFreeBSD/include"],
+)
+
+swift_interop_hint(
+    name = "CNIOFreeBSD_swift_interop",
+    module_name = "CNIOFreeBSD",
+)
+
+cc_library(
     name = "CNIOPosix",
     srcs = glob(["Sources/CNIOPosix/**/*.c"]),
     hdrs = glob(["Sources/CNIOPosix/**/*.h"]),
@@ -210,6 +223,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":CNIODarwin",
+        ":CNIOFreeBSD",
         ":CNIOLinux",
         ":CNIOOpenBSD",
         ":CNIOWASI",
@@ -250,6 +264,22 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":NIO",
+        ":NIOConcurrencyHelpers",
+        ":NIOCore",
+        ":NIOFoundationEssentialsCompat",
+        "@swift-atomics//:SwiftAtomics",
+    ],
+)
+
+swift_library(
+    name = "NIOFoundationEssentialsCompat",
+    package_name = "SwiftNIO",
+    srcs = glob([
+        "Sources/NIOFoundationEssentialsCompat/*.swift",
+    ]),
+    module_name = "NIOFoundationEssentialsCompat",
+    visibility = ["//visibility:public"],
+    deps = [
         ":NIOCore",
     ],
 )

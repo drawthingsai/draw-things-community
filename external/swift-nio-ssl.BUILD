@@ -70,7 +70,9 @@ cc_library(
     deps = [],
 )
 
+# Upstream's module map keeps BoringSSL's internal symbol-prefixing headers out of the Swift module.
 swift_interop_hint(
     name = "CNIOBoringSSL_swift_interop",
+    module_map = "Sources/CNIOBoringSSL/include/module.modulemap",
     module_name = "CNIOBoringSSL",
 )

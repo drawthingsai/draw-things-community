@@ -31,10 +31,18 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-crypto.git", from: "3.7.1"),
     .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0"),
     .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.4.5"),
-    .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.23.1"),
+    // Floors above what grpc-swift requires, so packages depending on this one get the fixes:
+    // swift-nio 2.101.3 bounds HTTP/1 header blocks (CVE-2026-28980) and ByteBuffer indices
+    // (CVE-2026-43671); swift-nio-http2 1.46.0 rate-limits control frames; swift-nio-ssl 2.37.2
+    // fixes GHSA-xfxg-9975-pc2j.
+    .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.3"),
+    .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.46.0"),
+    .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.2"),
     .package(url: "https://github.com/jagreenwood/swift-log-datadog.git", from: "0.3.0"),
 
-    .package(url: "https://github.com/grpc/grpc-swift.git", from: "1.16.0"),
+    // Before 1.20, grpc-swift left the HTTP/2 connection window at 64 KB with swift-nio-http2 1.42.0
+    // and later. 1.27 matches the Bazel pin.
+    .package(url: "https://github.com/grpc/grpc-swift.git", from: "1.27.0"),
     .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.27.0"),
     .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.3"),
     .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.1.0"),
@@ -427,6 +435,11 @@ let package = Package(
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "Logging", package: "swift-log"),
+        .product(name: "NIO", package: "swift-nio"),
+        .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+        .product(name: "NIOCore", package: "swift-nio"),
+        .product(name: "NIOHTTP2", package: "swift-nio-http2"),
+        .product(name: "NIOSSL", package: "swift-nio-ssl"),
         .product(name: "NNC", package: "s4nnc"),
       ],
       path: "Libraries/GRPC/Server/Sources",

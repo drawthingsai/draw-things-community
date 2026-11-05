@@ -1,5 +1,5 @@
 # Build stage
-FROM library/swift:6.0.3-jammy AS builder
+FROM library/swift:6.4.2-jammy AS builder
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \

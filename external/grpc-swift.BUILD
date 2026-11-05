@@ -34,8 +34,10 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":CGRPCZlib",
+        "@SwiftCollections//:Collections",
         "@SwiftLog//:Logging",
         "@SwiftNIO//:NIO",
+        "@SwiftNIO//:NIOConcurrencyHelpers",
         "@SwiftNIO//:NIOCore",
         "@SwiftNIO//:NIOEmbedded",
         "@SwiftNIO//:NIOFoundationCompat",
@@ -43,10 +45,12 @@ swift_library(
         "@SwiftNIO//:NIOPosix",
         "@SwiftNIO//:NIOTLS",
         "@SwiftNIOExtras//:NIOExtras",
+        "@SwiftNIOHTTP2//:NIOHPACK",
         "@SwiftNIOHTTP2//:NIOHTTP2",
         "@SwiftNIOSSL//:NIOSSL",
         "@SwiftNIOTransportService//:NIOTransportServices",
         "@SwiftProtobuf",
+        "@swift-atomics//:SwiftAtomics",
     ],
 )
 
