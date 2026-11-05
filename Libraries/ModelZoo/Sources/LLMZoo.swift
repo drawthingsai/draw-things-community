@@ -136,12 +136,58 @@ public struct LLMZoo: DownloadZoo {
     return specificationMapping[name] ?? fallbackMapping[name]
   }
 
+  /// Folders outside the app that hold models, looked in after Documents/Models. A model in
+  /// neither downloads into the first one. These are separate from ModelZoo's, which
+  /// draw-things-cli sets for each run in the same process.
+  public static var externalUrls = [URL]() {
+    didSet {
+      #if (os(macOS) || (os(iOS) && targetEnvironment(macCatalyst)))
+        guard oldValue != externalUrls else { return }
+        for url in oldValue {
+          url.stopAccessingSecurityScopedResource()
+        }
+        for url in externalUrls {
+          let _ = url.startAccessingSecurityScopedResource()
+        }
+      #endif
+    }
+  }
+
   public static func filePathForModelDownloaded(_ name: String) -> String {
-    return ModelZoo.filePathForModelDownloaded(name)
+    let internalFilePath = ModelZoo.internalFilePathForModelDownloaded(name)
+    guard let externalUrl = externalUrls.first else {
+      return internalFilePath
+    }
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: internalFilePath) {
+      return internalFilePath
+    }
+    for externalUrl in externalUrls {
+      let filePath = externalUrl.appendingPathComponent(name).path
+      if fileManager.fileExists(atPath: filePath) {
+        return filePath
+      }
+    }
+    return externalUrl.appendingPathComponent(name).path
+  }
+
+  /// Whether a path resolved earlier is still where the file is looked for, which a change of
+  /// `externalUrls` can move.
+  public static func isFilePathForModelDownloaded(_ filePath: String) -> Bool {
+    return filePathForModelDownloaded(URL(fileURLWithPath: filePath).lastPathComponent) == filePath
   }
 
   public static func isModelDownloaded(_ name: String, memorizedBy: Set<String>) -> Bool {
-    return ModelZoo.isModelDownloaded(name, memorizedBy: memorizedBy)
+    guard !memorizedBy.contains(name) else {
+      return true
+    }
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: ModelZoo.internalFilePathForModelDownloaded(name)) {
+      return true
+    }
+    return externalUrls.contains {
+      fileManager.fileExists(atPath: $0.appendingPathComponent(name).path)
+    }
   }
 
   /// Selecting a model downloads all of its files; sending to it needs only `required` ones.
