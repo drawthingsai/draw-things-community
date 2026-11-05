@@ -1934,24 +1934,27 @@ extension UNetFromNNC {
       unet = ModelBuilderOrModel.modelBuilder(
         ModelBuilder { _, inputs in
           // The negative branch skips block 22 (upstream `uncond_skip_layers`) by passing 0-length
-          // rotary embeddings to it.
-          if usesLoRA {
-            return LoRAMOSSImage(
-              FloatType.self, batchSize: inputs[0].shape[0], tokenLength: inputs[2].shape[1],
+          // rotary embeddings to it. BF16 models compute in BF16, like the upstream checkpoint.
+          func build<T: TensorNumeric>(_ dataType: T.Type) -> Model {
+            if usesLoRA {
+              return LoRAMOSSImage(
+                T.self, batchSize: inputs[0].shape[0], tokenLength: inputs[2].shape[1],
+                height: tiledHeight, width: tiledWidth, channels: 3_072, layers: 42,
+                skippableLayers: [22],
+                skipsLayers: inputs[inputs.count - 1].shape[0] == 0,
+                usesFlashAttention: valueOr(useFlashAttention, .scale1),
+                LoRAConfiguration: configuration
+              ).1
+            }
+            return MOSSImage(
+              T.self, batchSize: inputs[0].shape[0], tokenLength: inputs[2].shape[1],
               height: tiledHeight, width: tiledWidth, channels: 3_072, layers: 42,
               skippableLayers: [22],
               skipsLayers: inputs[inputs.count - 1].shape[0] == 0,
-              usesFlashAttention: valueOr(useFlashAttention, .scale1),
-              LoRAConfiguration: configuration
+              usesFlashAttention: valueOr(useFlashAttention, .scale1)
             ).1
           }
-          return MOSSImage(
-            FloatType.self, batchSize: inputs[0].shape[0], tokenLength: inputs[2].shape[1],
-            height: tiledHeight, width: tiledWidth, channels: 3_072, layers: 42,
-            skippableLayers: [22],
-            skipsLayers: inputs[inputs.count - 1].shape[0] == 0,
-            usesFlashAttention: valueOr(useFlashAttention, .scale1)
-          ).1
+          return isBF16 ? build(BFloat16.self) : build(FloatType.self)
         })
     case .flux3_5b:
       tiledWidth =

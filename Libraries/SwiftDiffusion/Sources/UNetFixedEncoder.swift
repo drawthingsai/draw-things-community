@@ -2948,17 +2948,24 @@ extension UNetFixedEncoder {
         && canRunLoRASeparately
       if shouldRunLoRASeparately {
         configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
-        (_, unetFixed) = LoRAMOSSImageFixed(
-          FloatType.self, batchSize: batchSize, tokenLengths: tokenLengths,
-          timesteps: timesteps.count, channels: 3_072,
-          usesFlashAttention: valueOr(usesFlashAttention, .scale1),
-          LoRAConfiguration: configuration)
-      } else {
-        (_, unetFixed) = MOSSImageFixed(
-          FloatType.self, batchSize: batchSize, tokenLengths: tokenLengths,
-          timesteps: timesteps.count, channels: 3_072,
-          usesFlashAttention: valueOr(usesFlashAttention, .scale1))
       }
+      // BF16 models compute in BF16, like the upstream checkpoint.
+      func fixed<T: TensorNumeric>(_ dataType: T.Type) -> Model {
+        if shouldRunLoRASeparately {
+          return LoRAMOSSImageFixed(
+            T.self, batchSize: batchSize, tokenLengths: tokenLengths,
+            timesteps: timesteps.count, channels: 3_072,
+            usesFlashAttention: valueOr(usesFlashAttention, .scale1),
+            LoRAConfiguration: configuration
+          ).1
+        }
+        return MOSSImageFixed(
+          T.self, batchSize: batchSize, tokenLengths: tokenLengths,
+          timesteps: timesteps.count, channels: 3_072,
+          usesFlashAttention: valueOr(usesFlashAttention, .scale1)
+        ).1
+      }
+      unetFixed = isBF16 ? fixed(BFloat16.self) : fixed(FloatType.self)
       unetFixed.maxConcurrency = .limit(4)
       unetFixed.compile(inputs: context, textRotary, timeEmbeds)
       let loadedFromWeightsCache = weightsCache.detach(

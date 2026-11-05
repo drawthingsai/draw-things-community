@@ -43,6 +43,38 @@ private func MOSSImageSiTU(_ hidden: Model.IO, _ gate: Model.IO) -> Model.IO {
   return (gate.tanh(softCap: 4) .* gate.sigmoid()) .* hidden.tanh(softCap: 25)
 }
 
+// BF16 models (the compute type `T` is `BFloat16`) follow the upstream checkpoint: linear layers
+// run in BF16, the QK norm and the rotary embedding in FP32, and the residual stream stays in FP32
+// as for FP16 models. For FP16 models none of these casts are added and the graph is unchanged.
+private func MOSSImageFP32(_ x: Model.IO, if isBF16: Bool) -> Model.IO {
+  return isBF16 ? x.to(.Float32) : x
+}
+
+private func MOSSImageBF16(_ x: Model.IO, if isBF16: Bool) -> Model.IO {
+  return isBF16 ? x.to(.BFloat16) : x
+}
+
+/// Marks the linear layers' weights as BF16 so a converted BF16 model keeps the upstream weights.
+/// The norms and the FP32 time embedder output layer keep their usual precision.
+private func MOSSImageBF16Mapping(_ mapping: ModelWeightMapping) -> ModelWeightMapping {
+  let keepsPrecision = [
+    "norm1.weight", "norm2.weight", "q_norm.weight", "k_norm.weight", "final_norm_video.weight",
+    "time_embedding.2.weight", "time_embedding.2.bias",
+  ]
+  return mapping.reduce(into: ModelWeightMapping()) { result, entry in
+    let (key, element) = entry
+    guard !keepsPrecision.contains(where: { key.hasSuffix($0) }) else {
+      result[key] = element
+      return
+    }
+    result[key] = ModelWeightElement(
+      Array(element), format: element.format, offsets: element.offsets, scale: element.scale,
+      shift: element.shift, index: element.index, isBF16: true,
+      interleavedIndices: element.interleavedIndices, numberOfHeads: element.numberOfHeads,
+      headDimension: element.headDimension, interleavedDimension: element.interleavedDimension)
+  }
+}
+
 private func MOSSImageAttention(
   queries: Model.IO, keys: Model.IO, values: Model.IO, b: Int, t: Int, h: Int, k: Int,
   usesFlashAttention: FlashAttentionLevel
@@ -109,9 +141,11 @@ private func MOSSImageTextBlock<T: TensorNumeric>(
   let toValues = Dense(count: k * h, name: "context_v")
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "context_norm_q")
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "context_norm_k")
-  let queries = normQ(toQueries(xOut).reshaped([b, t, h, k]))
-  let keys = normK(toKeys(xOut).reshaped([b, t, h, k]))
+  let isBF16 = T.dataType == .BFloat16
+  let queries = normQ(MOSSImageFP32(toQueries(xOut), if: isBF16).reshaped([b, t, h, k]))
+  let keys = normK(MOSSImageFP32(toKeys(xOut), if: isBF16).reshaped([b, t, h, k]))
   let values = toValues(xOut).reshaped([b, t, h, k])
+  let rotary = MOSSImageFP32(rot, if: isBF16)
   var offset = 0
   var outs = [Model.IO]()
   for segment in segments {
@@ -120,14 +154,16 @@ private func MOSSImageTextBlock<T: TensorNumeric>(
         [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t * h * k, h * k, k, 1]
       ).contiguous()
     }
-    let segmentRot = rot.reshaped(
+    let segmentRot = rotary.reshaped(
       [1, segment, 1, k], strides: [maxSegment * k, k, k, 1]
     ).contiguous()
     outs.append(
       MOSSImageAttention(
-        queries: Functional.cmul(left: slice(queries), right: segmentRot),
-        keys: Functional.cmul(left: slice(keys), right: segmentRot), values: slice(values), b: b,
-        t: segment, h: h, k: k, usesFlashAttention: usesFlashAttention))
+        queries: MOSSImageBF16(
+          Functional.cmul(left: slice(queries), right: segmentRot), if: isBF16),
+        keys: MOSSImageBF16(Functional.cmul(left: slice(keys), right: segmentRot), if: isBF16),
+        values: slice(values), b: b, t: segment, h: h, k: k,
+        usesFlashAttention: usesFlashAttention))
     offset += segment
   }
   let attention = outs.count > 1 ? Concat(axis: 1)(outs) : outs[0]
@@ -181,11 +217,13 @@ private func MOSSImageBlock<T: TensorNumeric>(
   let toValues = Dense(count: k * h, noBias: true, name: "x_v")
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
-  var queries = normQ(toQueries(xOut).reshaped([b, t, h, k]))
-  var keys = normK(toKeys(xOut).reshaped([b, t, h, k]))
+  let isBF16 = T.dataType == .BFloat16
+  var queries = normQ(MOSSImageFP32(toQueries(xOut), if: isBF16).reshaped([b, t, h, k]))
+  var keys = normK(MOSSImageFP32(toKeys(xOut), if: isBF16).reshaped([b, t, h, k]))
   let values = toValues(xOut).reshaped([b, t, h, k])
-  queries = Functional.cmul(left: queries, right: rot)
-  keys = Functional.cmul(left: keys, right: rot)
+  let rotary = MOSSImageFP32(rot, if: isBF16)
+  queries = MOSSImageBF16(Functional.cmul(left: queries, right: rotary), if: isBF16)
+  keys = MOSSImageBF16(Functional.cmul(left: keys, right: rotary), if: isBF16)
   var out = MOSSImageAttention(
     queries: queries, keys: keys, values: values, b: b, t: t, h: h, k: k,
     usesFlashAttention: usesFlashAttention)
@@ -228,7 +266,8 @@ private func MOSSImageBlock<T: TensorNumeric>(
 /// The main MOSS Image transformer. Inputs are the latent, the rotary embedding, the refined text
 /// from `MOSSImageFixed`, 6 shared modulation chunks, the head shift / scale, and one rotary
 /// embedding per skippable block. With `skipsLayers`, these rotary embeddings are 0-length ([0]),
-/// the skippable blocks run on 0-length tensors and leave every token unchanged.
+/// the skippable blocks run on 0-length tensors and leave every token unchanged. `dataType` is the
+/// compute type of the linear layers: FP16, or BF16 for BF16 models.
 public func MOSSImage<T: TensorNumeric>(
   _ dataType: T.Type, batchSize: Int, tokenLength: Int, height: Int, width: Int, channels: Int,
   layers: Int, skippableLayers: [Int], skipsLayers: Bool, usesFlashAttention: FlashAttentionLevel
@@ -246,9 +285,11 @@ public func MOSSImage<T: TensorNumeric>(
   let k = 128
   let heads = channels / k
   let xEmbedder = Dense(count: channels, name: "x_embedder")
+  let isBF16 = T.dataType == .BFloat16
   var out = xEmbedder(
-    x.reshaped([batchSize, h, 2, w, 2, 32]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
-      [batchSize, h * w, 32 * 2 * 2], format: .NHWC)
+    MOSSImageBF16(
+      x.reshaped([batchSize, h, 2, w, 2, 32]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
+        [batchSize, h * w, 32 * 2 * 2], format: .NHWC), if: isBF16)
   ).to(.Float32)
   let sequenceLength = h * w + tokenLength
   out = Functional.concat(axis: 1, out, contextIn)
@@ -280,6 +321,9 @@ public func MOSSImage<T: TensorNumeric>(
   out = (normFinal(out) .* scale + shift).to(T.dataType)
   let projOut = Dense(count: 2 * 2 * 32, noBias: true, name: "final_linear")
   out = projOut(out)
+  if isBF16 {
+    out = out.to(FloatType.dataType)  // The sampler works in FloatType.
+  }
   // Unpatchify
   out = out.reshaped([batchSize, h, w, 32, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
     batchSize, h * 2, w * 2, 32,
@@ -293,7 +337,7 @@ public func MOSSImage<T: TensorNumeric>(
     mapping["video_embedder.bias"] = [xEmbedder.bias.name]
     mapping["final_norm_video.weight"] = [normFinal.weight.name]
     mapping["final_linear_video.weight"] = [projOut.weight.name]
-    return mapping
+    return isBF16 ? MOSSImageBF16Mapping(mapping) : mapping
   }
   return (
     mapper,
@@ -314,7 +358,8 @@ public func MOSSImageFixed<T: TensorNumeric>(
   let rot = Input()
   let t = Input()
   let contextEmbedder = Dense(count: channels, name: "context_embedder")
-  var context = contextEmbedder(contextIn).to(.Float32)
+  let isBF16 = T.dataType == .BFloat16
+  var context = contextEmbedder(MOSSImageBF16(contextIn, if: isBF16)).to(.Float32)
   var mappers = [ModelWeightMapper]()
   for i in 0..<2 {
     let (mapper, block) = MOSSImageTextBlock(
@@ -326,8 +371,10 @@ public func MOSSImageFixed<T: TensorNumeric>(
   let tMlp0 = Dense(count: channels, name: "time_embedder_0")
   let tMlp2 = Dense(count: channels, name: "time_embedder_2")
   // The output layer is kept in FP32 to avoid FP16 underflow of its weights.
-  let tOut = tMlp2(tMlp0(t).swish().to(.Float32)).reshaped([timesteps, 1, channels])
-  let tIn = tOut.to(.Float16)
+  let tOut = tMlp2(tMlp0(MOSSImageBF16(t, if: isBF16)).swish().to(.Float32)).reshaped([
+    timesteps, 1, channels,
+  ])
+  let tIn = tOut.to(isBF16 ? .BFloat16 : .Float16)
   let adaLNs = (0..<6).map { Dense(count: channels, name: "x_ada_ln_\($0)") }
   var chunks = adaLNs.map { $0(tIn).to(.Float32) }
   chunks[1] = 1 + chunks[1]
@@ -352,7 +399,7 @@ public func MOSSImageFixed<T: TensorNumeric>(
     mapping["shared_block_modulation.bias"] = ModelWeightElement(adaLNs.map { $0.bias.name })
     mapping["video_head_modulation.weight"] = [shift.weight.name, scale.weight.name]
     mapping["video_head_modulation.bias"] = [shift.bias.name, scale.bias.name]
-    return mapping
+    return isBF16 ? MOSSImageBF16Mapping(mapping) : mapping
   }
   return (mapper, Model([contextIn, rot, t], [context] + chunks))
 }
@@ -376,9 +423,11 @@ private func LoRAMOSSImageTextBlock<T: TensorNumeric>(
     count: k * h, configuration: configuration, index: layerIndex, name: "context_v")
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "context_norm_q")
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "context_norm_k")
-  let queries = normQ(toQueries(xOut).reshaped([b, t, h, k]))
-  let keys = normK(toKeys(xOut).reshaped([b, t, h, k]))
+  let isBF16 = T.dataType == .BFloat16
+  let queries = normQ(MOSSImageFP32(toQueries(xOut), if: isBF16).reshaped([b, t, h, k]))
+  let keys = normK(MOSSImageFP32(toKeys(xOut), if: isBF16).reshaped([b, t, h, k]))
   let values = toValues(xOut).reshaped([b, t, h, k])
+  let rotary = MOSSImageFP32(rot, if: isBF16)
   var offset = 0
   var outs = [Model.IO]()
   for segment in segments {
@@ -387,14 +436,16 @@ private func LoRAMOSSImageTextBlock<T: TensorNumeric>(
         [b, segment, h, k], offset: [0, offset, 0, 0], strides: [t * h * k, h * k, k, 1]
       ).contiguous()
     }
-    let segmentRot = rot.reshaped(
+    let segmentRot = rotary.reshaped(
       [1, segment, 1, k], strides: [maxSegment * k, k, k, 1]
     ).contiguous()
     outs.append(
       MOSSImageAttention(
-        queries: Functional.cmul(left: slice(queries), right: segmentRot),
-        keys: Functional.cmul(left: slice(keys), right: segmentRot), values: slice(values), b: b,
-        t: segment, h: h, k: k, usesFlashAttention: usesFlashAttention))
+        queries: MOSSImageBF16(
+          Functional.cmul(left: slice(queries), right: segmentRot), if: isBF16),
+        keys: MOSSImageBF16(Functional.cmul(left: slice(keys), right: segmentRot), if: isBF16),
+        values: slice(values), b: b, t: segment, h: h, k: k,
+        usesFlashAttention: usesFlashAttention))
     offset += segment
   }
   let attention = outs.count > 1 ? Concat(axis: 1)(outs) : outs[0]
@@ -458,11 +509,13 @@ private func LoRAMOSSImageBlock<T: TensorNumeric>(
     count: k * h, configuration: configuration, noBias: true, index: layerIndex, name: "x_v")
   let normQ = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_q")
   let normK = RMSNorm(epsilon: 1e-6, axis: [3], name: "x_norm_k")
-  var queries = normQ(toQueries(xOut).reshaped([b, t, h, k]))
-  var keys = normK(toKeys(xOut).reshaped([b, t, h, k]))
+  let isBF16 = T.dataType == .BFloat16
+  var queries = normQ(MOSSImageFP32(toQueries(xOut), if: isBF16).reshaped([b, t, h, k]))
+  var keys = normK(MOSSImageFP32(toKeys(xOut), if: isBF16).reshaped([b, t, h, k]))
   let values = toValues(xOut).reshaped([b, t, h, k])
-  queries = Functional.cmul(left: queries, right: rot)
-  keys = Functional.cmul(left: keys, right: rot)
+  let rotary = MOSSImageFP32(rot, if: isBF16)
+  queries = MOSSImageBF16(Functional.cmul(left: queries, right: rotary), if: isBF16)
+  keys = MOSSImageBF16(Functional.cmul(left: keys, right: rotary), if: isBF16)
   var out = MOSSImageAttention(
     queries: queries, keys: keys, values: values, b: b, t: t, h: h, k: k,
     usesFlashAttention: usesFlashAttention)
@@ -528,9 +581,11 @@ public func LoRAMOSSImage<T: TensorNumeric>(
   let heads = channels / k
   let xEmbedder = LoRADense(
     count: channels, configuration: LoRAConfiguration, index: 0, name: "x_embedder")
+  let isBF16 = T.dataType == .BFloat16
   var out = xEmbedder(
-    x.reshaped([batchSize, h, 2, w, 2, 32]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
-      [batchSize, h * w, 32 * 2 * 2], format: .NHWC)
+    MOSSImageBF16(
+      x.reshaped([batchSize, h, 2, w, 2, 32]).permuted(0, 1, 3, 5, 2, 4).contiguous().reshaped(
+        [batchSize, h * w, 32 * 2 * 2], format: .NHWC), if: isBF16)
   ).to(.Float32)
   let sequenceLength = h * w + tokenLength
   out = Functional.concat(axis: 1, out, contextIn)
@@ -564,6 +619,9 @@ public func LoRAMOSSImage<T: TensorNumeric>(
     count: 2 * 2 * 32, configuration: LoRAConfiguration, noBias: true, index: 0,
     name: "final_linear")
   out = projOut(out)
+  if isBF16 {
+    out = out.to(FloatType.dataType)  // The sampler works in FloatType.
+  }
   // Unpatchify
   out = out.reshaped([batchSize, h, w, 32, 2, 2]).permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped([
     batchSize, h * 2, w * 2, 32,
@@ -577,7 +635,7 @@ public func LoRAMOSSImage<T: TensorNumeric>(
     mapping["video_embedder.bias"] = [xEmbedder.bias.name]
     mapping["final_norm_video.weight"] = [normFinal.weight.name]
     mapping["final_linear_video.weight"] = [projOut.weight.name]
-    return mapping
+    return isBF16 ? MOSSImageBF16Mapping(mapping) : mapping
   }
   return (
     mapper,
@@ -595,7 +653,8 @@ public func LoRAMOSSImageFixed<T: TensorNumeric>(
   let t = Input()
   let contextEmbedder = LoRADense(
     count: channels, configuration: LoRAConfiguration, index: 0, name: "context_embedder")
-  var context = contextEmbedder(contextIn).to(.Float32)
+  let isBF16 = T.dataType == .BFloat16
+  var context = contextEmbedder(MOSSImageBF16(contextIn, if: isBF16)).to(.Float32)
   var mappers = [ModelWeightMapper]()
   for i in 0..<2 {
     let (mapper, block) = LoRAMOSSImageTextBlock(
@@ -610,8 +669,10 @@ public func LoRAMOSSImageFixed<T: TensorNumeric>(
   let tMlp2 = LoRADense(
     count: channels, configuration: LoRAConfiguration, index: 0, name: "time_embedder_2")
   // The output layer is kept in FP32 to avoid FP16 underflow of its weights.
-  let tOut = tMlp2(tMlp0(t).swish().to(.Float32)).reshaped([timesteps, 1, channels])
-  let tIn = tOut.to(.Float16)
+  let tOut = tMlp2(tMlp0(MOSSImageBF16(t, if: isBF16)).swish().to(.Float32)).reshaped([
+    timesteps, 1, channels,
+  ])
+  let tIn = tOut.to(isBF16 ? .BFloat16 : .Float16)
   let adaLNs = (0..<6).map {
     LoRADense(
       count: channels, configuration: LoRAConfiguration, index: 0, name: "x_ada_ln_\($0)")
@@ -641,7 +702,7 @@ public func LoRAMOSSImageFixed<T: TensorNumeric>(
     mapping["shared_block_modulation.bias"] = ModelWeightElement(adaLNs.map { $0.bias.name })
     mapping["video_head_modulation.weight"] = [shift.weight.name, scale.weight.name]
     mapping["video_head_modulation.bias"] = [shift.bias.name, scale.bias.name]
-    return mapping
+    return isBF16 ? MOSSImageBF16Mapping(mapping) : mapping
   }
   return (mapper, Model([contextIn, rot, t], [context] + chunks, trainable: false))
 }
