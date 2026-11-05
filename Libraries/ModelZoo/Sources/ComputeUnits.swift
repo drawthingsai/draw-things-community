@@ -596,7 +596,7 @@ public enum ComputeUnits {
 
   // Policy-side multiplier to bias compute-unit cost by model family.
   // This is intentionally non-physical and is used to steer usage toward preferred models.
-  private static func modelUsageBiasMultiplier(for version: ModelVersion) -> Double {
+  public static func modelUsageBiasMultiplier(for version: ModelVersion) -> Double {
     switch version {
     case .v1, .v2, .kandinsky21, .wurstchenStageC, .wurstchenStageB, .sdxlBase, .sdxlRefiner,
       .ssd1b,
