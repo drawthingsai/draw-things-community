@@ -84,6 +84,35 @@
 - Good helper candidates are shared policy, non-trivial data transformation, or logic reused across multiple call sites.
 - Poor helper candidates are short project-dictionary reads/writes, one-off alert assembly, or tiny control-flow wrappers added during opportunistic cleanup.
 
+## UIKit Structure (Workflows, Controllers, Views)
+- A presented screen is an `XWorkflow` + `XViewController` pair (for example `MachineSettingsWorkflow` / `MachineSettingsViewController`, `ValueSheetWorkflow` / `ValueSheetViewController`).
+  - the workflow owns the view controller, loads its data, and handles its actions (sign-in, purchase, persistence).
+  - the presenter keeps one `private var xWorkflow: XWorkflow?` and sets it to `nil` when the workflow finishes.
+  - do not drive a bare view controller from the presenter, and do not keep its state on the presenter as a tuple.
+- Workflows, controllers and views report to their owner through an `XDelegate` protocol (`weak var delegate`), not through closure properties the owner sets after construction.
+  - when the callback is about a model value, pass it next to the sender: `didSelect(_ view:, item:)`.
+- Hook a feature in at the entry point that already knows the context (for example `didTapGenerate` for a job the user started). Do not wrap or shadow parameters inside core methods such as `imageGenerate` and branch on conditions there.
+- Keep stored state single-purpose and `private`. Data only one path needs goes through that path as an explicit parameter. An extension in another file that needs the owner's state is a sign the code belongs in its own type.
+- Reuse before copying. Before writing a second copy of a flow (sign-in, purchase, a card's views), extract the shared part (for example `SignInController`, used by `DTPlusWorkflow` and `ValueSheetWorkflow`).
+- Do not widen access to a policy internal (`private` to `public`) in order to undo it elsewhere. Add an explicit parameter instead, such as `ComputeUnits.from(..., includesModelUsageBias: false)`.
+- Views:
+  - every subview property is a `private lazy var` whose initializer fully styles it and wires its action. `viewDidLoad` / `init` only build the hierarchy and constraints.
+  - no generic view factories followed by per-instance overrides, and no `button === x ? … : …` loops. A helper that only applies shared text attributes inside each view's own initializer is fine.
+  - do not subclass `UIView` / `UILabel` / `UIControl` / `UIButton` / `UIStackView` for components. Write a plain `final class XController` that owns a `view` and its layout and animations. Use `BorderView` for dynamic border colors.
+- Workflows and controllers do not subclass `NSObject`. Objective-C delegate conformances (`ASAuthorizationControllerDelegate`, `UIAdaptivePresentationControllerDelegate`, document pickers) go on a nested `final class ObjCResponder: NSObject` with a weak back-reference, which forwards each callback to a method of the same name on the owner (see `SignInController`, `MachineSettingsWorkflow`).
+  - a fallback constraint uses `.low` priority, never `.high`, which ties with the default 750 compression resistance.
+- A refactor keeps behavior identical: the same visuals, timings and state transitions. If the new structure cannot reproduce something, ask before dropping it.
+
+## Localization Keys
+- A short phrase uses itself in snake_case as its key (`"run_on_this_device" = "Run on this device"`). Long text gets a named key ending in `_detail`, and an item ending in an ellipsis uses `_dot`.
+  - do not prefix keys with a feature name (`value_sheet_title`).
+  - search the English file by value first and reuse an existing key, and check that a new key is not already taken.
+- Add every new key to all nine languages (`de`, `en`, `es`, `fr`, `ja`, `ko`, `vi`, `zh-Hans`, `zh-Hant`), with the same format specifiers, and reuse each language's existing terms (for example Cloud Compute, compute units).
+- UI copy is sentence case. Keep copy from a design verbatim unless asked to change it.
+
+## Commit Messages for Squash Merges
+- A squash-merged PR's message describes the final state of the change. Do not concatenate the per-iteration commit messages, which describe states that no longer exist (debug rows added then removed, values changed later).
+
 ## Swift Error Style
 - Do not introduce new `NSError` values in Swift-first code paths.
 - Prefer dedicated `enum Error` / `LocalizedError` types, including small file-local enums for one-off errors.

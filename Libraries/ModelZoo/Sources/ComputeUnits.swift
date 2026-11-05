@@ -596,7 +596,7 @@ public enum ComputeUnits {
 
   // Policy-side multiplier to bias compute-unit cost by model family.
   // This is intentionally non-physical and is used to steer usage toward preferred models.
-  public static func modelUsageBiasMultiplier(for version: ModelVersion) -> Double {
+  private static func modelUsageBiasMultiplier(for version: ModelVersion) -> Double {
     switch version {
     case .v1, .v2, .kandinsky21, .wurstchenStageC, .wurstchenStageB, .sdxlBase, .sdxlRefiner,
       .ssd1b,
@@ -611,8 +611,11 @@ public enum ComputeUnits {
     _ configuration: GenerationConfiguration,
     context: ResolvedModelContext,
     hasImage: Bool,
-    shuffleCount: Int
+    shuffleCount: Int,
+    includesModelUsageBias: Bool
   ) -> Int {
+    let biasMultiplier =
+      includesModelUsageBias ? modelUsageBiasMultiplier(for: context.modelVersion) : 1
     if context.modelVersion == .wurstchenStageC {
       let firstPassCounts = instructionCountFromResolvedModel(
         configuration, context: context, hasImage: hasImage, shuffleCount: shuffleCount)
@@ -627,8 +630,7 @@ public enum ComputeUnits {
         * instructionCalibrationScale * strength
       let fixedEstimate =
         Double(firstPassCounts.fixed + secondPassCounts.fixed) * instructionCalibrationScale
-      let biasedEstimate =
-        (mainEstimate + fixedEstimate) * modelUsageBiasMultiplier(for: context.modelVersion)
+      let biasedEstimate = (mainEstimate + fixedEstimate) * biasMultiplier
       guard biasedEstimate.isFinite, biasedEstimate > 0 else { return 0 }
       return Int(min(Double(Int.max), biasedEstimate.rounded(.up)))
     }
@@ -638,8 +640,7 @@ public enum ComputeUnits {
       Double(instructionCounts.main) * instructionCalibrationScale
       * Double(configuration.steps) * Double(max(configuration.strength, 0.05))
     let fixedEstimate = Double(instructionCounts.fixed) * instructionCalibrationScale
-    let biasedEstimate =
-      (mainEstimate + fixedEstimate) * modelUsageBiasMultiplier(for: context.modelVersion)
+    let biasedEstimate = (mainEstimate + fixedEstimate) * biasMultiplier
     guard biasedEstimate.isFinite, biasedEstimate > 0 else { return 0 }
     return Int(min(Double(Int.max), biasedEstimate.rounded(.up)))
   }
@@ -653,12 +654,14 @@ public enum ComputeUnits {
       (boostsToSpend - 1) * ComputeUnits.perBoost + max(policyThreshold, ComputeUnits.perBoost))
   }
 
+  /// Leave out the model usage bias to estimate the work done rather than the price.
   public static func from(
     _ configuration: GenerationConfiguration,
     hasImage: Bool, shuffleCount: Int,
     overrideMapping: (
       model: [String: ModelZoo.Specification], lora: [String: LoRAZoo.Specification]
-    )? = nil
+    )? = nil,
+    includesModelUsageBias: Bool = true
   ) -> Int? {
     guard
       let context = resolveModelContext(configuration, overrideMapping: overrideMapping)
@@ -666,7 +669,8 @@ public enum ComputeUnits {
       return nil
     }
     return from(
-      configuration, context: context, hasImage: hasImage, shuffleCount: shuffleCount)
+      configuration, context: context, hasImage: hasImage, shuffleCount: shuffleCount,
+      includesModelUsageBias: includesModelUsageBias)
   }
 
   public static func threshold(for priority: String?) -> Int {
