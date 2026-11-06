@@ -230,6 +230,22 @@ public final class ModelImporter {
       && stateDict.keys.contains {
         $0.contains("txtfusion.projector.weight") || $0.contains("text_fusion.projector.weight")
       }
+    // Diffusers files keep the gate and up projections separate, ComfyUI files pack them as gate_up.
+    var isQwenImage2_1 = stateDict.keys.contains {
+      $0.contains("transformer_blocks.31.img_mlp.gate_layer.")
+        || $0.contains("transformer_blocks.31.img_mlp.gate_up.")
+    }
+    var isMOSSImage = stateDict.keys.contains {
+      $0.contains("layers.41.proj.ffn_up_gate.")
+    }
+    var isMiniMaxH3 =
+      stateDict.keys.contains {
+        $0.contains("token_refiner.blocks.1.attn.qkv_proj.")
+          || $0.contains("token_refiner.refiner_blocks.1.attn.to_q.")
+      }
+      && stateDict.keys.contains {
+        $0.contains("audio_patch_proj.") || $0.contains("audio_proj_in.")
+      }
     let modifier: SamplerModifier
     let modelVersion: ModelVersion
     let inputDim: Int
@@ -310,6 +326,9 @@ public final class ModelImporter {
       isFlux3 = false
       isIdeogram4 = false
       isKrea2 = false
+      isQwenImage2_1 = false
+      isMOSSImage = false
+      isMiniMaxH3 = false
     } else if isWurstchenStageC {
       modelVersion = .wurstchenStageC
       modifier = .none
@@ -488,6 +507,32 @@ public final class ModelImporter {
       isDiffusersFormat = stateDict.keys.contains {
         $0.contains("transformer_blocks.27.attn.to_q.weight")
       }
+    } else if isQwenImage2_1 {
+      modelVersion = .qwenImage2_1
+      modifier = .kontext
+      inputDim = 64
+      expectedTotalAccess = 600
+      isDiffusersFormat = true
+    } else if isMOSSImage {
+      modelVersion = .mossImage
+      modifier = .none
+      inputDim = 32
+      expectedTotalAccess = 990
+      isDiffusersFormat = true
+    } else if isMiniMaxH3 {
+      // Pruned variants replace the timestep embedder with a timestep table and low-rank modulations.
+      guard !stateDict.keys.contains(where: { $0.hasSuffix("adaln_t_table") }) else {
+        throw UnpickleError.tensorNotFound
+      }
+      modelVersion = .minimaxH3
+      // FL2VA and Ref2VA checkpoints have the same weights, only the file name tells them apart.
+      modifier =
+        (filePath as NSString).lastPathComponent.lowercased().contains("ref2va") ? .ref2va : .fl2va
+      inputDim = 24
+      expectedTotalAccess = 2_710
+      isDiffusersFormat = stateDict.keys.contains {
+        $0.contains("token_refiner.refiner_blocks.")
+      }
     } else {
       throw UnpickleError.tensorNotFound
     }
@@ -559,9 +604,9 @@ public final class ModelImporter {
         throw Error.noTextEncoder
       case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
         throw Error.noTextEncoder
-      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2:
+      case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
         throw Error.noTextEncoder
-      case .kandinsky21, .minimaxH3:
+      case .kandinsky21:
         fatalError()
       }
     }
@@ -787,7 +832,11 @@ public final class ModelImporter {
     let batchSize: Int
     switch modelVersion {
     case .mossImage:
-      fatalError()
+      conditionalLength = 4096
+      batchSize = 1
+    case .minimaxH3:
+      conditionalLength = 5120
+      batchSize = 1
     case .longcatVideoAvatar1_5:
       conditionalLength = 4096
       batchSize = 1
@@ -827,8 +876,11 @@ public final class ModelImporter {
     case .hiDreamI1:
       conditionalLength = 4096
       batchSize = 1
-    case .hiDreamO1, .qwenImage2_1, .minimaxH3:
+    case .hiDreamO1:
       fatalError()
+    case .qwenImage2_1:
+      conditionalLength = 4096
+      batchSize = 1
     case .qwenImage:
       conditionalLength = 3854
       batchSize = 1
@@ -881,7 +933,22 @@ public final class ModelImporter {
       let filePath = ModelZoo.filePathForModelDownloaded("\(self.modelName)_f16.ckpt")
       switch modelVersion {
       case .mossImage:
-        fatalError()
+        // The refined text and the modulations are in FP32, they are appended when compiling.
+        cArr = [
+          graph.variable(
+            Tensor<FloatType>(
+              from: MOSSImageRotaryPositionEmbedding(height: 32, width: 32, tokenLengths: [32])))
+        ]
+      case .minimaxH3:
+        cArr =
+          [
+            graph.variable(.CPU, .HWC(1, 4, 32), of: FloatType.self),
+            graph.variable(.CPU, .HWC(1, 2, 5_376), of: FloatType.self),
+            graph.variable(.CPU, .NHWC(1, 1_030, 1, 128), of: FloatType.self),
+          ]
+          + (0..<(50 * 18 + 4)).map { _ in
+            graph.variable(.CPU, .HWC(1, 1, 5_376), of: FloatType.self)
+          }
       case .longcatVideoAvatar1_5:
         let rot = Tensor<FloatType>(
           from: WanRotaryPositionEmbedding(
@@ -1037,8 +1104,15 @@ public final class ModelImporter {
           ).map {
             graph.variable(.CPU, format: .NHWC, shape: $0, of: FloatType.self)
           }
-      case .hiDreamO1, .qwenImage2_1, .minimaxH3:
+      case .hiDreamO1:
         fatalError()
+      case .qwenImage2_1:
+        cArr =
+          [graph.variable(.CPU, .NHWC(1, 64 * 64, 1, 128), of: FloatType.self)]
+          + (0..<5).map { _ in graph.variable(.CPU, .WC(1, 4096), of: FloatType.self) }
+          + (0..<64).map { _ in
+            graph.variable(.CPU, .NHWC(1, 132, 32, 128), of: FloatType.self)
+          }
       case .qwenImage:
         cArr =
           [
@@ -1180,7 +1254,19 @@ public final class ModelImporter {
       var additionalMappings = [(prefix: String, mapping: ModelWeightMapping)]()
       switch modelVersion {
       case .mossImage:
-        fatalError()
+        (unetMapper, unet) = MOSSImage(
+          FloatType.self, batchSize: 1, tokenLength: 32, height: 64, width: 64, channels: 3_072,
+          layers: 42, skippableLayers: [], skipsLayers: false, usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = MOSSImageFixed(
+          FloatType.self, batchSize: 1, tokenLengths: [32], timesteps: 1, channels: 3_072,
+          usesFlashAttention: .scale1)
+      case .minimaxH3:
+        (unetMapper, unet) = MiniMaxH3(
+          hiddenSize: 5_376, layers: 50, textLength: 2, audioLength: 4, videoFrames: 1,
+          videoHeight: 64, videoWidth: 64, usesFlashAttention: .scale1)
+        (unetFixedMapper, unetFixed) = MiniMaxH3Fixed(
+          timesteps: 1, hiddenSize: 5_376, layers: 50, textLength: (0, 2),
+          usesFlashAttention: .scale1)
       case .longcatVideoAvatar1_5:
         (unetMapper, unet) = LongCatVideoAvatar(
           time: 1, height: 64, width: 64, channels: 4_096, layers: 48, intermediateSize: 11_008,
@@ -1359,8 +1445,16 @@ public final class ModelImporter {
           usesFlashAttention: .scale1, outputResidual: false, inputResidual: false)
         (unetFixed, unetFixedMapper) = HiDreamFixed(
           timesteps: 1, layers: (16, 32), outputTimesteps: false)
-      case .hiDreamO1, .qwenImage2_1, .minimaxH3:
+      case .hiDreamO1:
         fatalError()
+      case .qwenImage2_1:
+        (unetMapper, unet) = QwenImage2_1(
+          FloatType.self, batchSize: 1, height: 64, width: 64, prefixLength: 132,
+          channels: 4096, layers: 32, usesFlashAttention: .scaleMerged)
+        (unetFixedMapper, unetFixed) = QwenImage2_1Fixed(
+          FloatType.self, batchSize: 1, textLength: 128, referenceLength: 4, timesteps: 1,
+          channels: 4096, layers: 32, segments: [(128, false), (4, true)],
+          usesFlashAttention: .scaleMerged)
       case .qwenImage:
         (unetMapper, unet) = QwenImage(
           batchSize: 1, height: 64, width: 64, textLength: 128, referenceSequenceLength: 0,
@@ -1475,7 +1569,20 @@ public final class ModelImporter {
       let crossattn: [DynamicGraph.AnyTensor]
       switch modelVersion {
       case .mossImage:
-        fatalError()
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 32, 4_096), of: FloatType.self),
+          graph.variable(
+            Tensor<FloatType>(
+              from: MOSSImageRotaryPositionEmbedding(height: 0, width: 0, tokenLengths: [32]))),
+          graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
+        ]
+        tEmb = nil
+      case .minimaxH3:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 2, 5_120), of: FloatType.self),
+          graph.variable(.CPU, .HWC(1, 2, 256), of: FloatType.self),
+        ]
+        tEmb = nil
       case .longcatVideoAvatar1_5:
         crossattn = [
           graph.variable(.CPU, .HWC(1, 512, 4096), of: FloatType.self),
@@ -1569,8 +1676,16 @@ public final class ModelImporter {
             graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self)  // Llama encoder hidden states.
           }
         tEmb = nil
-      case .hiDreamO1, .qwenImage2_1, .minimaxH3:
+      case .hiDreamO1:
         fatalError()
+      case .qwenImage2_1:
+        crossattn = [
+          graph.variable(.CPU, .HWC(1, 128, 4096), of: FloatType.self),
+          graph.variable(.CPU, .WC(2, 256), of: FloatType.self),
+          graph.variable(.CPU, .NHWC(1, 132, 1, 128), of: FloatType.self),
+          graph.variable(.CPU, .WC(4, 64), of: FloatType.self),
+        ]
+        tEmb = nil
       case .qwenImage:
         crossattn =
           [
@@ -1816,6 +1931,17 @@ public final class ModelImporter {
             stateDict[String(key.dropFirst(6))] = value
           }
         }
+      } else if modelVersion == .qwenImage2_1 || modelVersion == .mossImage
+        || modelVersion == .minimaxH3
+      {
+        // Remove the model.diffusion_model / model prefix.
+        for (key, value) in stateDict {
+          if key.hasPrefix("model.diffusion_model.") {
+            stateDict[String(key.dropFirst(22))] = value
+          } else if key.hasPrefix("model.") {
+            stateDict[String(key.dropFirst(6))] = value
+          }
+        }
       }
       // In case it is not on high performance device and it is SDXL model, read the parameters directly from the mapping.
       if let unetReader = unetReader {
@@ -1892,12 +2018,55 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(.generativeModels)
             modelPrefix = "stage_c"
             modelPrefixFixed = "stage_c_fixed"
+          case .qwenImage2_1:
+            let inputs: [DynamicGraph.Tensor<FloatType>] =
+              [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+            unet.compile(inputs: inputs)
+            unetFixed.compile(inputs: crossattn)
+            var mapping = unetMapper(.diffusers)
+            // ComfyUI files pack the gate and up projections as one tensor, gate first.
+            for i in 0..<32 {
+              let prefix = "transformer_blocks.\(i).img_mlp"
+              guard let gate = mapping["\(prefix).gate_layer.weight"],
+                let up = mapping["\(prefix).proj.weight"]
+              else { continue }
+              mapping["\(prefix).gate_up.weight"] = ModelWeightElement(Array(gate) + Array(up))
+            }
+            UNetMapping = mapping
+            UNetMappingFixed = unetFixedMapper(.diffusers)
+            modelPrefix = "dit"
+            modelPrefixFixed = "dit"
+          case .mossImage:
+            var inputs: [DynamicGraph.AnyTensor] = [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
+            // The refined text and the modulations are in FP32.
+            inputs.append(graph.variable(.CPU, .HWC(1, 32, 3_072), of: Float.self))
+            inputs.append(
+              contentsOf: (0..<8).map { _ in
+                graph.variable(.CPU, .HWC(1, 1, 3_072), of: Float.self)
+              })
+            unet.compile(inputs: inputs)
+            unetFixed.compile(inputs: crossattn)
+            var mapping = unetMapper(.diffusers)
+            // ComfyUI files pack the query, key and value projections as one tensor.
+            for i in 0..<42 {
+              let prefix = "layers.\(i).proj"
+              guard let q = mapping["\(prefix).q.weight"], let k = mapping["\(prefix).k.weight"],
+                let v = mapping["\(prefix).v.weight"]
+              else { continue }
+              mapping["\(prefix).qkv.weight"] = ModelWeightElement(
+                Array(q) + Array(k) + Array(v), interleavedIndices: [0, 1],
+                numberOfHeads: q.numberOfHeads, headDimension: q.headDimension)
+            }
+            UNetMapping = mapping
+            UNetMappingFixed = unetFixedMapper(.diffusers)
+            modelPrefix = "dit"
+            modelPrefixFixed = "dit"
           case .pixart, .sd3, .sd3Large, .flux1, .hunyuanVideo, .wan21_14b, .wan21_1_3b, .hiDreamI1,
-            .hiDreamO1, .qwenImage2_1, .wan22_5b, .qwenImage, .cosmos2_5_2b,
+            .hiDreamO1, .wan22_5b, .qwenImage, .cosmos2_5_2b,
             .cosmos2_5_2_9b, .auraflow, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b,
-            .flux3_5b, .mossImage, .ltx2, .ltx2_3,
+            .flux3_5b, .ltx2, .ltx2_3,
             .longcatVideoAvatar1_5,
-            .ideogram4, .krea2:
+            .ideogram4, .krea2, .minimaxH3:
             let inputs: [DynamicGraph.Tensor<FloatType>] =
               [xTensor] + (tEmb.map { [$0] } ?? []) + cArr
             unet.compile(inputs: inputs)
@@ -1906,7 +2075,7 @@ public final class ModelImporter {
             UNetMappingFixed = unetFixedMapper(isDiffusersFormat ? .diffusers : .generativeModels)
             modelPrefix = "dit"
             modelPrefixFixed = "dit"
-          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b, .minimaxH3:
+          case .v1, .v2, .kandinsky21, .wurstchenStageB, .seedvr2_3b, .seedvr2_7b:
             fatalError()
           }
           func reverseMapping(original: ModelWeightMapping) -> [String: [String]] {
@@ -2177,7 +2346,13 @@ public final class ModelImporter {
       try graph.openStore(filePath) {
         switch modelVersion {
         case .mossImage:
-          fatalError()
+          if $0.keys.count != 524 {
+            throw Error.tensorWritesFailed
+          }
+        case .minimaxH3:
+          if $0.keys.count != 2_392 {
+            throw Error.tensorWritesFailed
+          }
         case .longcatVideoAvatar1_5:
           if $0.keys.count < 2_600 {
             throw Error.tensorWritesFailed
@@ -2244,8 +2419,12 @@ public final class ModelImporter {
           if $0.keys.count != 1857 {
             throw Error.tensorWritesFailed
           }
-        case .hiDreamO1, .qwenImage2_1, .minimaxH3:
+        case .hiDreamO1:
           fatalError()
+        case .qwenImage2_1:
+          if $0.keys.count != 300 {
+            throw Error.tensorWritesFailed
+          }
         case .wan22_5b:
           let count = $0.keys.count
           if count != 986 {
@@ -2462,8 +2641,6 @@ extension ModelImporter {
     let textEncoder: String?
 
     switch modelVersion {
-    case .mossImage:
-      fatalError()
     case .longcatVideoAvatar1_5:
       textEncoder = "umt5_xxl_encoder_q8p.ckpt"
     case .v1:
@@ -2542,7 +2719,9 @@ extension ModelImporter {
       t5Encoder = fileNames.first {
         $0.hasSuffix("_t5_xxl_encoder_f16.ckpt")
       }
-    case .hiDreamO1, .qwenImage2_1:
+    case .hiDreamO1:
+      textEncoder = nil
+    case .qwenImage2_1, .mossImage, .minimaxH3:
       textEncoder = nil
     case .wan22_5b:
       textEncoder = fileNames.first {
@@ -2599,7 +2778,7 @@ extension ModelImporter {
       clipEncoder = "\(fileName)_f16.ckpt"
     case .wurstchenStageC:
       textEncoder = nil
-    case .kandinsky21, .wurstchenStageB, .minimaxH3:
+    case .kandinsky21, .wurstchenStageB:
       fatalError()
     }
 
@@ -2621,7 +2800,26 @@ extension ModelImporter {
 
     switch modelVersion {
     case .mossImage:
-      fatalError()
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3.5_9b_i5x.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "flux_2_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
+      specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
+    case .minimaxH3:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_vl_32b_50_i8x.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "minimax_h3_vae_f16.ckpt"
+      }
+      specification.objective = .u(conditionScale: 1000)
+      specification.noiseDiscretization = .rf(
+        .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
     case .longcatVideoAvatar1_5:
       if specification.textEncoder == nil {
         specification.textEncoder = "umt5_xxl_encoder_q8p.ckpt"
@@ -2806,12 +3004,28 @@ extension ModelImporter {
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       // For HiDream, the hires fix trigger scale is 1.5 of the finetune scale.
       specification.hiresFixScale = (finetuneScale * 3 + 1) / 2
-    case .hiDreamO1, .qwenImage2_1:
+    case .hiDreamO1:
       specification.objective = .u(conditionScale: 1000)
       specification.noiseDiscretization = .rf(
         .init(sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000))
       specification.noiseScalingFactor = 7.5
       specification.paddedTextEncodingLength = 1024
+    case .qwenImage2_1:
+      if specification.textEncoder == nil {
+        specification.textEncoder = "qwen_3_vl_8b_instruct_i8x.ckpt"
+      }
+      if specification.autoencoder == nil {
+        specification.autoencoder = "qwen_image_2.1_vae_f16.ckpt"
+      }
+      specification.highPrecisionAutoencoder = true
+      specification.objective = .u(conditionScale: 1000)
+      // Turbo checkpoints have the same weights as the base model, but sample without the shift terminal.
+      specification.noiseDiscretization = .rf(
+        .init(
+          sigmaMin: 0, sigmaMax: 1, conditionScale: 1_000,
+          shiftTerminal: fileName.lowercased().contains("turbo") ? nil : 0.02))
+      // For Qwen Image 2.1, the hires fix trigger scale is 5/3 of the finetune scale.
+      specification.hiresFixScale = (finetuneScale * 5 + 1) / 3
     case .qwenImage:
       if specification.textEncoder == nil {
         specification.textEncoder = "qwen_2.5_vl_7b_q8p.ckpt"
@@ -2946,7 +3160,7 @@ extension ModelImporter {
       }
       // For FLUX.2, the hires fix trigger scale is 2 of the finetune scale.
       specification.hiresFixScale = finetuneScale * 2
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .minimaxH3:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b:
       fatalError()
     case .kandinsky21, .wurstchenStageB:
       fatalError()
