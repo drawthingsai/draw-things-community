@@ -32,7 +32,7 @@ final class LeanResourcesTests: XCTestCase {
       modules[name] = ["imports": imports, "files": files]
     }
     try JSONSerialization.data(withJSONObject: [
-      "schemaVersion": 1, "leanVersion": "4.34.0",
+      "schemaVersion": 1, "leanVersion": "4.35.0",
       "archiveSHA256": digest(Data(contentsOf: archiveURL)), "modules": modules,
     ]).write(to: manifestURL)
   }
@@ -148,7 +148,7 @@ final class LeanResourcesTests: XCTestCase {
   }
 
   func testWrongVersionIsRejected() throws {
-    try changeManifest { $0["leanVersion"] = "4.34.0-rc2" }
+    try changeManifest { $0["leanVersion"] = "4.35.0-rc4" }
     XCTAssertThrowsError(try resources())
   }
 

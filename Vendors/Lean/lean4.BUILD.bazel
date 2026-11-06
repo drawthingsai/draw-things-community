@@ -19,13 +19,20 @@ cc_library(
     hdrs = glob([
         "src/**/*.h",
     ]),
+    # src/runtime/mimalloc.cpp includes all of mimalloc; it must never replace
+    # the host allocator.
+    additional_compiler_inputs = ["@//Vendors/Lean:include/LeanAllocatorPolicy.h"],
     copts = [
+        "-include",
+        "$(location @//Vendors/Lean:include/LeanAllocatorPolicy.h)",
         "-std=c++20",
         "-O3",
         "-ffp-contract=off",
         "-fvisibility=hidden",
         "-fvisibility-inlines-hidden",
+        "-Wno-deprecated",
         "-Wno-deprecated-declarations",
+        "-Wno-unused-function",
         "-Wno-unused-parameter",
     ],
     defines = [

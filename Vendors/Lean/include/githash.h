@@ -1,4 +1,4 @@
 /* Generated from the pinned Lean source revision. */
 #pragma once
 
-#define LEAN_GITHASH "293d5d0c0c3f3dded4688b3ccd6a33939ac5102b"
+#define LEAN_GITHASH "eb6cafb7290e8bd5f2937522d8d804f58f02bafc"

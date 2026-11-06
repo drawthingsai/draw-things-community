@@ -17,9 +17,12 @@ def main():
     parser.add_argument("--archive", type=pathlib.Path, required=True)
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
     args = parser.parse_args()
+    # Lake imports the LeanExport.* library; LeanExport.olean itself is the
+    # leanexport executable's root and has no IR.
     oleans = sorted(
-        path for group in ("Init", "Std", "Lean", "Lake")
-        for path in [args.root / (group + ".olean"), *(args.root / group).rglob("*.olean")]
+        [args.root / (group + ".olean") for group in ("Init", "Std", "Lean", "Lake")]
+        + [path for group in ("Init", "Std", "Lean", "LeanExport", "Lake")
+           for path in (args.root / group).rglob("*.olean")]
     )
     with tempfile.TemporaryDirectory(prefix="lean-module-index-") as temporary:
         file_list = pathlib.Path(temporary) / "modules.txt"
