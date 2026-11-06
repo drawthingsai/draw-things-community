@@ -4,7 +4,7 @@ Local Code registers `z3_main` using the generic `ios_registerCommand("z3", z3_m
 
 ## Upstream reuse
 
-`@z3//:shell` compiles the pinned Z3 4.15.4 `src/shell` sources, including its original option parser, help, parameter handling, and SMT-LIB, DIMACS, optimization, Datalog, DRAT, and API-log frontends. There is no second argument parser or reduced SMT-LIB interpreter.
+`@z3//:shell` compiles the pinned Z3 4.16.0 `src/shell` sources, including its original option parser, help, parameter handling, and SMT-LIB, DIMACS, optimization, Datalog, DRAT, and API-log frontends. There is no second argument parser or reduced SMT-LIB interpreter.
 
 `embed.py` generates an adapted source tree during the build. It preserves literals/comments and mechanically redirects Z3's C++ streams and file streams, and replaces process exits with exceptions. Small version-checked edits handle the entry-point name, global state, signal handlers, and runtime ownership. Updating Z3 should include reviewing these adaptations; exact replacements fail the build if their source anchors drift.
 

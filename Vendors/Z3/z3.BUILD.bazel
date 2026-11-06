@@ -49,6 +49,7 @@ _GENERATED_HEADERS = [
     "generated/src/params/sat_params.hpp",
     "generated/src/params/seq_rewriter_params.hpp",
     "generated/src/params/sls_params.hpp",
+    "generated/src/params/smt_parallel_params.hpp",
     "generated/src/params/smt_params_helper.hpp",
     "generated/src/params/solver_params.hpp",
     "generated/src/params/tactic_params.hpp",

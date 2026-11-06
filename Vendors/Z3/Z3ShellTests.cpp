@@ -177,10 +177,10 @@ int main() {
   require(memoryLimit.status != 0, "memory limit returns an error");
   sat();
 
-  // API command IDs from the pinned 4.15.4 generated api_commands.cpp.
+  // API command IDs from the pinned 4.16.0 generated api_commands.cpp.
   // A replayed reset/finalize must not invalidate the live host context.
   auto replay =
-      run({"z3", "-in", "-log"}, "V \"4.15.4.0\"\nR\nC 413\nR\nC 414\n");
+      run({"z3", "-in", "-log"}, "V \"4.16.0.0\"\nR\nC 415\nR\nC 416\n");
   require(replay.status == 0, "API-log frontend: " + replay.error);
   sat();
 
