@@ -597,6 +597,21 @@ struct GenerateOutputOptions: ParsableArguments {
 
   @Option(name: .long, help: terminalImageProtocolHelp)
   var terminalImageProtocol: TerminalImageProtocol = .auto
+
+  @Option(
+    name: .customLong("preview-file"),
+    help: ArgumentHelp(
+      "Keep the latest sampling preview in this PNG file.",
+      discussion:
+        "The file is replaced atomically at every preview step. With batch size > 1 it shows the first image, and every image i (from 1) is also kept in <name>-<i>.<ext> next to it, written before the main file. Works with local and remote generation and together with -o. --disable-preview takes precedence."
+    ))
+  var previewFile: String?
+
+  @Flag(
+    name: .customLong("terminal-preview"),
+    help:
+      "Show the live sampling preview in supported terminals even with -o or a remote backend.")
+  var terminalPreview: Bool = false
 }
 
 struct GenerateExecutionOptions: ParsableArguments {
@@ -2208,12 +2223,13 @@ private final class LocalGenerationRunner {
     hints: [(ControlHintType, [(AnyTensor, Float)])] = [],
     fallbackAudio: Tensor<Float>? = nil,
     fileMapping: [String: String] = [:],
-    livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil
+    livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil,
+    previewFileWriter: TerminalImageRenderer.PreviewFileWriter? = nil
   ) throws -> GenerationRunResult {
     let tensorResult = try generateTensors(
       prompt: prompt, negativePrompt: negativePrompt, configuration: configuration,
       inputImage: inputImage, hints: hints, fileMapping: fileMapping,
-      livePreviewSession: livePreviewSession)
+      livePreviewSession: livePreviewSession, previewFileWriter: previewFileWriter)
     let outputPaths = try GenerationOutputWriter().saveOutputs(
       tensorResult.images, audio: tensorResult.audio?.first ?? fallbackAudio,
       outputPath: outputPath,
@@ -2225,7 +2241,8 @@ private final class LocalGenerationRunner {
     prompt: String, negativePrompt: String, configuration: GenerationConfiguration,
     inputImage: Tensor<FloatType>?, hints: [(ControlHintType, [(AnyTensor, Float)])] = [],
     fileMapping: [String: String] = [:],
-    livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil
+    livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil,
+    previewFileWriter: TerminalImageRenderer.PreviewFileWriter? = nil
   ) throws -> GenerationTensorResult {
     let context = self.context
     try context.checkCancellation()
@@ -2256,6 +2273,7 @@ private final class LocalGenerationRunner {
               }
               if let previewTensor {
                 livePreviewSession?.update(tensor: previewTensor)
+                previewFileWriter?.write(tensor: previewTensor)
               }
               return !context.isCancelled
             }
@@ -2807,7 +2825,9 @@ private final class RemoteGenerationRunner {
     outputPath: String,
     inputImage: Tensor<FloatType>?,
     hints: [(ControlHintType, [(AnyTensor, Float)])],
-    videoFormat: VideoExportFormat?
+    videoFormat: VideoExportFormat?,
+    livePreviewSession: TerminalImageRenderer.LivePreviewSession? = nil,
+    previewFileWriter: TerminalImageRenderer.PreviewFileWriter? = nil
   ) throws -> LocalGenerationRunner.GenerationRunResult {
     let context = self.context
     try context.checkCancellation()
@@ -2837,6 +2857,10 @@ private final class RemoteGenerationRunner {
           signpost: signpost, signposts: signposts, preview: previewTensor)
         timingTracker.record(signpost: signpost)
         self.updateProgress(progressPrinter, signpost: signpost, signposts: signposts)
+        if let previewTensor {
+          livePreviewSession?.update(tensor: previewTensor)
+          previewFileWriter?.write(tensor: previewTensor)
+        }
         return !context.isCancelled
       })
 
@@ -3279,6 +3303,74 @@ private enum TerminalImageRenderer {
         context: context, mode: mode, protocolChoice: protocolChoice,
         outputPixelSize: outputPixelSize,
         modelVersion: modelVersion)
+    }
+  }
+
+  /// Keeps the latest sampling preview in one PNG file (`--preview-file`), replaced atomically.
+  final class PreviewFileWriter {
+    private let context: DrawThingsCLIContext
+    private let fileURL: URL
+    private let modelVersion: ModelVersion
+    private var didReportWriteError = false
+    private(set) var writtenCount = 0
+    private(set) var batchImageCount = 0
+
+    private init(context: DrawThingsCLIContext, fileURL: URL, modelVersion: ModelVersion) {
+      self.context = context
+      self.fileURL = fileURL
+      self.modelVersion = modelVersion
+    }
+
+    var path: String { fileURL.path }
+
+    /// `<name>-<i>.<ext>` (i from 1) next to the main file, one per batch image.
+    func imageFileURL(index: Int) -> URL {
+      let ext = fileURL.pathExtension
+      let stem = fileURL.deletingPathExtension().lastPathComponent
+      return fileURL.deletingLastPathComponent().appendingPathComponent(
+        ext.isEmpty ? "\(stem)-\(index)" : "\(stem)-\(index).\(ext)")
+    }
+
+    /// Writes the first image to the main file. With a batch (batch size > 1) every image i also
+    /// goes to `<name>-<i>.<ext>`; those are written before the main file, so a changed main file
+    /// means the whole set is current. The decoder already decodes the whole batch at once.
+    func write(tensor: Tensor<FloatType>) {
+      let previewImages = ImageConverter.cgImages(
+        fromLatent: tensor, canUseTAESD: true, version: modelVersion)
+      guard let previewImage = previewImages.0.first,
+        let data = TerminalImageRenderer.pngData(from: previewImage)
+      else { return }
+      do {
+        if previewImages.0.count > 1 {
+          for (offset, image) in previewImages.0.enumerated() {
+            guard let imageData = offset == 0 ? data : TerminalImageRenderer.pngData(from: image)
+            else { continue }
+            try imageData.write(to: imageFileURL(index: offset + 1), options: .atomic)
+          }
+          batchImageCount = previewImages.0.count
+        }
+        // .atomic writes a temporary file and renames it: readers never see a partial PNG.
+        try data.write(to: fileURL, options: .atomic)
+        writtenCount += 1
+      } catch {
+        if !didReportWriteError {
+          didReportWriteError = true
+          TerminalImageRenderer.write(
+            context: context, "Preview write failed: \(error.localizedDescription)\n",
+            to: .standardError)
+        }
+      }
+    }
+
+    fileprivate static func make(
+      context: DrawThingsCLIContext, path: String, configuration: GenerationConfiguration
+    ) throws -> PreviewFileWriter {
+      let fileURL = URL(fileURLWithPath: path)
+      try FileManager.default.createDirectory(
+        at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+      return PreviewFileWriter(
+        context: context, fileURL: fileURL,
+        modelVersion: ModelZoo.versionForModel(configuration.model ?? ""))
     }
   }
 
@@ -4450,7 +4542,30 @@ extension DrawThingsCLI {
         backend.cloudCompute
           ? "Backend: cloud-compute" : backend.remote ? "Backend: remote" : "Backend: local")
       let livePreviewEnabled =
-        !backend.isRemoteOrCloud && !writesOutputFile && !execution.disablePreview
+        !execution.disablePreview
+        && (output.terminalPreview || (!backend.isRemoteOrCloud && !writesOutputFile))
+      // --terminal-preview must not depend on the final-image mode (disabled with -o).
+      let livePreviewMode: TerminalImageRenderMode =
+        terminalImageMode == .disabled && output.terminalPreview ? .automatic : terminalImageMode
+      var previewFileWriter: TerminalImageRenderer.PreviewFileWriter? = nil
+      if let previewFile = output.previewFile {
+        if execution.disablePreview {
+          context.write("Preview file ignored: --disable-preview is set.\n", to: .standardError)
+        } else {
+          previewFileWriter = try TerminalImageRenderer.PreviewFileWriter.make(
+            context: context, path: previewFile, configuration: configuration)
+        }
+      }
+      defer {
+        if let previewFileWriter {
+          let perImage =
+            previewFileWriter.batchImageCount > 1
+            ? ", per image: \(previewFileWriter.imageFileURL(index: 1).lastPathComponent) .. \(previewFileWriter.imageFileURL(index: previewFileWriter.batchImageCount).lastPathComponent)"
+            : ""
+          context.print(
+            "Preview file: \(previewFileWriter.path) (\(previewFileWriter.writtenCount) updates\(perImage))")
+        }
+      }
 
       var files = requiredFiles(for: configuration)
       var fileMapping = [String: String]()
@@ -4523,6 +4638,15 @@ extension DrawThingsCLI {
 
       if backend.isRemoteOrCloud {
         let runner = RemoteGenerationRunner(context: context, backendOptions: backend)
+        let remoteLivePreviewSession =
+          livePreviewEnabled
+          ? TerminalImageRenderer.LivePreviewSession.make(
+            context: context, mode: livePreviewMode,
+            protocolChoice: output.terminalImageProtocol, configuration: configuration)
+          : nil
+        defer {
+          remoteLivePreviewSession?.finish()
+        }
         let result = try runner.generate(
           prompt: promptValues.prompt,
           negativePrompt: resolvedNegativePrompt,
@@ -4530,8 +4654,11 @@ extension DrawThingsCLI {
           outputPath: outputPath,
           inputImage: canvasImage,
           hints: hints,
-          videoFormat: output.videoFormat
+          videoFormat: output.videoFormat,
+          livePreviewSession: remoteLivePreviewSession,
+          previewFileWriter: previewFileWriter
         )
+        remoteLivePreviewSession?.finish()
         defer {
           if !writesOutputFile {
             for path in result.outputPaths {
@@ -4574,7 +4701,7 @@ extension DrawThingsCLI {
       let livePreviewSession =
         livePreviewEnabled
         ? TerminalImageRenderer.LivePreviewSession.make(
-          context: context, mode: terminalImageMode, protocolChoice: output.terminalImageProtocol,
+          context: context, mode: livePreviewMode, protocolChoice: output.terminalImageProtocol,
           configuration: configuration)
         : nil
       defer {
@@ -4589,9 +4716,10 @@ extension DrawThingsCLI {
         configuration: configuration, outputPath: outputPath, inputImage: canvasImage,
         videoFormat: output.videoFormat, hints: hints, fallbackAudio: fallbackAudio,
         fileMapping: fileMapping,
-        livePreviewSession: livePreviewSession)
+        livePreviewSession: livePreviewSession, previewFileWriter: previewFileWriter)
+      // With only --terminal-preview (final-image mode disabled), keep the last preview frame.
       let renderedFinalImageInPlace =
-        livePreviewSession.flatMap { session in
+        (terminalImageMode == .disabled ? nil : livePreviewSession).flatMap { session in
           result.outputPaths.first.flatMap { path in
             try? session.renderFinalImage(path: path)
           }
