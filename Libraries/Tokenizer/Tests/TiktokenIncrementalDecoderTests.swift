@@ -141,4 +141,36 @@ final class TiktokenIncrementalDecoderTests: XCTestCase {
       tokenizer.tokenize(text: "<|im_start|>a  b<|im_end|>\u{338}").0,
       [248_045, 64, 220, 292, 248_046, 136, 116])
   }
+
+  func testSplitSpecialTokensTokenizesThemAsText() {
+    let deepSeek = TiktokenTokenizer(
+      vocabulary: BinaryResources.vocab_deepseek4_json,
+      merges: BinaryResources.merges_deepseek4_txt,
+      specialTokens: [
+        "<｜begin▁of▁sentence｜>": 0,
+        "<｜end▁of▁sentence｜>": 1,
+        "<｜▁pad▁｜>": 2,
+      ],
+      unknownToken: "<｜▁pad▁｜>", startToken: "<｜begin▁of▁sentence｜>",
+      endToken: "<｜end▁of▁sentence｜>", pretokenizer: .joyAI, splitSpecialTokens: true)
+    let qwen = TiktokenTokenizer(
+      vocabulary: BinaryResources.vocab_qwen3_5_json,
+      merges: BinaryResources.merges_qwen3_5_txt,
+      specialTokens: ["<|endoftext|>": 248_044], unknownToken: "<|endoftext|>",
+      startToken: "<|endoftext|>", endToken: "<|endoftext|>", pretokenizer: .qwen3_5,
+      splitSpecialTokens: true)
+    for (tokenizer, text, specialIds) in [
+      (deepSeek, "<｜begin▁of▁sentence｜>OK<｜end▁of▁sentence｜><｜▁pad▁｜>", Set<Int32>([0, 1, 2])),
+      (qwen, "a <|endoftext|> b<|endoftext|>", Set<Int32>([248_044])),
+    ] {
+      let tokens = tokenizer.tokenize(text: text).0
+      XCTAssertTrue(specialIds.isDisjoint(with: tokens), "\(text) produced a special token")
+      XCTAssertEqual(tokenizer.decode(tokens), text)
+    }
+    // Special tokens still decode, and the start token is still added on request.
+    XCTAssertEqual(
+      deepSeek.decode([0, 11_932, 1]), "<｜begin▁of▁sentence｜>OK<｜end▁of▁sentence｜>")
+    XCTAssertEqual(deepSeek.tokenize(text: "OK", addSpecialTokens: true).0, [0, 11_932])
+    XCTAssertEqual([deepSeek.unknownToken, deepSeek.startToken, deepSeek.endToken], [2, 0, 1])
+  }
 }

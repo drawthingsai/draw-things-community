@@ -32,11 +32,14 @@ public struct TiktokenTokenizer {
 
   // `ignoreMerges` mirrors tokenizer.json `model.ignore_merges`: a pretoken found in the
   // vocabulary is emitted as one token without running BPE merges.
+  // `splitSpecialTokens` mirrors Hugging Face `split_special_tokens`: text that spells a special
+  // token is tokenized as ordinary text. Special tokens still decode, and the unknown, start and
+  // end tokens still resolve.
   public init(
     vocabulary: Data, merges: Data, specialTokens: [String: Int32] = [:],
     unknownToken: String = "<|endoftext|>", startToken: String = "<|endoftext|>",
     endToken: String = "<|endoftext|>", pretokenizer: Pretokenizer = .llama3,
-    ignoreMerges: Bool = false
+    ignoreMerges: Bool = false, splitSpecialTokens: Bool = false
   ) {
     let jsonVocabulary = try! JSONDecoder().decode([String: Int32].self, from: vocabulary)
     var decoder = [Int32: Data]()
@@ -71,7 +74,7 @@ public struct TiktokenTokenizer {
           second: Self.unicodeToBytes(String(splits[1])))] = i
     }
     self.bpeRanks = bpeRanks
-    if specialTokens.isEmpty {
+    if specialTokens.isEmpty || splitSpecialTokens {
       specialTokensRegex = nil
     } else {
       if #available(iOS 16.0, macOS 13.0, *) {
@@ -91,7 +94,7 @@ public struct TiktokenTokenizer {
     specialTokenStrings.insert(unknownToken)
     specialTokenStrings.insert(startToken)
     specialTokenStrings.insert(endToken)
-    self.specialTokenStrings = Array(specialTokenStrings)
+    self.specialTokenStrings = splitSpecialTokens ? [] : Array(specialTokenStrings)
     let unknownToken = unknownToken.data(using: .utf8)!
     let startToken = startToken.data(using: .utf8)!
     let endToken = endToken.data(using: .utf8)!
@@ -105,7 +108,7 @@ public struct TiktokenTokenizer {
     specialTokens.insert(unknownToken)
     specialTokens.insert(startToken)
     specialTokens.insert(endToken)
-    self.specialTokens = Array(specialTokens)
+    self.specialTokens = splitSpecialTokens ? [] : Array(specialTokens)
     self.pretokenizer = pretokenizer
     self.ignoreMerges = ignoreMerges
   }
