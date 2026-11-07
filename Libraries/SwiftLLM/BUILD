@@ -59,3 +59,12 @@ swift_test(
         "@s4nnc//nnc",
     ],
 )
+
+swift_test(
+    name = "GLM5_3IndexerTests",
+    srcs = ["Tests/GLM5_3IndexerTests.swift"],
+    deps = [
+        ":SwiftLLM",
+        "@s4nnc//nnc",
+    ],
+)

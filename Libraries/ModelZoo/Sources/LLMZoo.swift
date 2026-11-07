@@ -88,6 +88,11 @@ public struct LLMZoo: DownloadZoo {
         "A fast, powerful text-only model. Thrives on long-horizon, more complex problems, in coding and beyond."
     ),
     Specification(
+      name: "GLM 5.3 Flash (2-bit S)", file: "glm_5.3_flash_i2x.ckpt",
+      version: .glm_5_3_flash, huggingFaceLink: "zai-org/GLM-5.3-Flash",
+      note: "A coding model with a 256K context window. Text input is supported."
+    ),
+    Specification(
       name: "Qwen 3.6 27B (4-bit S)", file: "qwen_3.6_27b_i4x.ckpt",
       version: .qwen_3_5_27b, deprecated: true),
     Specification(
@@ -211,6 +216,8 @@ public struct LLMZoo: DownloadZoo {
       return "Qwen, from Alibaba Group"
     case .deepseek_4_flash, .deepseek_4_1_flash:
       return "DeepSeek AI"
+    case .glm_5_3_flash:
+      return "Z.ai"
     }
   }
 

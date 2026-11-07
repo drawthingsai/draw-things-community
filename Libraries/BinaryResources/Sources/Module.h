@@ -4,6 +4,8 @@
 #include "Libraries/BinaryResources/vocab_16e6_generated.h"
 #include "Libraries/BinaryResources/vocab_deepseek4_generated.h"
 #include "Libraries/BinaryResources/merges_deepseek4_generated.h"
+#include "Libraries/BinaryResources/vocab_glm5_generated.h"
+#include "Libraries/BinaryResources/merges_glm5_generated.h"
 #include "Libraries/BinaryResources/chatglm3.spiece_generated.h"
 #include "Libraries/BinaryResources/pile_t5.spiece_generated.h"
 #include "Libraries/BinaryResources/t5.spiece_generated.h"

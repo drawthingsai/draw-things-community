@@ -2,6 +2,18 @@ import ModelZoo
 import XCTest
 
 final class ModelZooTests: XCTestCase {
+  func testLLMGLM53FlashCatalogAndEncoding() throws {
+    let specification = try XCTUnwrap(LLMZoo.specificationForModel("glm_5.3_flash_i2x.ckpt"))
+    XCTAssertEqual(specification.version.rawValue, "glm_5.3_flash")
+    XCTAssertEqual(specification.requiredFiles, [specification.file])
+    XCTAssertNil(specification.draftFile)
+    XCTAssertEqual(LLMZoo.subtitleForModel(specification.file), "Z.ai")
+    XCTAssertEqual(
+      try JSONDecoder().decode(
+        LLMZoo.Specification.self,
+        from: JSONEncoder().encode(specification)), specification)
+  }
+
   func testLLMDownloadRequiresEngramWithoutChangingPerFileChecks() {
     let file = "\(UUID().uuidString).ckpt"
     let engram = "\(UUID().uuidString).engram"

@@ -6,4 +6,5 @@ public enum LLMVersion: String, Codable, Hashable {
   case qwen_3_5_27b = "qwen_3.5_27b"
   case deepseek_4_1_flash = "deepseek_4.1_flash"
   case deepseek_4_flash = "deepseek_4_flash"
+  case glm_5_3_flash = "glm_5.3_flash"
 }

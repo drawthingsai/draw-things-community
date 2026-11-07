@@ -230,8 +230,9 @@ public func GLM5_3Indexer<FloatType: TensorNumeric>(
   let probabilities = (logits + ape).transposed(1, 2).contiguous()
     .reshaped([newPools * dim, pool]).softmax().reshaped([newPools, dim, pool])
   let pooledWrite = (probabilities .* keys.transposed(1, 2).contiguous())
-    .reduced(.sum, axis: [2]).reshaped(.WC(newPools, dim)).moved(
-      to: pooledCache.reshaped(.WC(newPools, dim), offset: [firstPool, 0], strides: [dim, 1]),
+    .reduced(.sum, axis: [2]).reshaped([newPools, dim], format: .NHWC).moved(
+      to: pooledCache.reshaped(
+        [newPools, dim], offset: [firstPool, 0], strides: [dim, 1], format: .NHWC),
       flags: [.disableOpt])
   let pooled = pooledCache.reshaped([pools, dim], offset: [0, 0], strides: [dim, 1])
   pooled.add(dependencies: [pooledWrite])
