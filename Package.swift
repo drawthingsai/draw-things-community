@@ -529,6 +529,17 @@ let package = Package(
       exclude: ["Executable", "IOSSystem", "Tests"],
       sources: ["DrawThingsCLI.swift", "DrawThingsCLIContext.swift"]
     ),
+    .testTarget(
+      name: "DrawThingsCLIInvocationTests",
+      dependencies: [
+        "DrawThingsCLILib", "CLICloudAuth", "Diffusion", "Downloader", "ImageGenerator", "ModelZoo",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "NNC", package: "s4nnc"),
+      ],
+      path: "Apps/DrawThingsCLI/Tests",
+      exclude: ["DrawThingsCLICommandTests.swift", "run-tests.sh"],
+      sources: ["DrawThingsCLIInvocationTests.swift"]
+    ),
     .executableTarget(
       name: "DrawThingsCLI",
       dependencies: ["DrawThingsCLILib"],

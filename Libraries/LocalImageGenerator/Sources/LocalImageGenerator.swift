@@ -1151,14 +1151,14 @@ extension LocalImageGenerator {
       hints.first(where: { $0.0 == .pose })?.1 as? [(Tensor<FloatType>, Float)] ?? []
 
     let audioHint = hints.first(where: { $0.0 == .audio })?.1 ?? []
-    // Audio hints carry one Float32 PCM tensor in [channels, samples] order, resampled to
-    // ModelZoo.audioSampleRateForModel. Feature tensors stay inside the model-specific path.
-    let audio = audioHint.first?.0 as? Tensor<Float>
-    if !audioHint.isEmpty {
-      guard audioHint.count == 1, let audio, audio.kind == .CPU, audio.shape.count == 2,
-        audio.shape[0] > 0, audio.shape[1] > 0
-      else { return (nil, nil, 1) }
-    }
+    // Each audio hint is a separate Float32 PCM reference in [channels, samples] order,
+    // resampled to ModelZoo.audioSampleRateForModel. Encoding stays model-specific.
+    let audio = audioHint.compactMap { $0.0 as? Tensor<Float> }
+    guard audio.count == audioHint.count,
+      audio.allSatisfy({
+        $0.kind == .CPU && $0.shape.count == 2 && $0.shape[0] > 0 && $0.shape[1] > 0
+      })
+    else { return (nil, nil, 1) }
 
     let hints: [ControlHintType: AnyTensor] = hints.reduce(into: [:]) { dict, hint in
       if hint.0 != .depth, hint.0 != .custom, hint.0 != .shuffle, hint.0 != .pose,
@@ -1173,11 +1173,13 @@ extension LocalImageGenerator {
         ModelZoo.isModelDownloaded($0) ? $0 : nil
       }) ?? ModelZoo.defaultSpecification.file
     let modelVersion = ModelZoo.versionForModel(file)
-    if audio != nil || audioContext != nil {
+    if !audio.isEmpty || audioContext != nil {
       guard mask == nil else { return (nil, nil, 1) }
       switch modelVersion {
       case .longcatVideoAvatar1_5:
-        guard image != nil, configuration.guidanceScale == 1 else { return (nil, nil, 1) }
+        guard audio.count <= 1, image != nil, configuration.guidanceScale == 1 else {
+          return (nil, nil, 1)
+        }
       case .minimaxH3:
         guard
           ImageGeneratorUtils.modifierForModel(
@@ -1213,16 +1215,15 @@ extension LocalImageGenerator {
       shift = Double(configuration.shift)
     }
     let sampling = Sampling(steps: Int(configuration.steps), shift: shift)
-    let audioContext =
-      audioContext
-      ?? audio.map { waveform in
-        let encoderFilePath = ModelZoo.audioEncoderForModel(file).map {
-          fileMapping[$0] ?? ModelZoo.filePathForModelDownloaded($0)
-        }
-        return AudioConditioningContext(
-          waveform: waveform, encoderFilePath: encoderFilePath,
-          videoFrames: Int(configuration.numFrames))
+    var audioContext = audioContext
+    if audioContext == nil && !audio.isEmpty {
+      let encoderFilePath = ModelZoo.audioEncoderForModel(file).map {
+        fileMapping[$0] ?? ModelZoo.filePathForModelDownloaded($0)
       }
+      audioContext = AudioConditioningContext(
+        waveforms: audio, encoderFilePath: encoderFilePath,
+        videoFrames: Int(configuration.numFrames))
+    }
     // Audio-conditioned LongCat and H3 Ref2VA treat images as references and start from full noise.
     if let audioContext {
       return generateTextOnly(
@@ -4475,7 +4476,7 @@ extension LocalImageGenerator {
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil,
       t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil,
-      images: (image == nil ? 0 : 1) + shuffles.count, audios: audio == nil ? 0 : 1
+      images: (image == nil ? 0 : 1) + shuffles.count, audios: audio?.waveforms.count ?? 0
     )
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(

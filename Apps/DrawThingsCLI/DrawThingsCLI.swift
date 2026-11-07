@@ -568,8 +568,10 @@ struct GenerateImageInputOptions: ParsableArguments {
 
   @Option(
     name: .long,
-    help: "Audio file for LongCat driving audio or MiniMax H3 Ref2VA native audio references.")
-  var audio: String?
+    help:
+      "Audio file for LongCat driving audio or MiniMax H3 Ref2VA native audio references. Repeat --audio for multiple H3 references, in order."
+  )
+  var audio: [String] = []
 
   @Option(
     name: .customLong("audio-encoder-file"),
@@ -4332,7 +4334,7 @@ extension DrawThingsCLI {
         try runLongCatAvatarAVC(context: context, imagePaths: imagePaths)
         return
       }
-      if imageInput.audio != nil && backend.isRemoteOrCloud {
+      if !imageInput.audio.isEmpty && backend.isRemoteOrCloud {
         throw ValidationError("--audio currently supports only local generation.")
       }
       if avc.segmentFrames != nil || avc.condFrames != nil || avc.zeroAudioFeatures {
@@ -4374,6 +4376,10 @@ extension DrawThingsCLI {
       else {
         printModelResolutionHelp(context: context, modelsDirectory: modelsDirectory)
         throw unresolvedModelValidationError(model)
+      }
+
+      if modelSpecification.version == .longcatVideoAvatar1_5, imageInput.audio.count > 1 {
+        throw ValidationError("LongCat-Video-Avatar accepts exactly one --audio.")
       }
 
       let imageSizes = try imagePaths.map(inputImageSize(path:))
@@ -4419,7 +4425,7 @@ extension DrawThingsCLI {
       // Explicit backends and local-only requests never consult the account.
       let outputExtension = URL(fileURLWithPath: outputPath).pathExtension.lowercased()
       if !backend.local && !backend.isRemoteOrCloud && !execution.offline,
-        imageInput.audio == nil, output.videoFormat == nil,
+        imageInput.audio.isEmpty, output.videoFormat == nil,
         outputExtension.isEmpty || outputExtension == "png",
         !ImageGeneratorUtils.isVideoModel(modelSpecification.version),
         ModelZoo.isBuiltinModel(modelSpecification.file),
@@ -4454,7 +4460,7 @@ extension DrawThingsCLI {
 
       var files = requiredFiles(for: configuration)
       var fileMapping = [String: String]()
-      if imageInput.audio != nil {
+      if !imageInput.audio.isEmpty {
         guard let defaultEncoder = ModelZoo.audioEncoderForModel(modelSpecification.file) else {
           throw ValidationError("--audio supports LongCat-Video-Avatar 1.5 and MiniMax H3 Ref2VA.")
         }
@@ -4469,7 +4475,7 @@ extension DrawThingsCLI {
         fileMapping[defaultEncoder] = modelsDirectory.appendingPathComponent(encoderFile).path
       }
 
-      if imageInput.audio != nil && canvasIndex == nil
+      if !imageInput.audio.isEmpty && canvasIndex == nil
         && modelSpecification.version == .longcatVideoAvatar1_5
       {
         throw ValidationError(
@@ -4553,9 +4559,9 @@ extension DrawThingsCLI {
         return
       }
 
-      var audio: Tensor<Float>? = nil
+      var audio = [Tensor<Float>]()
       var fallbackAudio: Tensor<Float>? = nil
-      if let audioPath = imageInput.audio {
+      for audioPath in imageInput.audio {
         let fps = max(
           Int(ModelZoo.framesPerSecondForModel(configuration.model ?? "").rounded()), 1)
         let videoFrames = max(Int(configuration.numFrames), 1)
@@ -4563,7 +4569,7 @@ extension DrawThingsCLI {
           contentsOf: audioPath,
           sampleRate: ModelZoo.audioSampleRateForModel(configuration.model ?? ""))
         context.print("Loading audio: \(audioPath)")
-        audio = audioInput.waveform
+        audio.append(audioInput.waveform)
         if modelSpecification.version == .longcatVideoAvatar1_5 {
           // LongCat outputs silent video; H3 generates its own audio from the reference.
           fallbackAudio = audioInput.waveformTensor(
@@ -4580,8 +4586,8 @@ extension DrawThingsCLI {
       defer {
         livePreviewSession?.finish()
       }
-      if let audio {
-        hints.append((.audio, [(audio as AnyTensor, Float(1))]))
+      if !audio.isEmpty {
+        hints.append((.audio, audio.map { ($0 as AnyTensor, Float(1)) }))
       }
       context.print("Models directory: \(modelsDirectory.path)")
       let result = try runner.generate(
@@ -4782,6 +4788,12 @@ extension DrawThingsCLI.Generate {
     guard imagePaths.count == 1 else {
       throw ValidationError("--avc accepts exactly one --image.")
     }
+    guard let audioPath = imageInput.audio.first else {
+      throw ValidationError("--audio is required with --avc.")
+    }
+    guard imageInput.audio.count == 1 else {
+      throw ValidationError("--avc accepts exactly one --audio.")
+    }
     let segmentFrames = avc.segmentFrames ?? 93
     let condFrames = avc.condFrames ?? 13
     guard segmentFrames > condFrames, condFrames > 0 else {
@@ -4862,9 +4874,6 @@ extension DrawThingsCLI.Generate {
       context: context,
       files, modelsDirectory: modelsDirectory, downloadMissing: execution.downloadMissing)
 
-    guard let audioPath = imageInput.audio else {
-      throw ValidationError("--audio is required with --avc.")
-    }
     let generationID = context.beginImageGeneration(
       name: modelSpecification.name, version: modelSpecification.version,
       prompt: promptValues.prompt,
