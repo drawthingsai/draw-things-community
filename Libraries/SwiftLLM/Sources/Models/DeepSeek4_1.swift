@@ -14,6 +14,9 @@ public struct DeepSeek4_1ModelConfiguration: Codable, Sendable {
   public var rotaryDim = 64
   public var rawWindow = 128
   public var expertCount = 384
+  /// Experts kept per layer by a pruned checkpoint (gate rows, bias and expert banks share one
+  /// compact index). Empty means every layer keeps `expertCount`.
+  public var layerExpertCounts: [Int] = []
   public var routedExperts = 6
   public var expertIntermediateSize = 2_304
   public var sharedIntermediateSize = 2_304
@@ -121,6 +124,10 @@ public struct DeepSeek4_1ModelConfiguration: Codable, Sendable {
   public init() {}
 
   public static let deepSeekV4_1Flash = DeepSeek4_1ModelConfiguration()
+
+  public func expertCount(layer: Int) -> Int {
+    layerExpertCounts.isEmpty ? expertCount : layerExpertCounts[layer]
+  }
   public var hcMixDim: Int { (2 + hcCount) * hcCount }
   public var attentionOutputLowDim: Int { attentionOutputGroups * attentionLowRank }
 
@@ -646,11 +653,12 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
   outputRouting: Bool = false, configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> (model: Model, bias: Model.Parameters) {
   precondition(tokenLength >= 0 && layerIndex >= 0 && layerIndex < configuration.layers)
+  let expertCount = configuration.expertCount(layer: layerIndex)
   let x = Input()
   let logits = Dense(
-    count: configuration.expertCount, noBias: true, name: "\(prefix).gate")(
+    count: expertCount, noBias: true, name: "\(prefix).gate")(
       x.to(FloatType.dataType))
-  let bias = Parameter<Float>(.GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.bias")
+  let bias = Parameter<Float>(.GPU(0), .C(expertCount), name: "\(prefix).gate.bias")
   // Routing widens FP16 logits itself and scores them in FP32 with the FP32 bias.
   let prepared = MoERouting(
     kth: configuration.routedExperts, weightScale: 1.5, normalizationEpsilon: 1e-20,
@@ -658,37 +666,37 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
   let pairs = tokenLength * configuration.routedExperts
   let shared: Model.IO
   let routed: Model.IO
-  if configuration.expertResidentSlots[layerIndex] == configuration.expertCount {
+  if configuration.expertResidentSlots[layerIndex] == expertCount {
     // The shared expert joins the routed decode dispatch with the routed experts' intermediate
     // width. Its gate and up weights follow theirs as `experts-0-2` and `experts-0-3`, which
     // loaders map to the checkpoint's `shared_experts-0-0` and `shared_experts-0-1`.
     precondition(configuration.sharedIntermediateSize == configuration.expertIntermediateSize)
     let hidden = SegmentedSwiGLU(
-      segments: configuration.expertCount, count: configuration.expertIntermediateSize,
+      segments: expertCount, count: configuration.expertIntermediateSize,
       clamp: 10, sharedExpertFused: true, name: "\(prefix).experts")([
         prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]), x,
       ])
     shared = Dense(
       count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")(hidden[1])
     routed = SegmentedDense(
-      segments: configuration.expertCount, count: configuration.hiddenSize, noBias: true,
+      segments: expertCount, count: configuration.hiddenSize, noBias: true,
       name: "\(prefix).experts.w2")(hidden[0], prepared[3], prepared[4])
   } else {
     precondition(configuration.expertResidentSlots[layerIndex] >= configuration.routedExperts)
     let gateWeight = Parameter<Float>(
       .GPU(0),
       .HWC(
-        configuration.expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
+        expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
       name: "\(prefix).experts.streaming_gate")()
     let upWeight = Parameter<Float>(
       .GPU(0),
       .HWC(
-        configuration.expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
+        expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
       name: "\(prefix).experts.streaming_up")()
     let downWeight = Parameter<Float>(
       .GPU(0),
       .HWC(
-        configuration.expertCount, configuration.hiddenSize, configuration.expertIntermediateSize),
+        expertCount, configuration.hiddenSize, configuration.expertIntermediateSize),
       name: "\(prefix).experts.w2")()
     let resident = MoEWeightStreaming(
       residentSlots: configuration.expertResidentSlots[layerIndex],

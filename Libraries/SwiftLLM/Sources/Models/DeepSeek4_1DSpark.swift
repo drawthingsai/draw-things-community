@@ -72,6 +72,8 @@ public func DeepSeek4_1DSpark<FloatType: TensorNumeric>(
   var stageConfiguration = configuration
   stageConfiguration.layers = configuration.layers + draft.stages
   stageConfiguration.expertCount = draft.expertCount
+  // Trunk pruning does not apply to the drafter's own experts.
+  stageConfiguration.layerExpertCounts = []
   stageConfiguration.routedExperts = draft.routedExperts
   stageConfiguration.expertResidentSlots = Array(
     repeating: draft.expertCount, count: stageConfiguration.layers)
