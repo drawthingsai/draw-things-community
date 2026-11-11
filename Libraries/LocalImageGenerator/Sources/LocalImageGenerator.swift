@@ -64,6 +64,11 @@ public struct LocalImageGenerator: ImageGenerator {
   public var tokenizerGemma3: SentencePieceTokenizer { tokenizerGemma3Factory() }
   let queue: DispatchQueue
   private let weightsCache: WeightsCache
+  /// When true, a batch (batchSize > 1) of an image model keeps one sampler loop over the whole
+  /// batch, but the model forward of every step runs image by image (SequentialBatchSampler):
+  /// text and reference images are encoded once, peak memory stays at the level of a single
+  /// image. Off by default; set by gRPCServerCLI --sequential-batch.
+  public static var isSequentialBatchEnabled = false
   public init(
     queue: DispatchQueue, configurations: FetchedResult<GenerationConfiguration>,
     workspace: Workspace,
@@ -109,6 +114,17 @@ public struct LocalImageGenerator: ImageGenerator {
 }
 
 extension LocalImageGenerator {
+  func sequentialBatchSamplerIfEnabled<FloatType: TensorNumeric & BinaryFloatingPoint>(
+    _ sampler: any Sampler<FloatType, UNetWrapper<FloatType>>,
+    configuration: GenerationConfiguration, version: ModelVersion
+  ) -> any Sampler<FloatType, UNetWrapper<FloatType>> {
+    let batchSize = Int(configuration.batchSize)
+    guard Self.isSequentialBatchEnabled, batchSize > 1,
+      !ImageGeneratorUtils.isVideoModel(version)
+    else { return sampler }
+    return SequentialBatchSampler(base: sampler, batchSize: batchSize)
+  }
+
   public static func sampler<FloatType: TensorNumeric & BinaryFloatingPoint>(
     from type: SamplerType, isCfgEnabled: Bool, filePath: String, modifier: SamplerModifier,
     version: ModelVersion, audioShiftRatio: Float, qkNorm: Bool, dualAttentionLayers: [Int],
@@ -4262,7 +4278,7 @@ extension LocalImageGenerator {
       ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let cfgZeroStar = CfgZeroStarConfiguration(
       isEnabled: configuration.cfgZeroStar, zeroInitSteps: Int(configuration.cfgZeroInitSteps))
-    let sampler = LocalImageGenerator.sampler(
+    let baseSampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion,
@@ -4288,6 +4304,8 @@ extension LocalImageGenerator {
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
+    let sampler = sequentialBatchSamplerIfEnabled(
+      baseSampler, configuration: configuration, version: modelVersion)
     let initTimestep = sampler.timestep(for: hiresFixStrength, sampling: sampling)
     let hiresFixEnabled =
       configuration.hiresFix && initTimestep.startStep > 0 && configuration.hiresFixStartWidth > 0
@@ -5127,7 +5145,7 @@ extension LocalImageGenerator {
         secondPassModelVersion = modelVersion
         secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(file)
       }
-      let secondPassSampler = LocalImageGenerator.sampler(
+      let secondPassBaseSampler = LocalImageGenerator.sampler(
         from: configuration.sampler, isCfgEnabled: isCfgEnabled,
         filePath: secondPassModelFilePath, modifier: modifier,
         version: secondPassModelVersion,
@@ -5153,6 +5171,8 @@ extension LocalImageGenerator {
         conditioning: conditioning, parameterization: denoiserParameterization,
         tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
         cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
+      let secondPassSampler = sequentialBatchSamplerIfEnabled(
+        secondPassBaseSampler, configuration: configuration, version: modelVersion)
       let startStep: (integral: Int, fractional: Float)
       let xEnc: DynamicGraph.Tensor<FloatType>
       let secondPassTextGuidance: Float
@@ -5654,7 +5674,7 @@ extension LocalImageGenerator {
       ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let cfgZeroStar = CfgZeroStarConfiguration(
       isEnabled: configuration.cfgZeroStar, zeroInitSteps: Int(configuration.cfgZeroInitSteps))
-    let sampler = LocalImageGenerator.sampler(
+    let baseSampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion,
@@ -5680,6 +5700,8 @@ extension LocalImageGenerator {
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
+    let sampler = sequentialBatchSamplerIfEnabled(
+      baseSampler, configuration: configuration, version: modelVersion)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     guard
       initTimestep.startStep > 0 || modelVersion == .svdI2v || modelVersion == .seedvr2_3b
@@ -6200,7 +6222,7 @@ extension LocalImageGenerator {
         let secondPassModelVersion = ModelVersion.wurstchenStageB
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
-        let secondPassSampler = LocalImageGenerator.sampler(
+        let secondPassBaseSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion,
@@ -6227,6 +6249,8 @@ extension LocalImageGenerator {
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self
         )
+        let secondPassSampler = sequentialBatchSamplerIfEnabled(
+          secondPassBaseSampler, configuration: configuration, version: modelVersion)
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize.0, startHeight: startHeight,
           startWidth: startWidth, channels: channels, seed: configuration.seed,
@@ -7256,7 +7280,7 @@ extension LocalImageGenerator {
       ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let cfgZeroStar = CfgZeroStarConfiguration(
       isEnabled: configuration.cfgZeroStar, zeroInitSteps: Int(configuration.cfgZeroInitSteps))
-    let sampler = LocalImageGenerator.sampler(
+    let baseSampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion,
@@ -7282,6 +7306,8 @@ extension LocalImageGenerator {
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
+    let sampler = sequentialBatchSamplerIfEnabled(
+      baseSampler, configuration: configuration, version: modelVersion)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
     if externalOnDemand
@@ -7678,7 +7704,7 @@ extension LocalImageGenerator {
         let secondPassModelVersion = ModelVersion.wurstchenStageB
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
-        let secondPassSampler = LocalImageGenerator.sampler(
+        let secondPassBaseSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion,
@@ -7705,6 +7731,8 @@ extension LocalImageGenerator {
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self
         )
+        let secondPassSampler = sequentialBatchSamplerIfEnabled(
+          secondPassBaseSampler, configuration: configuration, version: modelVersion)
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize.0, startHeight: startHeight,
           startWidth: startWidth, channels: channels, seed: configuration.seed,
@@ -8216,7 +8244,7 @@ extension LocalImageGenerator {
       ? (Int(configuration.causalInference), max(0, Int(configuration.causalInferencePad))) : (0, 0)
     let cfgZeroStar = CfgZeroStarConfiguration(
       isEnabled: configuration.cfgZeroStar, zeroInitSteps: Int(configuration.cfgZeroInitSteps))
-    let sampler = LocalImageGenerator.sampler(
+    let baseSampler = LocalImageGenerator.sampler(
       from: configuration.sampler, isCfgEnabled: isCfgEnabled,
       filePath: ModelZoo.filePathForModelDownloaded(file), modifier: modifier,
       version: modelVersion,
@@ -8242,6 +8270,8 @@ extension LocalImageGenerator {
       conditioning: conditioning, parameterization: denoiserParameterization,
       tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
       cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self)
+    let sampler = sequentialBatchSamplerIfEnabled(
+      baseSampler, configuration: configuration, version: modelVersion)
     let initTimestep = sampler.timestep(for: strength, sampling: sampling)
     let graph = DynamicGraph()
     if externalOnDemand
@@ -8775,7 +8805,7 @@ extension LocalImageGenerator {
         let secondPassModelVersion = ModelVersion.wurstchenStageB
         let secondPassModelFilePath = ModelZoo.filePathForModelDownloaded(
           ModelZoo.stageModelsForModel(file)[0])
-        let secondPassSampler = LocalImageGenerator.sampler(
+        let secondPassBaseSampler = LocalImageGenerator.sampler(
           from: configuration.sampler, isCfgEnabled: isCfgEnabled,
           filePath: secondPassModelFilePath, modifier: modifier,
           version: secondPassModelVersion,
@@ -8802,6 +8832,8 @@ extension LocalImageGenerator {
           tiledDiffusion: tiledDiffusion, teaCache: teaCache, causalInference: causalInference,
           cfgZeroStar: cfgZeroStar, isBF16: isBF16, weightsCache: weightsCache, of: FloatType.self
         )
+        let secondPassSampler = sequentialBatchSamplerIfEnabled(
+          secondPassBaseSampler, configuration: configuration, version: modelVersion)
         let noise = randomLatentNoise(
           graph: graph, batchSize: batchSize.0, startHeight: startHeight,
           startWidth: startWidth, channels: channels, seed: configuration.seed,

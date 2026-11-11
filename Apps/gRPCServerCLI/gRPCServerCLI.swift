@@ -370,6 +370,12 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Prefer to fread by overriding system preferences.")
   var freadPreferred = false
 
+  @Flag(
+    help:
+      "Run the model of every sampling step image by image for a batch (batch size > 1) instead of as one tensor batch: step 1 for all images, then step 2, and so on. Same noise and sampler as the tensor batch; the prompt and reference images are encoded once; peak memory stays close to a single image, at the cost of no batch speedup."
+  )
+  var sequentialBatch = false
+
   @Option(
     name: .long,
     help: "The directory where some cached files can be stored."
@@ -519,6 +525,9 @@ struct gRPCServerCLI: ParsableCommand {
     }
     if freadPreferred {
       DeviceCapability.isFreadPreferred = true  // This will not do mmap but use fread when needed.
+    }
+    if sequentialBatch {
+      LocalImageGenerator.isSequentialBatchEnabled = true
     }
     DeviceCapability.maxTotalWeightsCacheSize = UInt64(weightsCache) * 1_024 * 1_024 * 1_024
     try self.runAndBlock(
