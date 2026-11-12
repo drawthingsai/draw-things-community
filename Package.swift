@@ -887,6 +887,16 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       path: "Libraries/DataChannel/Sources"
     ),
     .target(
+      name: "DeviceLink",
+      dependencies: [
+        "DataChannel",
+        .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+      ],
+      path: "Libraries/DeviceLink",
+      exclude: ["BUILD", "Protos", "Tests"],
+      sources: ["Sources"]
+    ),
+    .target(
       name: "LocalCodeApp",
       dependencies: [
         "Advance",
