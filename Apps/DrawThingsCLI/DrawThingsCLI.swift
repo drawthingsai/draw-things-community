@@ -1591,6 +1591,27 @@ enum ModelDownloader {
   ) throws {
     let orderedUniqueFiles = orderedSet(files)
     let missing = orderedUniqueFiles.filter { !ModelZoo.isModelDownloaded($0) }
+    // A file can exist yet be unreadable, e.g. macOS App Data protection blocks reading another
+    // app's container. Without this check the models run with uninitialized weights and silently
+    // produce noise or gray images.
+    let unreadable = orderedUniqueFiles.filter { !missing.contains($0) }.compactMap {
+      file -> String? in
+      let path = ModelZoo.filePathForModelDownloaded(file)
+      let fd = open(path, O_RDONLY)
+      guard fd < 0 else {
+        close(fd)
+        return nil
+      }
+      return "  - \(path): \(String(cString: strerror(errno)))"
+    }
+    if !unreadable.isEmpty {
+      throw ValidationError(
+        "Model files exist but cannot be read:\n\(unreadable.joined(separator: "\n"))\n"
+          + "If they are inside another app's container (such as the Draw Things app), grant this "
+          + "terminal access to that app's data, or move the models to a folder outside the "
+          + "container and pass it with --models-dir."
+      )
+    }
     guard !missing.isEmpty else { return }
 
     if !downloadMissing {
