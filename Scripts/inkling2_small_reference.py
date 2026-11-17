@@ -16,7 +16,15 @@ a store converted with `--expert-codec i8x` can be compared without its quantiza
 `--emulate-a8` also rounds each expert input row to int8 (absmax / 127), as the segmented int8 GEMM
 does in prefill chunks of more than 48 tokens (smaller chunks and decode keep float activations).
 
-Requires torch, safetensors and transformers with inkling2.
+With `--image`, the prompt holds one `<|unused_200054|>`, which becomes one placeholder per image
+token as Inkling2Processor does. The official image processor and FP32 vision tower write
+`image_rgb.f32`, `pixel_values.f32` (the patches the patch embedding reads, `[4 * tokens, 1200]`),
+`vision.f32` and the grid in tokens.json, and the vision output replaces the placeholder embeddings as in Inkling2Model. `--layers 0` writes only these, so
+the checkpoint needs just the vision shard, `config.json`, `processor_config.json` and the
+tokenizer.
+
+Requires torch, safetensors and transformers with inkling2 (plus torchvision and Pillow for
+--image).
 """
 
 import argparse
@@ -184,6 +192,19 @@ def source_name(name: str) -> str:
     return f"{llm}layers.{layer}.{renames[rest]}"
 
 
+def vision_source_name(name: str) -> str:
+    """Checkpoint name of an Inkling2VisionModel parameter."""
+    if name.startswith("merger."):
+        return name.replace("merger.linear_1.", "model.visual.proj_in.").replace(
+            "merger.linear_2.", "model.visual.proj_out.")
+    return "model.visual.backbone." + (
+        name.replace("position_embedding.weight", "position_embedding")
+        .replace("pre_layernorm.", "ln_pre.").replace("layernorm_before.", "ln_1.")
+        .replace("layernorm_after.", "ln_2.").replace("mlp.fc1.", "mlp.c_fc.")
+        .replace("mlp.fc2.", "mlp.c_proj.").replace("lambda_1", "ls_1.gamma")
+        .replace("lambda_2", "ls_2.gamma"))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, required=True)
@@ -194,13 +215,63 @@ def main():
     parser.add_argument("--position-offset", type=int, default=0)
     parser.add_argument("--emulate-q8", action="store_true")
     parser.add_argument("--emulate-a8", action="store_true")
+    parser.add_argument("--image", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.layers == 0 and args.image is None:
+        parser.error("--layers 0 compares only the vision tower and needs --image")
     args.output.mkdir(parents=True, exist_ok=True)
     torch.set_grad_enabled(False)
 
     checkpoint = Checkpoint(args.checkpoint)
-    text = json.loads((args.checkpoint / "config.json").read_text())["text_config"]
+    full_config = json.loads((args.checkpoint / "config.json").read_text())
+    prompt = args.prompt_file.read_text() if args.prompt_file else args.prompt
+    tokenizer = Tokenizer.from_file(str(args.checkpoint / "tokenizer.json"))
+    tokens = tokenizer.encode(prompt).ids
+    if args.max_tokens:
+        tokens = tokens[: args.max_tokens]
+    meta = {"prompt": prompt, "tokens": tokens, "position_offset": args.position_offset}
+    image_embeds = None
+    if args.image is not None:
+        import numpy as np
+        from PIL import Image
+        from transformers.models.inkling2.configuration_inkling2 import Inkling2VisionConfig
+        from transformers.models.inkling2.image_processing_inkling2 import Inkling2ImageProcessor
+        from transformers.models.inkling2.modeling_inkling2 import Inkling2VisionModel
+
+        processor_config = json.loads((args.checkpoint / "processor_config.json").read_text())
+        settings = dict(processor_config["image_processor"])
+        settings.pop("image_processor_type")
+        image = Image.open(args.image)
+        processed = Inkling2ImageProcessor(**settings)(images=[image], return_tensors="pt")
+        rgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255
+        rgb.tofile(args.output / "image_rgb.f32")
+        meta["image_size"] = [image.height, image.width]
+        pixel_values, grid = processed["pixel_values"].float(), processed["image_grid_thw"]
+        vision_config = Inkling2VisionConfig(**full_config["vision_config"])
+        # Written as the patch embedding reads them: block-major patches, (row, column, channel).
+        merge, patch = vision_config.spatial_merge_size, vision_config.patch_size
+        pixel_values.reshape(-1, merge, patch, merge, patch, 3).transpose(2, 3).reshape(
+            -1, 3 * patch * patch).numpy().tofile(args.output / "pixel_values.f32")
+        vision_config._attn_implementation = "eager"
+        visual = Inkling2VisionModel(vision_config)
+        visual.load_state_dict(
+            {name: checkpoint.tensor(vision_source_name(name)) for name in visual.state_dict()}, strict=True)
+        visual = visual.float().eval()
+        image_embeds = visual(pixel_values, image_grid_thw=grid).pooler_output
+        image_embeds.numpy().tofile(args.output / "vision.f32")
+        image_token = tokenizer.token_to_id(processor_config["image_token"])
+        if tokens.count(image_token) != 1:
+            parser.error(f"the prompt needs one {processor_config['image_token']} where the image goes")
+        start, count = tokens.index(image_token), image_embeds.shape[0]
+        tokens = tokens[:start] + [image_token] * count + tokens[start + 1:]
+        meta.update(tokens=tokens, grid=grid[0, 1:].tolist(), image_tokens=[start, start + count])
+        print(f"image grid {grid[0].tolist()}: {count} tokens, vision rms={image_embeds.square().mean().sqrt():.4f}")
+    (args.output / "tokens.json").write_text(json.dumps(meta))
+    if args.layers == 0:
+        return
+
+    text = full_config["text_config"]
     renames = {"intermediate_size": "moe_intermediate_size", "sconv_kernel_size": "conv_kernel_size"}
     text_fields = {renames.get(key, key): value for key, value in text.items()}
     config = Inkling2TextConfig(
@@ -224,18 +295,15 @@ def main():
     model = model.float().eval()
     head = checkpoint.tensor("model.llm.unembed.weight")[: config.unpadded_vocab_size]
 
-    prompt = args.prompt_file.read_text() if args.prompt_file else args.prompt
-    tokens = Tokenizer.from_file(str(args.checkpoint / "tokenizer.json")).encode(prompt).ids
-    if args.max_tokens:
-        tokens = tokens[: args.max_tokens]
-    (args.output / "tokens.json").write_text(
-        json.dumps({"prompt": prompt, "tokens": tokens, "position_offset": args.position_offset}))
     outputs = {}
     for index, layer in enumerate(model.layers):
         layer.register_forward_hook(
             lambda module, inputs, output, index=index: outputs.__setitem__(index, output[0].contiguous()))
     positions = torch.arange(len(tokens))[None] + args.position_offset
-    hidden = model(input_ids=torch.tensor([tokens]), position_ids=positions, use_cache=False).last_hidden_state[0]
+    embeds = model.embed_tokens(torch.tensor([tokens]))
+    if image_embeds is not None:
+        embeds[0, start:start + count] = image_embeds
+    hidden = model(inputs_embeds=embeds, position_ids=positions, use_cache=False).last_hidden_state[0]
     for index, value in sorted(outputs.items()):
         value.numpy().tofile(args.output / f"layer_{index}.f32")
         print(f"layer {index}: {tuple(value.shape)} rms={value.square().mean().sqrt():.4f}")
