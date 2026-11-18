@@ -24,6 +24,12 @@ public enum BinaryResources {
   public static let vocab_glm5_json = Data(
     bytesNoCopy: C_Resources.vocab_glm5_json()!, count: C_Resources.vocab_glm5_json_size,
     deallocator: .none)
+  public static let merges_inkling2_txt = Data(
+    bytesNoCopy: C_Resources.merges_inkling2_txt()!, count: C_Resources.merges_inkling2_txt_size,
+    deallocator: .none)
+  public static let vocab_inkling2_json = Data(
+    bytesNoCopy: C_Resources.vocab_inkling2_json()!, count: C_Resources.vocab_inkling2_json_size,
+    deallocator: .none)
   public static let chatglm3_spiece_model = Data(
     bytesNoCopy: C_Resources.chatglm3_spiece_model()!,
     count: C_Resources.chatglm3_spiece_model_size,

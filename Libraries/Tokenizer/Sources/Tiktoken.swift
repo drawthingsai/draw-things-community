@@ -8,6 +8,7 @@ public struct TiktokenTokenizer {
     case joyAI
     case glm5
     case qwen3_5
+    case o200kBase
   }
 
   private struct Pair: Hashable, Equatable {
@@ -82,7 +83,7 @@ public struct TiktokenTokenizer {
         switch pretokenizer {
         case .llama3:
           specialTokensRegex = regex
-        case .joyAI, .glm5, .qwen3_5:
+        case .joyAI, .glm5, .qwen3_5, .o200kBase:
           // Hugging Face matches added tokens on raw text, even when a combining mark follows.
           specialTokensRegex = regex?.matchingSemantics(.unicodeScalar)
         }
@@ -390,6 +391,16 @@ public struct TiktokenTokenizer {
     return nil
   }()
 
+  // tiktoken's o200k_base pattern (Inkling 2's tokenizer.json splits with it).
+  private static let o200kBaseTokenRegex: Any? = {
+    if #available(iOS 16.0, macOS 13.0, *) {
+      return try? Regex(
+        #"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+"#
+      ).matchingSemantics(.unicodeScalar)
+    }
+    return nil
+  }()
+
   private static let qwen3_5TokenRegex: Any? = {
     if #available(iOS 16.0, macOS 13.0, *) {
       return try? Regex(
@@ -423,6 +434,8 @@ public struct TiktokenTokenizer {
         tokenRegexes = [Self.glm5TokenRegex]
       case .qwen3_5:
         tokenRegexes = [Self.qwen3_5TokenRegex]
+      case .o200kBase:
+        tokenRegexes = [Self.o200kBaseTokenRegex]
       }
       let regexes = tokenRegexes.compactMap { $0 as? Regex<AnyRegexOutput> }
       if !regexes.isEmpty && regexes.count == tokenRegexes.count {
@@ -490,7 +503,7 @@ public struct TiktokenTokenizer {
         normalizedText += " "
       }
       tokenizableText = normalizedText
-    case .joyAI, .glm5, .qwen3_5:
+    case .joyAI, .glm5, .qwen3_5, .o200kBase:
       tokenizableText = text
     }
     // Logic for r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+\r?\n*|\s*\r?\n+|\s+(?!\S)|\s+"""

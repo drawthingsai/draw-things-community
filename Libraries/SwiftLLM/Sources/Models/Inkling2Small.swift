@@ -1,6 +1,12 @@
 import Foundation
 import NNC
 
+#if canImport(SQLite3)
+  import SQLite3
+#else
+  import _SQLite3Shims
+#endif
+
 /// Inkling 2 Small text decoder: 48 layers of grouped-query attention, five sliding-window layers
 /// to each full-attention one, with a learned relative-position bias, per-token attention sinks,
 /// L2-clipped queries and keys, short causal convolutions around every sublayer, sigmoid-routed
@@ -35,6 +41,9 @@ public struct Inkling2SmallConfiguration: Codable, Sendable {
   public var upSoftcap: Float = 25
   public var routedScalingFactor: Float = 8
   public var logitSoftcap: Float = 30
+  /// Decode expert pool slots of each layer. A layer with fewer than `expertCount` streams its
+  /// routed experts through MoEWeightStreaming.
+  public var expertResidentSlots = Array(repeating: 384, count: 48)
 
   public init() {}
 
@@ -65,6 +74,11 @@ public struct Inkling2SmallConfiguration: Codable, Sendable {
   /// Whether the first `layers` layers include a full-attention layer.
   public var hasFullAttentionLayer: Bool { layers >= layersPerBlock }
 
+  /// Whether layer `layerIndex` streams its routed experts.
+  public func isStreamingLayer(_ layerIndex: Int) -> Bool {
+    expertResidentSlots[layerIndex] < expertCount
+  }
+
   /// Cached rows a chunk's attention reads: all of them in full-attention layers, the last
   /// `slidingWindow - 1` in sliding-window layers. A sliding-window cache may be bound with more
   /// (`cachedSlidingTokenLength`), so it only needs compacting once in a while.
@@ -77,6 +91,56 @@ public struct Inkling2SmallConfiguration: Codable, Sendable {
   public func logScale(position: Int) -> Float {
     1 + logScalingAlpha * Foundation.log(max(1, Float(position + 1) / Float(logScalingFloor)))
   }
+}
+
+/// How much of the checkpoint to map with `DynamicGraph.setWholeFileMappingSizeLimit`: up to the
+/// end of the last text tensor loaded whole, which is everything but the expert banks of streaming
+/// layers, so those stay out of the pinned mapping; 0 maps the whole checkpoint, and 1 (when the
+/// layout cannot be read) maps each tensor on its own. Tensors kept outside SQLite record their
+/// position past the trailer, whose start is the header's user version (GLM5_3ResidentMappingSize).
+public func Inkling2SmallResidentMappingSize(
+  checkpoint filePath: String, configuration: Inkling2SmallConfiguration
+) -> Int {
+  guard (0..<configuration.layers).contains(where: { configuration.isStreamingLayer($0) }) else {
+    return 0
+  }
+  var database: OpaquePointer?
+  defer { sqlite3_close(database) }
+  var trailer: OpaquePointer?
+  defer { sqlite3_finalize(trailer) }
+  var statement: OpaquePointer?
+  defer { sqlite3_finalize(statement) }
+  guard sqlite3_open_v2(filePath, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+    sqlite3_prepare_v2(database, "PRAGMA user_version", -1, &trailer, nil) == SQLITE_OK,
+    sqlite3_step(trailer) == SQLITE_ROW,
+    sqlite3_prepare_v2(database, "SELECT name, type, data FROM tensors", -1, &statement, nil)
+      == SQLITE_OK
+  else { return 1 }
+  let trailerOffset = Int(UInt32(truncatingIfNeeded: sqlite3_column_int64(trailer, 0)))
+  var end = 0
+  while sqlite3_step(statement) == SQLITE_ROW {
+    guard let name = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+      name.hasPrefix("__text_model__["),
+      (sqlite3_column_int64(statement, 1) >> 32) & 0x1000_0000 != 0,
+      let data = sqlite3_column_blob(statement, 2)
+    else { continue }
+    if name.contains(".mlp.experts"),
+      let layer = name.components(separatedBy: "layers.").last?.components(separatedBy: ".").first
+        .flatMap(Int.init), layer < configuration.layers, configuration.isStreamingLayer(layer)
+    {
+      continue
+    }
+    // Codecs with a block size lead with it, in a word of its own.
+    let bytes = Int(sqlite3_column_bytes(statement, 2))
+    guard bytes == 16 || bytes == 24 else { return 1 }
+    let offset = data.loadUnaligned(fromByteOffset: bytes - 16, as: UInt64.self)
+    let length = data.loadUnaligned(fromByteOffset: bytes - 8, as: UInt64.self)
+    end = max(end, trailerOffset + Int(offset) + Int(length))
+  }
+  // On Metal a tensor's buffer takes up whole pages, however short its stored bytes are, and
+  // has to fit inside the mapping. Elsewhere the limit is ignored.
+  let pageSize = Int(getpagesize())
+  return (end + pageSize - 1) & -pageSize
 }
 
 /// Full-attention log scales for a chunk's positions, `[T, 1]`.
@@ -200,8 +264,10 @@ public func Inkling2SmallAttention<FloatType: TensorNumeric>(
 /// the routing, whose outputs group the routed rows by expert (MoERouting: the rows, their
 /// weights, their tokens `[8T]`, and the experts of the groups with their row counts), and the
 /// weighted SwiGLU output of the rows, the input of the down projection `[8T, intermediate]`.
+/// With `residentSlots` below `expertCount`, the routed experts stream through a decode pool of
+/// that many slots: loaders read their banks as `.externalOnDemand`.
 public func Inkling2SmallMoE(
-  prefix: String, x: Model.IO, tokenLength: Int,
+  prefix: String, x: Model.IO, tokenLength: Int, residentSlots: Int? = nil,
   configuration: Inkling2SmallConfiguration = .inkling2Small
 ) -> (output: Model.IO, routing: Model.IO, hidden: Model.IO) {
   let logits = Dense(count: configuration.expertCount, noBias: true, name: "\(prefix).gate")(x)
@@ -211,15 +277,48 @@ public func Inkling2SmallMoE(
     kth: configuration.routedExperts, weightScale: configuration.routedScalingFactor,
     normalizationEpsilon: 1e-20, sigmoid: true, name: "\(prefix).routing")(logits, bias, x)
   let pairs = tokenLength * configuration.routedExperts
-  // The gate and up weights are `experts-0-0` and `experts-0-1`.
-  let hidden = SegmentedSwiGLU(
-    segments: configuration.expertCount, count: configuration.expertIntermediateSize,
-    gateSoftCap: configuration.gateSoftcap, upSoftCap: configuration.upSoftcap,
-    name: "\(prefix).experts")(
-      prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]))
-  let down = SegmentedDense(
-    segments: configuration.expertCount, count: configuration.hiddenSize, noBias: true,
-    name: "\(prefix).experts.down_proj")(hidden, prepared[3], prepared[4])
+  let experts = configuration.expertCount
+  let intermediate = configuration.expertIntermediateSize
+  let hidden: Model.IO
+  let down: Model.IO
+  if let residentSlots, residentSlots < experts {
+    precondition(residentSlots >= configuration.routedExperts)
+    // Loaders map `experts.streaming_gate` and `experts.streaming_up` to the stored gate and up
+    // banks, `experts-0-0` and `experts-0-1`.
+    let resident = MoEWeightStreaming(
+      residentSlots: residentSlots, routingWidth: configuration.routedExperts,
+      name: "\(prefix).expert_streaming")([
+        prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]),
+        Parameter<Float>(
+          .GPU(0), .HWC(experts, intermediate, configuration.hiddenSize),
+          name: "\(prefix).experts.streaming_gate")(),
+        Parameter<Float>(
+          .GPU(0), .HWC(experts, intermediate, configuration.hiddenSize),
+          name: "\(prefix).experts.streaming_up")(),
+        Parameter<Float>(
+          .GPU(0), .HWC(experts, configuration.hiddenSize, intermediate),
+          name: "\(prefix).experts.down_proj")(),
+      ])
+    hidden = SegmentedSwiGLU(
+      segments: 0, count: intermediate, gateSoftCap: configuration.gateSoftcap,
+      upSoftCap: configuration.upSoftcap, functional: true, name: "\(prefix).experts.functional")([
+        prepared[0], resident[0], resident[1], resident[3], resident[4], resident[2],
+      ])
+    down = SegmentedDense(
+      segments: 0, count: configuration.hiddenSize, noBias: true, functional: true,
+      name: "\(prefix).experts.functional.down_proj")([
+        hidden, resident[0], resident[1], resident[5],
+      ])
+  } else {
+    // The gate and up weights are `experts-0-0` and `experts-0-1`.
+    hidden = SegmentedSwiGLU(
+      segments: experts, count: intermediate, gateSoftCap: configuration.gateSoftcap,
+      upSoftCap: configuration.upSoftcap, name: "\(prefix).experts")(
+        prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]))
+    down = SegmentedDense(
+      segments: experts, count: configuration.hiddenSize, noBias: true,
+      name: "\(prefix).experts.down_proj")(hidden, prepared[3], prepared[4])
+  }
   let output = Functional.scatterAdd(
     count: tokenLength, countPerOutput: configuration.routedExperts, down, index: prepared[2]
   ).reshaped([tokenLength, configuration.hiddenSize])
@@ -287,7 +386,8 @@ public func Inkling2SmallLayer<FloatType: TensorNumeric>(
   let expertInput = RMSNorm(
     epsilon: epsilon, axis: [1], name: "\(prefix).post_attention_layernorm")(mlpInput)
   let moe = Inkling2SmallMoE(
-    prefix: "\(prefix).mlp", x: expertInput, tokenLength: T, configuration: configuration)
+    prefix: "\(prefix).mlp", x: expertInput, tokenLength: T,
+    residentSlots: configuration.expertResidentSlots[layerIndex], configuration: configuration)
   let afterMLP = CausalConvolution(kernelSize: kernel, name: "\(prefix).post_mlp_convolution")(
     moe.output, previousRows: inputs[5])
   let out = partial + afterMLP.output
@@ -304,15 +404,17 @@ public func Inkling2SmallLayer<FloatType: TensorNumeric>(
 /// cached rows the sliding-window caches are bound with, at least the last `slidingWindow - 1`
 /// and by default exactly those. Outputs: softcapped logits over the unpadded vocabulary for the
 /// last `logitTokenLength` tokens in the activation datatype, then each layer's partial block
-/// `[T, hidden]` when `outputResiduals` is set, then, when `outputExpertActivations` is set, five
-/// per layer as calibration reads them: the expert input `[T, hidden]`, the token of each routed
+/// `[T, hidden]` when `outputResiduals` is set, then per layer: when `outputExpertActivations` is
+/// set, five as calibration reads them: the expert input `[T, hidden]`, the token of each routed
 /// row `[8T]`, the rows' weighted SwiGLU output `[8T, intermediate]`, and the experts of the
-/// groups of rows with their row counts. Input order depends only on the configuration, so one
-/// graph serves every chunk.
+/// groups of rows with their row counts; when `outputRouting` is set, three as routing traces read
+/// them: the token of each routed row, and the experts of the groups with their row counts. Input
+/// order depends only on the configuration, so one graph serves every chunk.
 public func Inkling2SmallCausalLM<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
   cachedSlidingTokenLength: Int? = nil, logitTokenLength: Int = 1, outputResiduals: Bool = false,
-  outputExpertActivations: Bool = false, configuration: Inkling2SmallConfiguration = .inkling2Small
+  outputExpertActivations: Bool = false, outputRouting: Bool = false,
+  configuration: Inkling2SmallConfiguration = .inkling2Small
 ) -> Model {
   precondition(logitTokenLength >= 1 && logitTokenLength <= tokenLength)
   let cachedSliding =
@@ -342,7 +444,7 @@ public func Inkling2SmallCausalLM<FloatType: TensorNumeric>(
   var hidden = Concat(axis: 0)(embed(tokens), injected, embed(postTokens)).to(.Float32)
   var blocks: Model.IO? = nil
   var residuals = [Model.IO]()
-  var expertActivations = [Model.IO]()
+  var layerOutputs = [Model.IO]()
   for layerIndex in 0..<configuration.layers {
     let layerInputs = (0..<Inkling2SmallConfiguration.layerInputCount).map { _ in Input() }
     inputs += layerInputs
@@ -353,12 +455,15 @@ public func Inkling2SmallCausalLM<FloatType: TensorNumeric>(
         ? cachedTokenLength : cachedSliding, configuration: configuration)
     hidden = layer.output
     if outputResiduals { residuals.append(hidden) }
+    // Routing's outputs are indexed only when they are outputs too.
+    let experts = layer.experts
     if outputExpertActivations {
-      // Routing's outputs are indexed only when they are outputs too.
-      let experts = layer.experts
-      expertActivations += [
+      layerOutputs += [
         experts.input, experts.routing[2], experts.hidden, experts.routing[3], experts.routing[4],
       ]
+    }
+    if outputRouting {
+      layerOutputs += [experts.routing[2], experts.routing[3], experts.routing[4]]
     }
   }
   // Logits for the last rows of the final mixture.
@@ -370,5 +475,5 @@ public func Inkling2SmallCausalLM<FloatType: TensorNumeric>(
   let logits = Dense(count: configuration.unpaddedVocabularySize, noBias: true, name: "lm_head")(
     normalized.to(FloatType.dataType)
   ).tanh(softCap: configuration.logitSoftcap)
-  return Model(inputs, [logits] + residuals + expertActivations)
+  return Model(inputs, [logits] + residuals + layerOutputs)
 }
