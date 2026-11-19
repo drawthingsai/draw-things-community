@@ -2,7 +2,7 @@
 #define LOCAL_CODE_OPENSSH_IOS_COMPAT_CONFIG_H
 
 /*
- * OpenSSH's configure probes use unprefixed libcrypto symbols. SwiftCrypto's
+ * OpenSSH's configure probes use unprefixed libcrypto symbols. swift-nio-ssl's
  * BoringSSL intentionally prefixes every exported symbol, so record the APIs
  * available in the pinned BoringSSL revision here.
  */

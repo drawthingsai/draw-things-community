@@ -349,6 +349,12 @@
 ## Cloudflare getlocalcode.app Deploy Tags
 - For `Cloudflare/getlocalcode.app` deployment workflow, tag format, and other worker-specific instructions, use `Cloudflare/getlocalcode.app/AGENTS.md` as the source of truth.
 
+## Cloudflare local-code-mail Deploy Tags
+- For `Cloudflare/local-code-mail` deployment workflow, tag format, and other worker-specific instructions, use `Cloudflare/local-code-mail/AGENTS.md` as the source of truth.
+
+## Cloudflare local-code-room Deploy Tags
+- For `Cloudflare/local-code-room` deployment workflows (production and staging), tag formats, and other worker-specific instructions, use `Cloudflare/local-code-room/AGENTS.md` as the source of truth.
+
 ## Edit Video UI (Playback Slider + Audio Mute)
 - For the clip audio button in both `EditViewController.swift` and `EditViewControllerForiPad.swift`:
   - keep the button styled like `clipButton` and anchored to `zoomButton` with trailing `-16`.

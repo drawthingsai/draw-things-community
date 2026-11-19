@@ -1,5 +1,5 @@
 diff --git a/crates/core/flags/config.rs b/crates/core/flags/config.rs
-index 1a8f79d..3755e8a 100644
+index a081fe7..bf637df 100644
 --- a/crates/core/flags/config.rs
 +++ b/crates/core/flags/config.rs
 @@ -14,7 +14,7 @@ use bstr::{io::BufReadExt, ByteSlice};
@@ -11,11 +11,52 @@ index 1a8f79d..3755e8a 100644
          None => return vec![],
          Some(config_path) => {
              if config_path.is_empty() {
+@@ -23,7 +23,9 @@ pub fn args() -> Vec<OsString> {
+             PathBuf::from(config_path)
+         }
+     };
+-    let (args, errs) = match parse(&config_path) {
++    let session_path =
++        crate::system_io::SessionPaths::new().join(&config_path);
++    let (args, errs) = match parse(&session_path) {
+         Ok((args, errs)) => (args, errs),
+         Err(err) => {
+             message!(
 diff --git a/crates/core/flags/hiargs.rs b/crates/core/flags/hiargs.rs
-index 1d793cb..8ea4c9a 100644
+index df09dce..1505912 100644
 --- a/crates/core/flags/hiargs.rs
 +++ b/crates/core/flags/hiargs.rs
-@@ -326,8 +326,8 @@ impl HiArgs {
+@@ -94,6 +94,7 @@ pub(crate) struct HiArgs {
+     regex_size_limit: Option<usize>,
+     replace: Option<BString>,
+     search_zip: bool,
++    session: crate::system_io::SessionPaths,
+     sort: Option<SortMode>,
+     stats: Option<grep::printer::Stats>,
+     stop_on_nonmatch: bool,
+@@ -273,7 +274,11 @@ impl HiArgs {
+             heading,
+             hidden: low.hidden,
+             hyperlink_config,
+-            ignore_file: low.ignore_file,
++            ignore_file: low
++                .ignore_file
++                .iter()
++                .map(|path| state.session.join(path))
++                .collect(),
+             ignore_file_case_insensitive: low.ignore_file_case_insensitive,
+             include_zero: low.include_zero,
+             invert_match: low.invert_match,
+@@ -308,6 +313,7 @@ impl HiArgs {
+             regex_size_limit: low.regex_size_limit,
+             replace: low.replace,
+             search_zip: low.search_zip,
++            session: state.session,
+             sort: low.sort,
+             stats,
+             stop_on_nonmatch: low.stop_on_nonmatch,
+@@ -326,9 +332,9 @@ impl HiArgs {
+     /// then independently write to the buffers. Once a unit of work is
      /// complete, a buffer can be given to the buffer writer to write to
      /// stdout.
 -    pub(crate) fn buffer_writer(&self) -> termcolor::BufferWriter {
@@ -26,7 +67,24 @@ index 1d793cb..8ea4c9a 100644
          wtr.separator(self.file_separator.clone());
          wtr
      }
-@@ -822,7 +822,7 @@ impl HiArgs {
+@@ -355,6 +361,7 @@ impl HiArgs {
+     pub(crate) fn haystack_builder(&self) -> HaystackBuilder {
+         let mut builder = HaystackBuilder::new();
+         builder.strip_dot_prefix(self.paths.has_implicit_path);
++        builder.session(self.session.clone());
+         builder
+     }
+ 
+@@ -763,7 +770,7 @@ impl HiArgs {
+             get: impl Fn(&Metadata) -> io::Result<SystemTime>,
+         ) -> impl Iterator<Item = (Haystack, Option<SystemTime>)> {
+             haystacks.map(move |s| {
+-                let time = s.path().metadata().and_then(|m| get(&m)).ok();
++                let time = s.open_path().metadata().and_then(|m| get(&m)).ok();
+                 (s, time)
+             })
+         }
+@@ -822,18 +829,18 @@ impl HiArgs {
      /// The writer returned is also configured to do either line or block
      /// buffering, based on either explicit configuration from the user via CLI
      /// flags, or automatically based on whether stdout is connected to a tty.
@@ -35,7 +93,7 @@ index 1d793cb..8ea4c9a 100644
          let color = self.color.to_termcolor();
          match self.buffer {
              BufferMode::Auto => {
-@@ -830,9 +830,9 @@ impl HiArgs {
+                 if self.is_terminal_stdout {
 -                    grep::cli::stdout_buffered_line(color)
 +                    crate::system_io::stdout(color)
                  } else {
@@ -49,9 +107,26 @@ index 1d793cb..8ea4c9a 100644
 +            BufferMode::Block => crate::system_io::stdout(color),
          }
      }
-@@ -944,12 +944,10 @@ impl State {
-     /// Initialize state to some sensible defaults.
-     ///
+ 
+@@ -873,7 +880,7 @@ impl HiArgs {
+         if !self.no_ignore_files {
+             for path in self.ignore_file.iter() {
+                 if let Some(err) = builder.add_ignore(path) {
+-                    ignore_message!("{err}");
++                    ignore_message!("{}", self.session.display_error(err));
+                 }
+             }
+         }
+@@ -933,6 +940,8 @@ struct State {
+     stdin_consumed: bool,
+     /// The current working directory.
+     cwd: PathBuf,
++    /// Relative paths joined onto the session directory.
++    session: crate::system_io::SessionPaths,
+ }
+ 
+ impl State {
+@@ -941,12 +950,11 @@ impl State {
      /// Note that the state values may change throughout the lifetime of
      /// argument parsing.
      fn new() -> anyhow::Result<State> {
@@ -62,8 +137,12 @@ index 1d793cb..8ea4c9a 100644
 +            is_terminal_stdout: crate::system_io::is_terminal_stdout(),
              stdin_consumed: false,
              cwd: current_dir()?,
++            session: crate::system_io::SessionPaths::new(),
          })
-@@ -1023,6 +1021,8 @@ impl Patterns {
+     }
+ }
+@@ -1023,12 +1031,26 @@ impl Patterns {
+                             "error reading -f/--file from stdin: stdin \
                               has already been consumed"
                          );
 -                        for pat in grep::cli::patterns_from_stdin()? {
@@ -73,7 +152,38 @@ index 1d793cb..8ea4c9a 100644
                              add(pat);
                          }
                          state.stdin_consumed = true;
-@@ -1101,7 +1101,7 @@ impl Paths {
+                     } else {
+-                        for pat in grep::cli::patterns_from_path(&path)? {
++                        // As grep::cli::patterns_from_path, from the session
++                        // directory.
++                        let open_path = state.session.join(&path);
++                        let file = std::fs::File::open(&open_path).map_err(
++                            |err| {
++                                anyhow::anyhow!("{}: {}", path.display(), err)
++                            },
++                        )?;
++                        for pat in grep::cli::patterns_from_reader(file)
++                            .map_err(|err| {
++                                anyhow::anyhow!("{}:{}", path.display(), err)
++                            })?
++                        {
+                             add(pat);
+                         }
+                     }
+@@ -1078,7 +1100,11 @@ impl Paths {
+                      while also searching stdin",
+                 );
+             }
+-            paths.push(path);
++            paths.push(if path == Path::new("-") {
++                path
++            } else {
++                state.session.join(&path)
++            });
+         }
+         log::debug!("number of paths given to search: {}", paths.len());
+         if !paths.is_empty() {
+@@ -1101,7 +1127,7 @@ impl Paths {
          // mode, but there really is no good way to mitigate it. It's just a
          // consequence of letting the user type 'rg foo' and "guessing" that
          // they meant to search the CWD.
@@ -82,7 +192,19 @@ index 1d793cb..8ea4c9a 100644
          let use_cwd = !is_readable_stdin
              || state.stdin_consumed
              || !matches!(low.mode, Mode::Search(_));
-@@ -1290,9 +1290,9 @@ fn current_dir() -> anyhow::Result<PathBuf> {
+@@ -1116,7 +1142,7 @@ impl Paths {
+         );
+         let (path, is_one_file) = if use_cwd {
+             log::debug!("heuristic chose to search ./");
+-            (PathBuf::from("./"), false)
++            (state.session.join(Path::new("./")), false)
+         } else {
+             log::debug!("heuristic chose to search stdin");
+             (PathBuf::from("-"), true)
+@@ -1287,15 +1313,15 @@ fn take_hyperlink_config(
+ /// fallback mechanisms, such as querying the PWD environment variable, but
+ /// otherwise return an error.
+ fn current_dir() -> anyhow::Result<PathBuf> {
 -    let err = match std::env::current_dir() {
 -        Err(err) => err,
 -        Ok(cwd) => return Ok(cwd),
@@ -97,11 +219,14 @@ index 1d793cb..8ea4c9a 100644
 +        Err(err) => err,
 +        Ok(cwd) => return Ok(cwd),
 +    };
+     anyhow::bail!(
+         "failed to get current working directory: {err}\n\
+          did your CWD get deleted?",
 diff --git a/crates/core/flags/parse.rs b/crates/core/flags/parse.rs
-index f4b0d69..fa64e17 100644
+index 37a74b6..81ee6e8 100644
 --- a/crates/core/flags/parse.rs
 +++ b/crates/core/flags/parse.rs
-@@ -44,8 +44,8 @@ impl<T> ParseResult<T> {
+@@ -46,8 +46,8 @@ impl<T> ParseResult<T> {
  }
  
  /// Parse CLI arguments and convert then to their high level representation.
@@ -112,7 +237,7 @@ index f4b0d69..fa64e17 100644
          Ok(hi) => ParseResult::Ok(hi),
          Err(err) => ParseResult::Err(err),
      })
-@@ -60,14 +60,11 @@ pub(crate) fn parse() -> ParseResult<HiArgs> {
+@@ -61,15 +61,12 @@ pub(crate) fn parse() -> ParseResult<HiArgs> {
  ///
  /// This will also set one-time global state flags, such as the log level and
  /// whether messages should be printed.
@@ -130,6 +255,7 @@ index f4b0d69..fa64e17 100644
 +    if let Err(err) = parser.parse(rawargs.iter().cloned(), &mut low) {
          return ParseResult::Err(err);
      }
+     // Even though we haven't parsed the config file yet (assuming it exists),
 @@ -100,7 +97,7 @@ fn parse_low() -> ParseResult<LowArgs> {
      // The final arguments are just the arguments from the CLI appending to
      // the end of the config arguments.
@@ -139,11 +265,112 @@ index f4b0d69..fa64e17 100644
  
      // Now do the CLI parsing dance again.
      let mut low = LowArgs::default();
+diff --git a/crates/core/haystack.rs b/crates/core/haystack.rs
+index f88b6de..d74945f 100644
+--- a/crates/core/haystack.rs
++++ b/crates/core/haystack.rs
+@@ -9,18 +9,22 @@ Effectively, a haystack wraps a directory entry and adds some light application
+ level logic around it.
+ */
+ 
+-use std::path::Path;
++use std::path::{Path, PathBuf};
+ 
+ /// A builder for constructing things to search over.
+ #[derive(Clone, Debug)]
+ pub(crate) struct HaystackBuilder {
+     strip_dot_prefix: bool,
++    session: crate::system_io::SessionPaths,
+ }
+ 
+ impl HaystackBuilder {
+     /// Return a new haystack builder with a default configuration.
+     pub(crate) fn new() -> HaystackBuilder {
+-        HaystackBuilder { strip_dot_prefix: false }
++        HaystackBuilder {
++            strip_dot_prefix: false,
++            session: crate::system_io::SessionPaths::default(),
++        }
+     }
+ 
+     /// Create a new haystack from a possibly missing directory entry.
+@@ -35,7 +39,7 @@ impl HaystackBuilder {
+         match result {
+             Ok(dent) => self.build(dent),
+             Err(err) => {
+-                err_message!("{err}");
++                err_message!("{}", self.session.display_error(err));
+                 None
+             }
+         }
+@@ -47,9 +51,11 @@ impl HaystackBuilder {
+     /// searched, then this returns `None` after emitting any relevant log
+     /// messages.
+     fn build(&self, dent: ignore::DirEntry) -> Option<Haystack> {
+-        let hay = Haystack { dent, strip_dot_prefix: self.strip_dot_prefix };
++        let shown = self.session.display(dent.path());
++        let hay =
++            Haystack { dent, strip_dot_prefix: self.strip_dot_prefix, shown };
+         if let Some(err) = hay.dent.error() {
+-            ignore_message!("{err}");
++            ignore_message!("{}", self.session.display_error(err.clone()));
+         }
+         // If this entry was explicitly provided by an end user, then we always
+         // want to search it.
+@@ -89,6 +95,15 @@ impl HaystackBuilder {
+         self.strip_dot_prefix = yes;
+         self
+     }
++
++    /// Show haystacks searched under the session directory as typed.
++    pub(crate) fn session(
++        &mut self,
++        session: crate::system_io::SessionPaths,
++    ) -> &mut HaystackBuilder {
++        self.session = session;
++        self
++    }
+ }
+ 
+ /// A haystack is a thing we want to search.
+@@ -98,6 +113,8 @@ impl HaystackBuilder {
+ pub(crate) struct Haystack {
+     dent: ignore::DirEntry,
+     strip_dot_prefix: bool,
++    /// The path as typed, when it was searched under the session directory.
++    shown: Option<PathBuf>,
+ }
+ 
+ impl Haystack {
+@@ -106,13 +123,19 @@ impl Haystack {
+     /// If this haystack corresponds to stdin, then a special `<stdin>` path
+     /// is returned instead.
+     pub(crate) fn path(&self) -> &Path {
+-        if self.strip_dot_prefix && self.dent.path().starts_with("./") {
+-            self.dent.path().strip_prefix("./").unwrap()
++        let path = self.shown.as_deref().unwrap_or(self.dent.path());
++        if self.strip_dot_prefix && path.starts_with("./") {
++            path.strip_prefix("./").unwrap()
+         } else {
+-            self.dent.path()
++            path
+         }
+     }
+ 
++    /// Return the file path to open, which `path` shows as typed.
++    pub(crate) fn open_path(&self) -> &Path {
++        self.dent.path()
++    }
++
+     /// Returns true if and only if this entry corresponds to stdin.
+     pub(crate) fn is_stdin(&self) -> bool {
+         self.dent.is_stdin()
 diff --git a/crates/core/logger.rs b/crates/core/logger.rs
-index 6b31595..12b9de4 100644
+index ce4e0e9..bff9d8e 100644
 --- a/crates/core/logger.rs
 +++ b/crates/core/logger.rs
-@@ -21,8 +21,10 @@ const LOGGER: &'static Logger = &Logger(());
+@@ -20,10 +20,12 @@ const LOGGER: &'static Logger = &Logger(());
+ 
  impl Logger {
      /// Create a new logger that logs to stderr and initialize it as the
 -    /// global logger. If there was a problem setting the logger, then an
@@ -158,8 +385,9 @@ index 6b31595..12b9de4 100644
 +        });
      }
  }
+ 
 diff --git a/crates/core/main.rs b/crates/core/main.rs
-index 34f714d..cb2fa2d 100644
+index 64f35ce..ba395cd 100644
 --- a/crates/core/main.rs
 +++ b/crates/core/main.rs
 @@ -2,7 +2,12 @@
@@ -176,7 +404,7 @@ index 34f714d..cb2fa2d 100644
  
  use ignore::WalkState;
  
-@@ -14,6 +19,7 @@ mod flags;
+@@ -15,6 +20,7 @@ mod flags;
  mod haystack;
  mod logger;
  mod search;
@@ -184,7 +412,8 @@ index 34f714d..cb2fa2d 100644
  
  // Since Rust no longer uses jemalloc by default, ripgrep will, by default,
  // use the system allocator. On Linux, this would normally be glibc's
-@@ -42,7 +48,52 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+@@ -40,8 +46,53 @@ mod search;
+ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
  
  /// Then, as it was, then again it will be.
 +#[allow(dead_code)]
@@ -238,7 +467,7 @@ index 34f714d..cb2fa2d 100644
          Ok(code) => code,
          Err(err) => {
              // Look for a broken pipe error. In this case, we generally want
-@@ -364,6 +415,7 @@ fn generate(mode: crate::flags::GenerateMode) -> anyhow::Result<ExitCode> {
+@@ -364,7 +415,8 @@ fn generate(mode: crate::flags::GenerateMode) -> anyhow::Result<ExitCode> {
              flags::generate_complete_powershell()
          }
      };
@@ -247,7 +476,8 @@ index 34f714d..cb2fa2d 100644
 +    writeln!(stdout, "{}", output.trim_end())?;
      Ok(ExitCode::from(0))
  }
-@@ -399,6 +451,7 @@ fn special(mode: crate::flags::SpecialMode) -> anyhow::Result<ExitCode> {
+ 
+@@ -399,7 +451,8 @@ fn special(mode: crate::flags::SpecialMode) -> anyhow::Result<ExitCode> {
              output
          }
      };
@@ -256,11 +486,12 @@ index 34f714d..cb2fa2d 100644
 +    writeln!(stdout, "{}", output.trim_end())?;
      Ok(exit)
  }
+ 
 diff --git a/crates/core/messages.rs b/crates/core/messages.rs
-index fe567e3..4a6a1a1 100644
+index ba8b9ad..ca681af 100644
 --- a/crates/core/messages.rs
 +++ b/crates/core/messages.rs
-@@ -31,36 +31,6 @@ static ERRORED: AtomicBool = AtomicBool::new(false);
+@@ -32,37 +32,7 @@ static ERRORED: AtomicBool = AtomicBool::new(false);
  #[macro_export]
  macro_rules! eprintln_locked {
      ($($tt:tt)*) => {{
@@ -298,7 +529,9 @@ index fe567e3..4a6a1a1 100644
 +        crate::system_io::write_error(format_args!($($tt)*));
      }}
  }
-@@ -137,2 +107,9 @@ pub(crate) fn set_errored() {
+ 
+@@ -137,3 +107,10 @@ pub(crate) fn errored() -> bool {
+ pub(crate) fn set_errored() {
      ERRORED.store(true, Ordering::SeqCst);
  }
 +
@@ -309,10 +542,14 @@ index fe567e3..4a6a1a1 100644
 +    ERRORED.store(false, Ordering::SeqCst);
 +}
 diff --git a/crates/core/search.rs b/crates/core/search.rs
-index e10a1a5..49c40ee 100644
+index 6727342..90b1df0 100644
 --- a/crates/core/search.rs
 +++ b/crates/core/search.rs
-@@ -254,8 +254,8 @@ impl<W: WriteColor> SearchWorker<W> {
+@@ -251,17 +251,18 @@ impl<W: WriteColor> SearchWorker<W> {
+             self.config.binary_implicit.clone()
+         };
+         let path = haystack.path();
++        let open_path = haystack.open_path();
          log::trace!("{}: binary detection: {:?}", path.display(), bin);
  
          self.searcher.set_binary_detection(bin);
@@ -320,19 +557,126 @@ index e10a1a5..49c40ee 100644
 -            self.search_reader(path, &mut io::stdin().lock())
 +            self.search_reader(path, &mut crate::system_io::stdin())
          } else if self.should_preprocess(path) {
-             self.search_preprocessor(path)
+-            self.search_preprocessor(path)
++            self.search_preprocessor(path, open_path)
          } else if self.should_decompress(path) {
+-            self.search_decompress(path)
++            self.search_decompress(path, open_path)
+         } else {
+-            self.search_path(path)
++            self.search_path(path, open_path)
+         }
+     }
+ 
+@@ -296,12 +297,13 @@ impl<W: WriteColor> SearchWorker<W> {
+     fn search_preprocessor(
+         &mut self,
+         path: &Path,
++        open_path: &Path,
+     ) -> io::Result<SearchResult> {
+         use std::{fs::File, process::Stdio};
+ 
+         let bin = self.config.preprocessor.as_ref().unwrap();
+         let mut cmd = std::process::Command::new(bin);
+-        cmd.arg(path).stdin(Stdio::from(File::open(path)?));
++        cmd.arg(open_path).stdin(Stdio::from(File::open(open_path)?));
+ 
+         let mut rdr = self.command_builder.build(&mut cmd).map_err(|err| {
+             io::Error::new(
+@@ -327,8 +329,12 @@ impl<W: WriteColor> SearchWorker<W> {
+     /// Attempt to decompress the data at the given file path and search the
+     /// result. If the given file path isn't recognized as a compressed file,
+     /// then search it without doing any decompression.
+-    fn search_decompress(&mut self, path: &Path) -> io::Result<SearchResult> {
+-        let mut rdr = self.decomp_builder.build(path)?;
++    fn search_decompress(
++        &mut self,
++        path: &Path,
++        open_path: &Path,
++    ) -> io::Result<SearchResult> {
++        let mut rdr = self.decomp_builder.build(open_path)?;
+         let result = self.search_reader(path, &mut rdr);
+         let close_result = rdr.close();
+         let search_result = result?;
+@@ -336,15 +342,21 @@ impl<W: WriteColor> SearchWorker<W> {
+         Ok(search_result)
+     }
+ 
+-    /// Search the contents of the given file path.
+-    fn search_path(&mut self, path: &Path) -> io::Result<SearchResult> {
++    /// Search the contents of the file at `open_path`, shown as `path`.
++    fn search_path(
++        &mut self,
++        path: &Path,
++        open_path: &Path,
++    ) -> io::Result<SearchResult> {
+         use self::PatternMatcher::*;
+ 
+         let (searcher, printer) = (&mut self.searcher, &mut self.printer);
+         match self.matcher {
+-            RustRegex(ref m) => search_path(m, searcher, printer, path),
++            RustRegex(ref m) => {
++                search_path(m, searcher, printer, path, open_path)
++            }
+             #[cfg(feature = "pcre2")]
+-            PCRE2(ref m) => search_path(m, searcher, printer, path),
++            PCRE2(ref m) => search_path(m, searcher, printer, path, open_path),
+         }
+     }
+ 
+@@ -373,18 +385,19 @@ impl<W: WriteColor> SearchWorker<W> {
+     }
+ }
+ 
+-/// Search the contents of the given file path using the given matcher,
+-/// searcher and printer.
++/// Search the contents of the file at `open_path`, shown as `path`, using the
++/// given matcher, searcher and printer.
+ fn search_path<M: Matcher, W: WriteColor>(
+     matcher: M,
+     searcher: &mut grep::searcher::Searcher,
+     printer: &mut Printer<W>,
+     path: &Path,
++    open_path: &Path,
+ ) -> io::Result<SearchResult> {
+     match *printer {
+         Printer::Standard(ref mut p) => {
+             let mut sink = p.sink_with_path(&matcher, path);
+-            searcher.search_path(&matcher, path, &mut sink)?;
++            searcher.search_path(&matcher, open_path, &mut sink)?;
+             Ok(SearchResult {
+                 has_match: sink.has_match(),
+                 stats: sink.stats().map(|s| s.clone()),
+@@ -392,7 +405,7 @@ fn search_path<M: Matcher, W: WriteColor>(
+         }
+         Printer::Summary(ref mut p) => {
+             let mut sink = p.sink_with_path(&matcher, path);
+-            searcher.search_path(&matcher, path, &mut sink)?;
++            searcher.search_path(&matcher, open_path, &mut sink)?;
+             Ok(SearchResult {
+                 has_match: sink.has_match(),
+                 stats: sink.stats().map(|s| s.clone()),
+@@ -400,7 +413,7 @@ fn search_path<M: Matcher, W: WriteColor>(
+         }
+         Printer::JSON(ref mut p) => {
+             let mut sink = p.sink_with_path(&matcher, path);
+-            searcher.search_path(&matcher, path, &mut sink)?;
++            searcher.search_path(&matcher, open_path, &mut sink)?;
+             Ok(SearchResult {
+                 has_match: sink.has_match(),
+                 stats: Some(sink.stats().clone()),
 diff --git a/crates/core/system_io.rs b/crates/core/system_io.rs
 new file mode 100644
-index 0000000..80988bb
+index 0000000..f8535a0
 --- /dev/null
 +++ b/crates/core/system_io.rs
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,377 @@
 +use std::{
 +    ffi::{c_char, c_int, c_void, CString, OsString},
 +    fmt,
 +    io::{self, Read, Write},
-+    os::unix::ffi::OsStringExt,
++    os::unix::ffi::{OsStrExt, OsStringExt},
++    path::{Path, PathBuf},
 +    sync::{
 +        atomic::{AtomicBool, AtomicI32, Ordering},
 +        Mutex, MutexGuard,
@@ -587,6 +931,113 @@ index 0000000..80988bb
 +    }
 +    let bytes = unsafe { std::ffi::CStr::from_ptr(value) }.to_bytes();
 +    Some(OsString::from_vec(bytes.to_vec()))
++}
++
++/// ios_system runs commands for several sessions in one process, each with
++/// its own working directory (its PWD); the process-wide one belongs to
++/// whichever session last moved it. So a relative path is searched under the
++/// session directory, and shown as typed.
++#[derive(Clone, Debug, Default)]
++pub(crate) struct SessionPaths {
++    /// The session directory, ending in `/`.
++    directory: Option<Vec<u8>>,
++    /// Each joined path with the path as typed.
++    joined: Vec<(Vec<u8>, Vec<u8>)>,
++}
++
++impl SessionPaths {
++    pub(crate) fn new() -> SessionPaths {
++        let directory = var_os("PWD")
++            .map(OsString::into_vec)
++            .filter(|directory| directory.starts_with(b"/"))
++            .map(|mut directory| {
++                if !directory.ends_with(b"/") {
++                    directory.push(b'/');
++                }
++                directory
++            });
++        SessionPaths { directory, joined: vec![] }
++    }
++
++    /// Returns where to find `path`: under the session directory when it is
++    /// relative.
++    pub(crate) fn join(&mut self, path: &Path) -> PathBuf {
++        let typed = path.as_os_str().as_bytes();
++        let Some(directory) = self.directory.as_ref() else {
++            return path.to_path_buf();
++        };
++        if typed.is_empty() || typed.starts_with(b"/") {
++            return path.to_path_buf();
++        }
++        // `ignore` matches globs against a relative path with one leading
++        // "./" dropped, and against an absolute one relative to the session
++        // directory, so the joined path drops it too. "." walks as "./" does.
++        let typed = if typed == b"." { b"./".as_slice() } else { typed };
++        let mut joined = directory.clone();
++        joined.extend_from_slice(typed.strip_prefix(b"./").unwrap_or(typed));
++        self.joined.push((joined.clone(), typed.to_vec()));
++        PathBuf::from(OsString::from_vec(joined))
++    }
++
++    /// Returns how to show `path` when it lies under a joined path.
++    pub(crate) fn display(&self, path: &Path) -> Option<PathBuf> {
++        let bytes = path.as_os_str().as_bytes();
++        self.joined.iter().find_map(|(joined, typed)| {
++            let rest = bytes.strip_prefix(joined.as_slice())?;
++            if !rest.is_empty()
++                && !rest.starts_with(b"/")
++                && !joined.ends_with(b"/")
++            {
++                return None;
++            }
++            let mut shown = typed.clone();
++            shown.extend_from_slice(rest);
++            Some(PathBuf::from(OsString::from_vec(shown)))
++        })
++    }
++
++    /// Returns `err` with its paths shown as `display` shows them.
++    pub(crate) fn display_error(&self, err: ignore::Error) -> ignore::Error {
++        let shown = |path: PathBuf| self.display(&path).unwrap_or(path);
++        match err {
++            ignore::Error::Partial(errs) => ignore::Error::Partial(
++                errs.into_iter().map(|err| self.display_error(err)).collect(),
++            ),
++            ignore::Error::WithLineNumber { line, err } => {
++                let err = Box::new(self.display_error(*err));
++                ignore::Error::WithLineNumber { line, err }
++            }
++            ignore::Error::WithPath { path, err } => {
++                let err = Box::new(self.display_error(*err));
++                ignore::Error::WithPath { path: shown(path), err }
++            }
++            ignore::Error::WithDepth { depth, err } => {
++                let err = Box::new(self.display_error(*err));
++                ignore::Error::WithDepth { depth, err }
++            }
++            ignore::Error::Loop { ancestor, child } => ignore::Error::Loop {
++                ancestor: shown(ancestor),
++                child: shown(child),
++            },
++            // `walkdir` names the path in its message.
++            ignore::Error::Io(err) => {
++                const PREFIX: &str = "IO error for operation on ";
++                let message = err.to_string();
++                let shown = message.strip_prefix(PREFIX).and_then(|rest| {
++                    let (path, cause) = rest.split_once(": ")?;
++                    let path = self.display(Path::new(path))?;
++                    Some(format!("{PREFIX}{}: {cause}", path.display()))
++                });
++                match shown {
++                    Some(shown) => {
++                        ignore::Error::Io(io::Error::new(err.kind(), shown))
++                    }
++                    None => ignore::Error::Io(err),
++                }
++            }
++            err => err,
++        }
++    }
 +}
 +
 +pub(crate) fn write_error(arguments: fmt::Arguments<'_>) {

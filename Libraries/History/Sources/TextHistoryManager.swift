@@ -79,6 +79,10 @@ public final class TextHistoryManager {
     if let seekTo = project.dictionary["text_seek_to", Int.self] {
       let _ = seek(
         to: seekTo, lineage: project.dictionary["text_seek_to_lineage", Int.self].map { Int64($0) })
+    } else if self.project.dictionary["text_seek_to_lineage", Int.self] != nil {
+      // A lineage without a seek position is stale. Reading it also matters: the dictionary skips
+      // a nil assignment to a key this launch never loaded, so later clears would not reach disk.
+      self.project.dictionary["text_seek_to_lineage", Int.self] = nil
     }
   }
 
@@ -286,7 +290,10 @@ public final class TextHistoryManager {
       self.currentNegativeText = newText
     }
     let textVersion = uniqueVersion()
+    // The change is now the tip of the newest lineage. Clear the lineage too, otherwise a lineage
+    // left by an earlier unsacred seek pairs with the next saveCursor() and restores stale text.
     project.dictionary["text_seek_to", Int.self] = nil
+    project.dictionary["text_seek_to_lineage", Int.self] = nil
     guard modifications.count > Self.segmentationSize - 1 else {
       let node = (
         TextHistoryNode(

@@ -156,6 +156,7 @@ LIBSSH_SRCS = [
     "kexgex.c",
     "kexgexc.c",
     "kexgexs.c",
+    "kexmlkem768ecdh.c",
     "kexmlkem768x25519.c",
     "kexsntrup761x25519.c",
     "krl.c",

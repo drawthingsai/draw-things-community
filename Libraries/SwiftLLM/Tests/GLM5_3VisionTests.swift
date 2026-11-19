@@ -139,7 +139,7 @@ final class GLM5_3VisionTests: XCTestCase {
     }
   }
 
-  func testEmbeddingPlacesImageRowsAfterTokensAcrossChunks() {
+  func testEmbeddingPlacesImageRowsBetweenTokensAcrossChunks() {
     var configuration = GLM5_3ModelConfiguration.glm5_3Flash
     configuration.hiddenSize = 4
     configuration.vocabularySize = 8
@@ -150,22 +150,24 @@ final class GLM5_3VisionTests: XCTestCase {
         GLM5_3Embedding(Float16.self, tokenLength: count, configuration: configuration)
       }
       let empty = graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Float16.self)
-      let headroom = graph.variable(
-        Tensor<Int32>(Array(repeating: 0, count: 6), kind: .CPU, format: .NHWC, shape: [6])
-          .toGPU(0))
-      embedding.compile(6, inputs: headroom, empty)
-      embedding.parameters[0].copy(
-        from: Tensor<Float16>((0..<32).map { Float16($0) }, .CPU, .WC(8, 4)).toGPU(0))
-      // Text only, image only, text followed by image rows (as GLM5_3Generate chunks), and
-      // single rows of each.
-      for lengths in [(6, 0), (0, 5), (2, 3), (0, 1), (1, 0), (4, 2)] {
-        let count = lengths.0 + lengths.1
-        let ids = (0..<lengths.0).map { Int32($0 + 1) }
-        let tokens =
-          lengths.0 == 0
+      func tokenInput(_ ids: [Int32]) -> DynamicGraph.Tensor<Int32> {
+        ids.isEmpty
           ? graph.variable(.GPU(0), format: .NHWC, shape: [0], of: Int32.self)
           : graph.variable(
-            Tensor<Int32>(ids, kind: .CPU, format: .NHWC, shape: [lengths.0]).toGPU(0))
+            Tensor<Int32>(ids, kind: .CPU, format: .NHWC, shape: [ids.count]).toGPU(0))
+      }
+      embedding.compile(
+        6, inputs: tokenInput(Array(repeating: 0, count: 6)), empty, tokenInput([]))
+      embedding.parameters[0].copy(
+        from: Tensor<Float16>((0..<32).map { Float16($0) }, .CPU, .WC(8, 4)).toGPU(0))
+      // Text only, image only, text before or after the image or both, and single rows of each.
+      for lengths in [
+        (6, 0, 0), (0, 5, 0), (2, 3, 0), (0, 1, 0), (1, 0, 0), (4, 2, 0), (2, 2, 2), (0, 3, 3),
+        (0, 0, 6), (0, 1, 1),
+      ] {
+        let count = lengths.0 + lengths.1 + lengths.2
+        let ids = (0..<lengths.0).map { Int32($0 + 1) }
+        let postIDs = (0..<lengths.2).map { Int32(7 - $0) }
         let injected =
           lengths.1 == 0
           ? empty
@@ -173,15 +175,22 @@ final class GLM5_3VisionTests: XCTestCase {
             Tensor<Float16>(
               (0..<(lengths.1 * 4)).map { Float16(100 + $0) }, .CPU, .WC(lengths.1, 4)
             ).toGPU(0))
-        let output = embedding(count, inputs: tokens, injected)[0].as(of: Float.self).toCPU()
+        let output = embedding(
+          count, inputs: tokenInput(ids), injected, tokenInput(postIDs)
+        )[0].as(of: Float.self).toCPU()
         graph.joined()
         XCTAssertEqual(output.shape, [count, 2, 4], "\(lengths)")
         guard output.shape == [count, 2, 4] else { continue }
         for row in 0..<count {
           for channel in 0..<4 {
-            let expected =
-              row < lengths.0
-              ? Float(Int(ids[row]) * 4 + channel) : Float(100 + (row - lengths.0) * 4 + channel)
+            let expected: Float
+            if row < lengths.0 {
+              expected = Float(Int(ids[row]) * 4 + channel)
+            } else if row < lengths.0 + lengths.1 {
+              expected = Float(100 + (row - lengths.0) * 4 + channel)
+            } else {
+              expected = Float(Int(postIDs[row - lengths.0 - lengths.1]) * 4 + channel)
+            }
             for stream in 0..<2 {
               XCTAssertEqual(output[row, stream, channel], expected, "\(lengths) row \(row)")
             }
