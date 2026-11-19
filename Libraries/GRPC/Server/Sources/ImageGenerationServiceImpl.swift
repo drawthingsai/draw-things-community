@@ -135,10 +135,16 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
   public let cancellationMonitor: CancellationMonitor?
   private let echoOnQueue: Bool
 
+  // Servers only reached through the proxy turn this off, the proxy never forwards uploads.
+  private let enableFileUpload: Bool
+  // No model file is close to this size. It only bounds what one upload can make the server store.
+  private static let maxUploadFileSize: Int64 = 128 * 1_024 * 1_024 * 1_024
+
   public init(
     imageGenerator: ImageGenerator, queue: DispatchQueue, backupQueue: DispatchQueue,
     serverConfigurationRewriter: ServerConfigurationRewriter? = nil,
-    cancellationMonitor: CancellationMonitor? = nil, echoOnQueue: Bool = false
+    cancellationMonitor: CancellationMonitor? = nil, echoOnQueue: Bool = false,
+    enableFileUpload: Bool = true
   ) {
     self.internalImageGenerator = imageGenerator
     self.queue = queue
@@ -146,6 +152,7 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     self.serverConfigurationRewriter = serverConfigurationRewriter
     self.cancellationMonitor = cancellationMonitor
     self.echoOnQueue = echoOnQueue
+    self.enableFileUpload = enableFileUpload
     imageGeneratorLock = DispatchQueue(label: "ImageGenerationServiceImpl.imageGeneratorLock")
     serverIdentifier = UInt64.random(in: UInt64.min...UInt64.max)
     logger.info("ImageGenerationServiceImpl init")
@@ -632,19 +639,18 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     var hashes = [Data]()
     let needsToComputeHash = Set<String>(request.filesWithHash)
     for file in request.files {
-      let existence = ModelZoo.isModelDownloaded(file)
+      // An invalid name is not a model here, whatever exists at the path it spells. This also
+      // means only files in the models directories are ever hashed.
+      let existence = Self.isValidFileName(file) && ModelZoo.isModelDownloaded(file)
       files.append(file)
       existences.append(existence)
-      if needsToComputeHash.contains(file) {
-        let filePath = ModelZoo.filePathForModelDownloaded(file)
-        if let fileData = try? Data(
-          contentsOf: URL(fileURLWithPath: filePath), options: .mappedIfSafe)
-        {
-          let computedHash = Data(SHA256.hash(data: fileData))
-          hashes.append(computedHash)
-        } else {
-          hashes.append(Data())
-        }
+      if existence, needsToComputeHash.contains(file),
+        let fileData = try? Data(
+          contentsOf: URL(fileURLWithPath: ModelZoo.filePathForModelDownloaded(file)),
+          options: .mappedIfSafe)
+      {
+        let computedHash = Data(SHA256.hash(data: fileData))
+        hashes.append(computedHash)
       } else {
         hashes.append(Data())
       }
@@ -753,16 +759,45 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
     }
   }
 
+  // A file name from a client is only ever one path component directly inside a models
+  // directory. Every model file the apps name is ASCII letters, digits, ".", "_" and "-" (see
+  // Importer.cleanup(filename:)), so nothing else has to pass.
+  static func isValidFileName(_ name: String) -> Bool {
+    let utf8 = name.utf8
+    guard let first = utf8.first, utf8.count <= 255 else { return false }
+    // No hidden files, no "." or "..", and nothing a shell would read as an option.
+    guard first != UInt8(ascii: "."), first != UInt8(ascii: "-") else { return false }
+    return utf8.allSatisfy {
+      switch $0 {
+      case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
+        UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "."), UInt8(ascii: "_"),
+        UInt8(ascii: "-"):
+        return true
+      default:
+        return false
+      }
+    }
+  }
+
   public func uploadFile(context: StreamingResponseCallContext<UploadResponse>) -> EventLoopFuture<
     (StreamEvent<FileUploadRequest>) -> Void
   > {
     logger.info("Received uploadFile request")
+    guard enableFileUpload else {
+      let status = GRPCStatus(code: .unimplemented, message: "File upload is disabled")
+      context.statusPromise.fail(status)
+      return context.eventLoop.makeFailedFuture(status)
+    }
 
     var fileHandle: FileHandle?
     var totalBytesReceived: Int64 = 0
+    // Only set once the file name passed validation, so both paths are inside a models directory
+    // and temporaryPath is a file this upload created.
     var metadata:
-      (file: String, expectedFileSize: Int64, expectedHash: Data, temporaryPath: String)? =
-        nil
+      (
+        file: String, expectedFileSize: Int64, expectedHash: Data, temporaryPath: String,
+        filePath: String
+      )? = nil
 
     // Register a cleanup closure that will be called on disconnection or failure
     context.statusPromise.futureResult.whenFailure { error in
@@ -797,14 +832,54 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
         case .initRequest(let initRequest):
           // Process the initial upload request
           do {
-
+            guard metadata == nil else {
+              throw GRPCStatus(code: .invalidArgument, message: "Upload is already initialized")
+            }
+            let file = initRequest.filename
+            // The name becomes a path component below, and the only files the apps upload are
+            // models and their external tensor data.
+            guard Self.isValidFileName(file),
+              file.hasSuffix(".ckpt") || file.hasSuffix(".ckpt-tensordata")
+            else {
+              self.logger.error(
+                "Rejected upload with invalid file name: \(String(file.prefix(255)).debugDescription)"
+              )
+              throw GRPCStatus(code: .invalidArgument, message: "Invalid file name")
+            }
+            guard (0...Self.maxUploadFileSize).contains(initRequest.totalSize) else {
+              throw GRPCStatus(code: .invalidArgument, message: "Invalid file size")
+            }
+            // This is the file to replace if there is one, otherwise a new file in the first
+            // models directory. Either way it has to sit directly inside a models directory, which
+            // is checked on the resolved directories instead of trusting the name check alone.
+            let resolved = { (path: String) -> String? in
+              guard let resolvedPath = realpath(path, nil) else { return nil }
+              defer { free(resolvedPath) }
+              return String(cString: resolvedPath)
+            }
+            let modelsDirectories =
+              ModelZoo.externalUrls.map { $0.path } + [
+                ModelZoo.internalFilePathForModelDownloaded("")
+              ]
+            guard
+              let directory = resolved(
+                URL(fileURLWithPath: ModelZoo.filePathForModelDownloaded(file))
+                  .deletingLastPathComponent().path),
+              modelsDirectories.contains(where: { resolved($0) == directory })
+            else {
+              self.logger.error("Rejected upload outside of models directories: \(file)")
+              throw GRPCStatus(code: .invalidArgument, message: "Invalid file name")
+            }
             // Create file
-            let temporaryPath = ModelZoo.filePathForModelDownloaded(initRequest.filename + ".part")
+            let temporaryPath = "\(directory)/\(file).part"
             metadata = (
-              file: initRequest.filename, expectedFileSize: initRequest.totalSize,
-              expectedHash: initRequest.sha256, temporaryPath: temporaryPath
+              file: file, expectedFileSize: initRequest.totalSize,
+              expectedHash: initRequest.sha256, temporaryPath: temporaryPath,
+              filePath: "\(directory)/\(file)"
             )
             self.logger.info("Init upload for metadata: \(metadata as Any)")
+            // Remove what an interrupted upload left behind, so the file below is always new.
+            try? FileManager.default.removeItem(atPath: temporaryPath)
             let _ = FileManager.default.createFile(atPath: temporaryPath, contents: nil)
             fileHandle = FileHandle(forWritingAtPath: temporaryPath)
             if fileHandle == nil {
@@ -820,16 +895,23 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
           }
         case .chunk(let chunk):
           do {
-            guard let fileHandle = fileHandle else {
+            guard let fileHandle = fileHandle, let metadata = metadata else {
               throw GRPCStatus(code: .internalError, message: "Failed to create file handle")
             }
 
             self.logger.info(
-              "Received chunk \(chunk.filename) \(chunk.content) chunk.offset:\(chunk.offset) totalBytesReceived:\(totalBytesReceived)"
+              "Received chunk \(chunk.content) chunk.offset:\(chunk.offset) totalBytesReceived:\(totalBytesReceived)"
             )
 
             if chunk.offset != totalBytesReceived {
               throw GRPCStatus(code: .dataLoss, message: "Received chunk with unexpected offset")
+            }
+
+            // Stop here rather than at the end, otherwise a client can write without bound.
+            guard Int64(chunk.content.count) <= metadata.expectedFileSize - totalBytesReceived
+            else {
+              throw GRPCStatus(
+                code: .invalidArgument, message: "Received more than the expected file size")
             }
 
             try fileHandle.write(contentsOf: chunk.content)
@@ -880,15 +962,14 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
             expectedHash: metadata.expectedHash)
           {
             self.logger.error("File validation failed")
-            try? FileManager.default.removeItem(atPath: metadata.temporaryPath)
             throw GRPCStatus(code: .dataLoss, message: "File validation failed")
           }
+          // Both paths are in the same directory, so this either puts the whole file in place or
+          // leaves what was there untouched.
+          guard rename(metadata.temporaryPath, metadata.filePath) == 0 else {
+            throw GRPCStatus(code: .internalError, message: "Failed to move the uploaded file")
+          }
           self.logger.info("File uploaded successfully")
-          try? FileManager.default.removeItem(
-            atPath: ModelZoo.filePathForModelDownloaded(metadata.file))
-          try? FileManager.default.moveItem(
-            atPath: metadata.temporaryPath,
-            toPath: ModelZoo.filePathForModelDownloaded(metadata.file))
           context.statusPromise.succeed(.ok)
 
         } catch {
@@ -915,6 +996,7 @@ public final class ImageGenerationServiceImpl: ImageGenerationServiceProvider {
       }
     } catch {
       logger.error("Failed to validate file type: \(error.localizedDescription)")
+      return false
     }
 
     return true

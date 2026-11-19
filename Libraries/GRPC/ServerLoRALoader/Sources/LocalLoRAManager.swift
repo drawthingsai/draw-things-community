@@ -40,6 +40,22 @@ public final class LocalLoRAManager {
     let modelName = modelNames[index]
     let dirURL = URL(fileURLWithPath: localDirectory)
     let logger = logger
+    // The local file is named by the content hash in front of the first "_". The name comes from
+    // the generation request, so make sure it is a SHA-256 hex digest before it is used in a path.
+    // Anything else cannot match the hash of what we download anyway.
+    let contentHash = modelName.components(separatedBy: "_").first ?? modelName
+    guard contentHash.utf8.count == 64,
+      contentHash.utf8.allSatisfy({
+        (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0)
+          || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains($0)
+      })
+    else {
+      logger.info("Not a content hash \(String(contentHash.prefix(64)).debugDescription)")
+      // One failed name fails the request, so there is no point to go on to the rest.
+      results[modelName] = false
+      completion(results)
+      return
+    }
     logger.info("Downloading LoRA \(modelName)")
     objCResponder.index = index
     let task = r2Client.downloadObject(

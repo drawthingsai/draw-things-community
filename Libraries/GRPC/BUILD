@@ -80,6 +80,26 @@ swift_library(
     }),
 )
 
+swift_test(
+    name = "ImageGenerationServiceImplTests",
+    srcs = [
+        "Server/Tests/ImageGenerationServiceImplTests.swift",
+    ],
+    deps = [
+        ":GRPCImageServiceModels",
+        ":GRPCServer",
+        "//Libraries/DataModels",
+        "//Libraries/ImageGenerator",
+        "//Libraries/ModelZoo",
+        "//Libraries/SwiftDiffusion",
+        "@SwiftCrypto//:Crypto",
+        "@SwiftNIO//:NIOCore",
+        "@SwiftNIO//:NIOPosix",
+        "@grpc-swift//:GRPC",
+        "@s4nnc//nnc",
+    ],
+)
+
 swift_library(
     name = "ProxyControlClient",
     srcs = glob([
@@ -158,6 +178,16 @@ swift_library(
         "@SwiftCrypto//:CryptoBoringWrapper",
         "@SwiftLog//:Logging",
         "@grpc-swift//:GRPC",
+    ],
+)
+
+swift_test(
+    name = "LocalLoRAManagerTests",
+    srcs = [
+        "ServerLoRALoader/Tests/LocalLoRAManagerTests.swift",
+    ],
+    deps = [
+        ":ServerLoRALoader",
     ],
 )
 
