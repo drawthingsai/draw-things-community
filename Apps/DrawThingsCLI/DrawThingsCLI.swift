@@ -1724,7 +1724,7 @@ private func defaultImportScale(for version: ModelVersion, artifactFileName: Str
   case .hunyuanVideo, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5, .minimaxH3:
     return 12
   case .minimaxH3Image:
-    return 32
+    return 64
   case .wan21_1_3b:
     return 8
   case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .zImage,

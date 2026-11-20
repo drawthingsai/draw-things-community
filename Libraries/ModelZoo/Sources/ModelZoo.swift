@@ -928,11 +928,11 @@ public struct ModelZoo: DownloadZoo {
     ),
     Specification(
       name: "MiniMax H3 Image (4-bit S)", file: "minimax_h3_image_i4x.ckpt",
-      prefix: "", version: .minimaxH3Image, defaultScale: 32,
+      prefix: "", version: .minimaxH3Image, defaultScale: 64,
       textEncoder: "qwen_3_vl_32b_50_i8x.ckpt",
       autoencoder: "minimax_h3_image_vae_f16.ckpt",
       modifier: .kontext,
-      objective: .u(conditionScale: 1_000),
+      objective: .u(conditionScale: 1_000), hiresFixScale: 96,
       note:
         "[MiniMax H3 Image](https://huggingface.co/MiniMaxAI/MiniMax-H3-Image) generates and edits images. The canvas and moodboard images are its reference images, which the prompt refers to as <Picture 1>, <Picture 2> and so on. The model is distilled to 6 steps without guidance: use 6 steps, Text Guidance 1, Shift 3 and DDIM Trailing. It works best at 4 to 16 megapixels with a detailed English prompt.",
       copyright: "© 2026 MiniMax", huggingFaceLink: "MiniMaxAI/MiniMax-H3-Image"

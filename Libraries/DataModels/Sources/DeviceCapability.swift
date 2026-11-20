@@ -621,7 +621,31 @@ public struct DeviceCapability {
     return scales
   }
 
-  public static func firstPassHighResolutionFixScales(for scale: Scale) -> [Scale] {
+  /// First-pass sizes for hires fix at `scale`, largest first. `hiresFixScale`, a model's own first
+  /// pass on the short side, is added at `scale`'s aspect ratio when the standard sizes lack it.
+  public static func firstPassHighResolutionFixScales(for scale: Scale, hiresFixScale: UInt16?)
+    -> [Scale]
+  {
+    var scales = standardFirstPassHighResolutionFixScales(for: scale)
+    guard let hiresFixScale, hiresFixScale < min(scale.widthScale, scale.heightScale),
+      !scales.contains(where: { min($0.widthScale, $0.heightScale) == hiresFixScale })
+    else { return scales }
+    let longSide = UInt16(
+      (Double(max(scale.widthScale, scale.heightScale)) * Double(hiresFixScale)
+        / Double(min(scale.widthScale, scale.heightScale))).rounded())
+    let firstPass =
+      scale.widthScale >= scale.heightScale
+      ? Scale(widthScale: longSide, heightScale: hiresFixScale)
+      : Scale(widthScale: hiresFixScale, heightScale: longSide)
+    scales.insert(
+      firstPass,
+      at: scales.firstIndex { min($0.widthScale, $0.heightScale) < hiresFixScale }
+        ?? scales.endIndex
+    )
+    return scales
+  }
+
+  private static func standardFirstPassHighResolutionFixScales(for scale: Scale) -> [Scale] {
     if scale.widthScale == scale.heightScale {
       var scales = [Scale]()
       if scale.widthScale > 16 {
