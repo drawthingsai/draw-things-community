@@ -9,6 +9,8 @@ public struct ModelWeightElement: RandomAccessCollection, ExpressibleByArrayLite
     case I
   }
   public let format: Format
+  // Where each element starts along the split axis. One extra trailing value ends the last
+  // element; without it, the last element runs to the end of the tensor.
   public let offsets: [Int]?
   public let scale: Float
   public let shift: Float

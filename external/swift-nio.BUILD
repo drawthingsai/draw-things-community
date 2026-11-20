@@ -95,9 +95,9 @@ cc_library(
     srcs = glob([
         "Sources/CNIOSHA1/**/*.c",
     ]),
-    hdrs = [
+    hdrs = glob([
         "Sources/CNIOSHA1/**/*.h",
-    ],
+    ]),
     aspect_hints = [":CNIOSHA1_swift_interop"],
     copts = [],
     includes = ["Sources/CNIOSHA1/include"],
@@ -321,6 +321,23 @@ swift_library(
         ":_NIODataStructures",
         "@SwiftCollections//:Collections",
         "@swift-atomics//:SwiftAtomics",
+    ],
+)
+
+swift_library(
+    name = "NIOWebSocket",
+    package_name = "SwiftNIO",
+    srcs = glob([
+        "Sources/NIOWebSocket/*.swift",
+    ]),
+    module_name = "NIOWebSocket",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":CNIOSHA1",
+        ":NIO",
+        ":NIOCore",
+        ":NIOHTTP1",
+        ":_NIOBase64",
     ],
 )
 

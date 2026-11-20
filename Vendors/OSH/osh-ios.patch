@@ -13,7 +13,7 @@
 
  GLOBAL_STR(S_Aoo, "");
  GLOBAL_STR(S_Bkk, "\u0000");
-@@ -11648,6 +11654,308 @@
+@@ -11648,6 +11654,341 @@
 
  }  // define namespace oils_for_unix
 
@@ -24,6 +24,7 @@
 +thread_local bool gOshIosRuntimeInitialized = false;
 +thread_local const osh_ios_config* gOshIosCurrentConfig = nullptr;
 +thread_local bool gOshIosUnsupported = false;
++thread_local bool gOshIosCommandNotFound = false;
 +thread_local bool gOshIosMakeRedirectsPermanent = false;
 +thread_local int gOshIosPermanentVirtualStdinCount = 0;
 +thread_local std::vector<FILE*> gOshIosPermanentFiles;
@@ -98,6 +99,33 @@
 +
 +const osh_ios_config* CurrentConfig() {
 +  return gOshIosCurrentConfig;
++}
++
++const char* CurrentDirectory() {
++  const osh_ios_config* config = gOshIosCurrentConfig;
++  if (config == nullptr || config->current_directory == nullptr) {
++    return nullptr;
++  }
++  const char* directory = config->current_directory(config->context);
++  return directory != nullptr && directory[0] == '/' ? directory : nullptr;
++}
++
++const char* ResolvePath(const char* path, char* buffer) {
++  // An empty path names no file here either; the call rejects it unchanged.
++  const char* directory = path[0] == '/' || path[0] == '\0' ? nullptr : CurrentDirectory();
++  if (directory == nullptr) {
++    return path;
++  }
++  int length = snprintf(buffer, PATH_MAX, "%s/%s", directory, path);
++  if (length < 0 || length >= PATH_MAX) {
++    errno = ENAMETOOLONG;
++    return nullptr;
++  }
++  return buffer;
++}
++
++bool CommandWasNotFound() {
++  return gOshIosCommandNotFound;
 +}
 +
 +bool IsCancelled() {
@@ -215,6 +243,7 @@
 +    environment.push_back(item.c_str());
 +  }
 +
++  gOshIosCommandNotFound = false;
 +  int status = config->run_external(
 +      static_cast<int>(argv.size()), argv.data(),
 +      static_cast<int>(environment.size()), environment.data(), input, output,
@@ -236,6 +265,10 @@
 +}
 +
 +}  // namespace osh_ios
++
++extern "C" void osh_ios_note_command_not_found(void) {
++  gOshIosCommandNotFound = true;
++}
 +
 +extern "C" int osh_ios_run(int argc, const char* const argv[], FILE* input,
 +                             FILE* output, FILE* error,
@@ -322,7 +355,7 @@
  namespace assign_osh {  // define
 
  using option_asdl::builtin_i;
-@@ -18497,25 +18805,36 @@
+@@ -18497,25 +18804,36 @@
    args::Reader* arg_r = nullptr;
    Dict<BigStr*, BigStr*>* environ = nullptr;
    int i;
@@ -360,7 +393,7 @@
  }
 
  Wait::Wait(process::Waiter* waiter, process::JobList* job_list, state::Mem* mem, dev::Tracer* tracer, ui::ErrorFormatter* errfmt) {
-@@ -24362,7 +24681,21 @@
+@@ -24362,7 +24680,21 @@
  using error::e_die_status;
  using mylib::print_stderr;
 
@@ -382,7 +415,7 @@
    return (posix::access(full_path, X_OK) and path_stat::isfile(full_path));
  }
 
-@@ -24373,6 +24706,10 @@
+@@ -24373,6 +24705,10 @@
      return nullptr;
    }
    if (str_contains(name, S_ckc)) {
@@ -393,7 +426,7 @@
      return path_stat::exists(name) ? name : nullptr;
    }
    for (ListIter<BigStr*> it(path_dirs); !it.Done(); it.Next()) {
-@@ -24382,7 +24719,12 @@
+@@ -24382,7 +24718,12 @@
        found = _IsPathExecutable(full_path);
      }
      else {
@@ -406,7 +439,7 @@
      }
      if (found) {
        return full_path;
-@@ -24632,6 +24974,508 @@
+@@ -24632,6 +25007,521 @@
    ;  // pass
  }
 
@@ -461,7 +494,15 @@
 +    saved_sh_funcs_ = procs_->sh_funcs;
 +    saved_hooks_ = trap_state_->hooks;
 +    saved_traps_ = trap_state_->traps;
-+    has_saved_cwd_ = getcwd(saved_cwd_, sizeof(saved_cwd_)) != nullptr;
++    // cd in the child sets the directory OSH resolves cd and pwd from.
++    saved_pwd_ = mem_->pwd;
++    // Shells run concurrently; restore this shell's directory, not
++    // whichever one the process has.
++    if (const char* directory = osh_ios::CurrentDirectory()) {
++      has_saved_cwd_ = strlcpy(saved_cwd_, directory, sizeof(saved_cwd_)) < sizeof(saved_cwd_);
++    } else {
++      has_saved_cwd_ = getcwd(saved_cwd_, sizeof(saved_cwd_)) != nullptr;
++    }
 +
 +    gHeap.PushRoot(reinterpret_cast<RawObject**>(&saved_var_stack_));
 +    gHeap.PushRoot(reinterpret_cast<RawObject**>(&saved_last_status_));
@@ -480,6 +521,7 @@
 +    gHeap.PushRoot(reinterpret_cast<RawObject**>(&saved_sh_funcs_));
 +    gHeap.PushRoot(reinterpret_cast<RawObject**>(&saved_hooks_));
 +    gHeap.PushRoot(reinterpret_cast<RawObject**>(&saved_traps_));
++    gHeap.PushRoot(reinterpret_cast<RawObject**>(&saved_pwd_));
 +
 +    auto* child_var_stack =
 +        Alloc<List<Dict<BigStr*, runtime_asdl::Cell*>*>>();
@@ -563,6 +605,7 @@
 +      chdir(saved_cwd_);
 +    }
 +    mem_->var_stack = saved_var_stack_;
++    mem_->pwd = saved_pwd_;
 +    mem_->last_status = saved_last_status_;
 +    mem_->pipe_status = saved_pipe_status_;
 +    mem_->process_sub_status = saved_process_sub_status_;
@@ -603,7 +646,7 @@
 +    }
 +    trap_state_->hooks = saved_hooks_;
 +    trap_state_->traps = saved_traps_;
-+    for (int i = 0; i < 17; ++i) {
++    for (int i = 0; i < 18; ++i) {
 +      gHeap.PopRoot();
 +    }
 +  }
@@ -630,6 +673,7 @@
 +  Dict<BigStr*, value_asdl::value_t*>* saved_sh_funcs_;
 +  Dict<BigStr*, syntax_asdl::command_t*>* saved_hooks_;
 +  Dict<int, syntax_asdl::command_t*>* saved_traps_;
++  BigStr* saved_pwd_;
 +  bool has_saved_cwd_;
 +  char saved_cwd_[4096];
 +};
@@ -836,7 +880,9 @@
 +        if (r.op == Id::Redir_GreatAnd) {
 +          streams[r.fd] = streams[r.arg == "1" ? 1 : 2];
 +        } else {
-+          FILE* redirected = fopen(r.arg.c_str(),
++          char resolved[PATH_MAX];
++          const char* name = osh_ios::ResolvePath(r.arg.c_str(), resolved);
++          FILE* redirected = name == nullptr ? nullptr : fopen(name,
 +              r.op == Id::Redir_Less ? "r" : r.op == Id::Redir_DGreat ? "a" : "w");
 +          if (redirected == nullptr) {
 +            stages[i].redirect_error = "osh: " + r.arg + ": " + strerror(errno) + "\n";
@@ -915,7 +961,7 @@
  ShellExecutor::ShellExecutor(state::Mem* mem, optview::Exec* exec_opts, state::MutableOpts* mutable_opts, state::Procs* procs, hay_ysh::HayState* hay_state, Dict<int, vm::_Builtin*>* builtins, dev::Tracer* tracer, ui::ErrorFormatter* errfmt, executor::SearchPath* search_path, process::ExternalProgram* ext_prog, process::Waiter* waiter, process::JobControl* job_control, process::JobList* job_list, process::FdState* fd_state, trap_osh::TrapState* trap_state) : ::vm::_Executor(mem, exec_opts, mutable_opts, procs, hay_state, builtins, tracer, errfmt) {
    this->search_path = search_path;
    this->ext_prog = ext_prog;
-@@ -24719,10 +25563,14 @@
+@@ -24719,10 +25562,14 @@
      builtin_id = _RewriteExternToBuiltin(cmd_val->argv);
      if (builtin_id != consts::NO_INDEX) {
        if (builtin_id == builtin_i::cat) {
@@ -930,14 +976,15 @@
        }
        else {
          return this->RunBuiltin(builtin_id, cmd_val);
-@@ -24733,6 +25581,18 @@
+@@ -24733,6 +25622,19 @@
  }
 
  int ShellExecutor::RunExternal(BigStr* arg0, syntax_asdl::loc_t* arg0_loc, cmd_value::Argv* cmd_val, runtime_asdl::CommandStatus* cmd_st, int run_flags) {
 +#ifdef OSH_IOS
 +  this->tracer->OnExec(cmd_val->argv);
 +  int status = OshIosRunExternal(this, cmd_val);
-+  if (status == 127) {
++  // A found command can exit 127 too.
++  if (status == 127 && osh_ios::CommandWasNotFound()) {
 +    this->errfmt->Print_(StrFormat("Command %r not found (OILS-ERR-100)", arg0),
 +                         arg0_loc);
 +  }
@@ -949,7 +996,7 @@
    Dict<BigStr*, BigStr*>* environ = nullptr;
    BigStr* argv0_path = nullptr;
    bool do_fork;
-@@ -24792,9 +25652,18 @@
+@@ -24792,9 +25651,18 @@
    this->tracer->OnExec(cmd_val->argv);
    this->ext_prog->Exec(argv0_path, cmd_val, environ);
    assert(0);  // AssertionError
@@ -968,7 +1015,7 @@
    syntax_asdl::command_t* UP_node = nullptr;
    process::Pipeline* pi = nullptr;
    process::Process* p = nullptr;
-@@ -24832,9 +25701,61 @@
+@@ -24832,9 +25700,61 @@
      print_stderr(StrFormat("[%%%d] PID %d Started", job_id, this->mem->last_bg_pid));
    }
    return 0;
@@ -1030,7 +1077,7 @@
    process::Pipeline* pi = nullptr;
    List<syntax_asdl::loc_t*>* pipe_locs = nullptr;
    int n;
-@@ -24868,9 +25789,14 @@
+@@ -24868,9 +25788,14 @@
      this->fg_pipeline = nullptr;
    }
    status_out->pipe_locs = pipe_locs;
@@ -1045,7 +1092,7 @@
    process::Process* p = nullptr;
    StackRoot _root0(&node);
    StackRoot _root1(&p);
-@@ -24880,9 +25806,20 @@
+@@ -24880,9 +25805,20 @@
      p->AddStateChange(Alloc<process::SetPgid>(process::OWN_LEADER, this->tracer));
    }
    return p->RunProcess(this->waiter, trace::ForkWait);
@@ -1066,7 +1113,7 @@
    process::Process* p = nullptr;
    int r;
    int w;
-@@ -24928,9 +25865,14 @@
+@@ -24928,9 +25864,14 @@
    status = p->Wait(this->waiter);
    stdout_str = S_Aoo->join(chunks)->rstrip(S_nfs);
    return Tuple2<int, BigStr*>(status, stdout_str);
@@ -1081,7 +1128,7 @@
    process::Process* p = nullptr;
    int stdout_fd;
    int w;
-@@ -25006,6 +25948,7 @@
+@@ -25006,6 +25947,7 @@
    stdout_str = S_Aoo->join(stdout_chunks);
    stderr_str = S_Aoo->join(stderr_chunks);
    return Tuple3<int, BigStr*, BigStr*>(status, stdout_str, stderr_str);
@@ -1089,7 +1136,7 @@
  }
 
  BigStr* ShellExecutor::RunCommandSub(syntax_asdl::CommandSub* cs_part) {
-@@ -25054,6 +25997,10 @@
+@@ -25054,6 +25996,10 @@
  }
 
  BigStr* ShellExecutor::RunProcessSub(syntax_asdl::CommandSub* cs_part) {
@@ -1100,7 +1147,7 @@
    loc::WordPart* cs_loc = nullptr;
    process::Process* p = nullptr;
    int r;
-@@ -25115,9 +26062,137 @@
+@@ -25115,9 +26104,143 @@
        assert(0);  // AssertionError
      }
    }
@@ -1161,8 +1208,14 @@
 +    }
 +    auto* path = static_cast<runtime_asdl::redirect_arg::Path*>(r->arg);
 +
++    char resolved[PATH_MAX];
++    const char* name = osh_ios::ResolvePath(path->filename->data(), resolved);
++    if (name == nullptr) {
++      err_out->append(errno);
++      break;
++    }
 +    if (target_fd == STDIN_FILENO && r->op_id == Id::Redir_Less) {
-+      FILE* f = fopen(path->filename->data(), "rb");
++      FILE* f = fopen(name, "rb");
 +      if (f == nullptr) {
 +        err_out->append(errno);
 +        break;
@@ -1204,7 +1257,7 @@
 +      err_out->append(ENOTSUP);
 +      break;
 +    }
-+    FILE* f = fopen(path->filename->data(), mode);
++    FILE* f = fopen(name, mode);
 +    if (f == nullptr) {
 +      err_out->append(errno);
 +      break;
@@ -1238,7 +1291,7 @@
    StackRoot _root0(&redirects);
    StackRoot _root1(&err_out);
 
-@@ -25125,13 +26200,51 @@
+@@ -25125,13 +26199,51 @@
      return ;
    }
    this->fd_state->Push(redirects, err_out);
@@ -1290,7 +1343,7 @@
  }
 
  void ShellExecutor::PushProcessSub() {
-@@ -38080,6 +39193,15 @@
+@@ -38080,6 +39192,15 @@
  }
 
  int CommandEvaluator::_Execute(syntax_asdl::command_t* node) {
@@ -1306,7 +1359,7 @@
    runtime_asdl::CommandStatus* cmd_st = nullptr;
    runtime_asdl::StatusArray* process_sub_st = nullptr;
    int status;
-@@ -58018,6 +59140,14 @@
+@@ -58018,6 +59139,14 @@
      }
    }
    hist_ev = Alloc<history::Evaluator>(readline, hist_ctx, debug_f);
@@ -1321,7 +1374,7 @@
    if (flag->c != nullptr) {
      src = source::CFlag;
      line_reader = reader::StringLineReader(flag->c, arena);
-@@ -58038,6 +59168,14 @@
+@@ -58038,6 +59167,14 @@
            line_reader = nullptr;
          }
          else {
@@ -1336,7 +1389,7 @@
            stdin_ = mylib::Stdin();
            if ((len(flag->tool) == 0 and stdin_->isatty())) {
              src = source::Interactive;
-@@ -58048,6 +59186,7 @@
+@@ -58048,6 +59185,7 @@
              src = Alloc<source::Stdin>(S_Aoo);
              line_reader = Alloc<reader::FileLineReader>(stdin_, arena);
            }
@@ -1469,7 +1522,79 @@
 +#endif
    for (char** env = environ; *env; ++env) {
      char* pair = *env;
-@@ -506,7 +595,11 @@
+@@ -101,7 +190,16 @@
+ }
+ 
+ int Chdir(BigStr* dest_dir) {
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* path = osh_ios::ResolvePath(dest_dir->data_, resolved);
++  if (path == nullptr) {
++    return errno;
++  }
++  if (chdir(path) == 0) {
++#else
+   if (chdir(dest_dir->data_) == 0) {
++#endif
+     return 0;  // success
+   } else {
+     return errno;
+@@ -284,7 +382,13 @@
+ 
+ Tuple2<BigStr*, int>* MakeDirCacheKey(BigStr* path) {
+   struct stat st;
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path->data(), resolved);
++  if (name == nullptr || ::stat(name, &st) == -1) {
++#else
+   if (::stat(path->data(), &st) == -1) {
++#endif
+     throw Alloc<OSError>(errno);
+   }
+ 
+@@ -293,12 +397,24 @@
+ 
+ bool IsSameFile(BigStr* path1, BigStr* path2) {
+   struct stat st1, st2;
++#ifdef OSH_IOS
++  char resolved1[PATH_MAX], resolved2[PATH_MAX];
++  const char* name1 = osh_ios::ResolvePath(path1->data(), resolved1);
++  const char* name2 = osh_ios::ResolvePath(path2->data(), resolved2);
++  if (name1 == nullptr || ::stat(name1, &st1)) {
++    return false;
++  }
++  if (name2 == nullptr || ::stat(name2, &st2)) {
++    return false;
++  }
++#else
+   if (::stat(path1->data(), &st1)) {
+     return false;
+   }
+   if (::stat(path2->data(), &st2)) {
+     return false;
+   }
++#endif
+   if (st1.st_dev != st2.st_dev) {
+     return false;
+   }
+@@ -308,7 +424,15 @@
+   return true;
+ }
+ 
+ int Unlink(BigStr* path) {
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path->data(), resolved);
++  if (name == nullptr || ::unlink(name) < 0) {
++    return errno;
++  }
++  return 0;
++#endif
+   if (::unlink(path->data()) < 0) {
+     return errno;
+   }
+@@ -506,7 +603,11 @@
    return s;
  }
  
@@ -1523,7 +1648,21 @@
  
  using error::e_die;
  
-@@ -145,12 +148,32 @@
+@@ -48,7 +51,13 @@
+ }
+ 
+ int open(BigStr* path, int flags, int perms) {
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path->data_, resolved);
++  int result = name != nullptr ? ::open(name, flags, perms) : -1;
++#else
+   int result = ::open(path->data_, flags, perms);
++#endif
+   if (result < 0) {
+     throw Alloc<OSError>(errno);
+   }
+@@ -145,19 +154,45 @@
  }
  
  void kill(int pid, int sig) {
@@ -1556,6 +1695,19 @@
    if (::killpg(pgid, sig) != 0) {
      throw Alloc<OSError>(errno);
    }
+ }
+ 
+ List<BigStr*>* listdir(BigStr* path) {
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path->data(), resolved);
++  DIR* dirp = name != nullptr ? opendir(name) : NULL;
++#else
+   DIR* dirp = opendir(path->data());
++#endif
+   if (dirp == NULL) {
+     throw Alloc<OSError>(errno);
+   }
 
 --- a/cpp/stdlib.h
 +++ b/cpp/stdlib.h
@@ -1569,6 +1721,29 @@
  
  namespace fcntl_ {
  
+@@ -23,10 +26,22 @@
+ 
+ inline bool access(BigStr* pathname, int mode) {
+   // No error case: 0 is success, -1 is error AND false.
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* path = osh_ios::ResolvePath(pathname->data_, resolved);
++  return path != nullptr && ::access(path, mode) == 0;
++#else
+   return ::access(pathname->data_, mode) == 0;
++#endif
+ }
+ 
+ inline BigStr* getcwd() {
++#ifdef OSH_IOS
++  // Shells run concurrently; each has its own directory.
++  if (const char* directory = osh_ios::CurrentDirectory()) {
++    return StrFromC(directory);
++  }
++#endif
+   BigStr* result = OverAllocatedStr(PATH_MAX);
+   char* p = ::getcwd(result->data_, PATH_MAX);
+   if (p == nullptr) {
 @@ -48,6 +51,12 @@
  }
  
@@ -1619,7 +1794,7 @@
  
  namespace iolib {
  
-@@ -7,11 +10,17 @@
+@@ -7,7 +10,13 @@
 +#ifdef OSH_IOS
 +thread_local SignalSafe* gSignalSafe = nullptr;
 +#else
@@ -1671,6 +1846,18 @@
 
 --- a/mycpp/gc_mylib.cc
 +++ b/mycpp/gc_mylib.cc
+@@ -6,6 +6,11 @@
+ #include <unistd.h>  // isatty
+ 
+ #include "mycpp/gc_iolib.h"
++#ifdef OSH_IOS
++#include <limits.h>
++
++#include "Vendors/OSH/osh_ios.h"
++#endif
+ 
+ namespace mylib {
+ 
 @@ -30,8 +30,13 @@
  }
  
@@ -1685,7 +1872,7 @@
  }
  
  #if 0
-@@ -106,7 +111,11 @@
+@@ -101,11 +111,21 @@
    }
  }
 
@@ -1697,6 +1884,16 @@
 
  LineReader* open(BigStr* path) {
    // TODO: Don't use C I/O; use POSIX I/O!
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path->data_, resolved);
++  FILE* f = name != nullptr ? fopen(name, "r") : nullptr;
++#else
+   FILE* f = fopen(path->data_, "r");
++#endif
+   if (f == nullptr) {
+     throw Alloc<IOError>(errno);
+   }
 @@ -190,6 +199,75 @@
 +#ifdef OSH_IOS
 +thread_local Writer* gStdout = nullptr;
@@ -1773,6 +1970,20 @@
  //
  // CFileWriter
  //
+@@ -326,7 +415,13 @@
+ 
+ StatResult* stat(BigStr* filename) {
+   auto* st = Alloc<StatResult>();
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(filename->data_, resolved);
++  if (name == nullptr || ::stat(name, &st->stat_result_) < 0) {
++#else
+   if (::stat(filename->data_, &st->stat_result_) < 0) {
++#endif
+     return nullptr;
+   }
+   return st;
 
 --- a/mycpp/gc_mylib.h
 +++ b/mycpp/gc_mylib.h
@@ -1910,6 +2121,84 @@
 
 --- a/cpp/libc.cc
 +++ b/cpp/libc.cc
+@@ -11,6 +11,12 @@
+ #include <time.h>    // nanosleep()
+ #include <unistd.h>  // gethostname()
+ #include <wchar.h>
++#ifdef OSH_IOS
++#include <dirent.h>
++#include <sys/stat.h>
++
++#include "Vendors/OSH/osh_ios.h"
++#endif
+ 
+ namespace libc {
+ 
+@@ -29,7 +35,13 @@
+ 
+ BigStr* realpath(BigStr* path) {
+   BigStr* result = OverAllocatedStr(PATH_MAX);
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path->data_, resolved);
++  char* p = name != nullptr ? ::realpath(name, result->data_) : nullptr;
++#else
+   char* p = ::realpath(path->data_, result->data_);
++#endif
+   if (p == nullptr) {
+     throw Alloc<OSError>(errno);
+   }
+@@ -56,12 +68,50 @@
+   }
+ }
+ 
++#ifdef OSH_IOS
++// Relative patterns match from the shell's directory; matches keep the
++// pattern's relative spelling.
++static void* OshIosGlobOpendir(const char* path) {
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path, resolved);
++  return name != nullptr ? opendir(name) : nullptr;
++}
++
++static struct dirent* OshIosGlobReaddir(void* directory) {
++  return readdir(static_cast<DIR*>(directory));
++}
++
++static void OshIosGlobClosedir(void* directory) {
++  closedir(static_cast<DIR*>(directory));
++}
++
++static int OshIosGlobLstat(const char* path, struct stat* st) {
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path, resolved);
++  return name != nullptr ? lstat(name, st) : -1;
++}
++
++static int OshIosGlobStat(const char* path, struct stat* st) {
++  char resolved[PATH_MAX];
++  const char* name = osh_ios::ResolvePath(path, resolved);
++  return name != nullptr ? stat(name, st) : -1;
++}
++#endif
++
+ List<BigStr*>* glob(BigStr* pat, int flags) {
+   glob_t results;
+   // Hm, it's weird that the first one can't be called with GLOB_APPEND.  You
+   // get a segfault.
+   // int flags = GLOB_APPEND;
+   // flags |= GLOB_NOMAGIC;
++#ifdef OSH_IOS
++  results.gl_opendir = OshIosGlobOpendir;
++  results.gl_readdir = OshIosGlobReaddir;
++  results.gl_closedir = OshIosGlobClosedir;
++  results.gl_lstat = OshIosGlobLstat;
++  results.gl_stat = OshIosGlobStat;
++  flags |= GLOB_ALTDIRFUNC;
++#endif
+   int ret = glob(pat->data_, flags, NULL, &results);
+ 
+   const char* err_str = NULL;
 @@ -254,10 +254,14 @@
 
  namespace pylocale {
@@ -1977,3 +2266,111 @@
    BigStr* result = OverAllocatedStr(max_len);
    int n = strftime(result->data(), max_len, s->data_, loc_time);
    if (n == 0) {
+
+--- a/cpp/osh.cc
++++ b/cpp/osh.cc
+@@ -9,6 +9,9 @@
+ #include "mycpp/gc_builtins.h"
+ // To avoid circular dependency with e_die()
+ #include "prebuilt/core/error.mycpp.h"
++#ifdef OSH_IOS
++#include "Vendors/OSH/osh_ios.h"
++#endif
+ 
+ using error::e_die;
+ using id_kind_asdl::Id;  // used below
+@@ -39,6 +42,12 @@
+ 
+ bool DoUnaryOp(Id_t op_id, BigStr* s) {
+   const char* zPath = s->data_;
++#ifdef OSH_IOS
++  char resolved[PATH_MAX];
++  if ((zPath = osh_ios::ResolvePath(zPath, resolved)) == nullptr) {
++    return false;
++  }
++#endif
+ 
+   if (op_id == Id::BoolUnary_h || op_id == Id::BoolUnary_L) {
+     struct stat st;
+@@ -137,15 +146,22 @@
+ }
+ 
+ bool DoBinaryOp(Id_t op_id, BigStr* s1, BigStr* s2) {
++  const char* path1 = s1->data_;
++  const char* path2 = s2->data_;
++#ifdef OSH_IOS
++  char resolved1[PATH_MAX], resolved2[PATH_MAX];
++  path1 = osh_ios::ResolvePath(path1, resolved1);
++  path2 = osh_ios::ResolvePath(path2, resolved2);
++#endif
+   int m1 = 0;
+   struct stat st1;
+-  if (stat(s1->data_, &st1) == 0) {
++  if (path1 != nullptr && stat(path1, &st1) == 0) {
+     m1 = st1.st_mtime;
+   }
+ 
+   int m2 = 0;
+   struct stat st2;
+-  if (stat(s2->data_, &st2) == 0) {
++  if (path2 != nullptr && stat(path2, &st2) == 0) {
+     m2 = st2.st_mtime;
+   }
+ 
+
+--- a/cpp/pylib.cc
++++ b/cpp/pylib.cc
+@@ -3,6 +3,11 @@
+ #include "pylib.h"
+ 
+ #include <sys/stat.h>
++#ifdef OSH_IOS
++#include <limits.h>
++
++#include "Vendors/OSH/osh_ios.h"
++#endif
+ 
+ namespace os_path {
+ 
+@@ -38,9 +43,21 @@
+ 
+ namespace path_stat {
+ 
++static int StatPath(const char* path, struct stat* st) {
++#ifdef OSH_IOS
++  // Relative paths are the shell's, not the process-wide cwd's.
++  char resolved[PATH_MAX];
++  path = osh_ios::ResolvePath(path, resolved);
++  if (path == nullptr) {
++    return -1;
++  }
++#endif
++  return ::stat(path, st);
++}
++
+ bool exists(BigStr* path) {
+   struct stat st;
+-  if (::stat(path->data_, &st) < 0) {
++  if (StatPath(path->data_, &st) < 0) {
+     return false;
+   } else {
+     return true;
+@@ -49,7 +66,7 @@
+ 
+ bool isdir(BigStr* path) {
+   struct stat st;
+-  if (::stat(path->data_, &st) < 0) {
++  if (StatPath(path->data_, &st) < 0) {
+     return false;
+   }
+   return S_ISDIR(st.st_mode);
+@@ -57,7 +74,7 @@
+ 
+ bool isfile(BigStr* path) {
+   struct stat st;
+-  if (::stat(path->data_, &st) < 0) {
++  if (StatPath(path->data_, &st) < 0) {
+     return false;
+   }
+   return S_ISREG(st.st_mode);
+

@@ -712,7 +712,7 @@ public enum ImageConverter {
       let taesd: ManagedMLModel?
       let isVideo: Bool
       switch version {
-      case .hiDreamO1:
+      case .hiDreamO1, .minimaxH3Image:
         return []
       case .flux1, .hiDreamI1, .zImage:
         imageHeight = shape[1] * 8
@@ -1367,9 +1367,9 @@ public enum ImageConverter {
       guard let fp16 = $0.baseAddress?.assumingMemoryBound(to: FloatType.self) else {
         return ([], false)
       }
-      // MiniMax H3 packs audio rows below the 24-channel video latent.
+      // MiniMax H3 packs audio rows below the 24-channel video latent; H3 Image has none.
       let imageHeight =
-        channels == 24
+        channels == 24 && version == .minimaxH3
         ? shape[1] - MiniMaxH3AudioHeight(videoLatentFrames: batchSize, latentWidth: imageWidth)
         : shape[1]
       guard imageHeight > 0 else { return ([], false) }
@@ -1630,7 +1630,7 @@ public enum ImageConverter {
             bytes[i * 4 + 2] = UInt8(min(max(Int(b.isFinite ? b : 0), 0), 255))
             bytes[i * 4 + 3] = 255
           }
-        case .hiDreamO1, .ltx2, .ltx2_3, .minimaxH3:
+        case .hiDreamO1, .ltx2, .ltx2_3, .minimaxH3, .minimaxH3Image:
           bytes.deallocate()
           continue
         case .hunyuanVideo:

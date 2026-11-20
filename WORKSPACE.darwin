@@ -132,9 +132,9 @@ dflat_deps()
 
 git_repository(
     name = "s4nnc",
-    commit = "01d743a210b3f032393aeae51e00a41417ed4201",
+    commit = "25e473a212d673ffebe0382da46d38927862eccb",
     remote = "https://github.com/liuliu/s4nnc.git",
-    shallow_since = "1793994558 -0500",
+    shallow_since = "1795138065 -0500",
 )
 
 load("@s4nnc//:deps.bzl", "s4nnc_deps", "s4nnc_extra_deps")
@@ -156,6 +156,7 @@ ccv_setting(
     name = "local_config_ccv",
     have_accelerate_framework = True,
     have_pthread = True,
+    use_dispatch = True,
 )
 
 git_repository(
@@ -245,16 +246,40 @@ new_git_repository(
 )
 
 new_git_repository(
+    name = "SwiftASN1",
+    build_file = "swift-asn1.BUILD",
+    # swift-asn1 1.5.1.
+    commit = "810496cf121e525d660cd0ea89a758740476b85f",
+    remote = "https://github.com/apple/swift-asn1.git",
+)
+
+new_git_repository(
     name = "SwiftCrypto",
     build_file = "swift-crypto.BUILD",
-    commit = "81bee98e706aee68d39ed5996db069ef2b313d62",
+    # swift-crypto 3.15.1.
+    commit = "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
     remote = "https://github.com/apple/swift-crypto.git",
+)
+
+http_archive(
+    name = "curl",
+    build_file = "curl.BUILD",
+    patch_args = ["-p1"],
+    patches = ["//Vendors/curl:ios.patch"],
+    # curl 8.23.0, release signature verified.
+    sha256 = "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5",
+    strip_prefix = "curl-8.23.0",
+    urls = [
+        "https://curl.se/download/curl-8.23.0.tar.xz",
+        "https://github.com/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz",
+    ],
 )
 
 new_git_repository(
     name = "OpenSSH",
     build_file = "openssh-portable.BUILD",
-    commit = "e8dd756725e8800fcd0b3fd71ee6b4382d1e8fab",
+    # OpenSSH 10.6p2.
+    commit = "d449e662b6b8b8cb20e852d8084c269af1c5e8f1",
     patch_args = ["-p1"],
     patches = ["//Vendors/OpenSSH:ios.patch"],
     remote = "https://github.com/openssh/openssh-portable.git",

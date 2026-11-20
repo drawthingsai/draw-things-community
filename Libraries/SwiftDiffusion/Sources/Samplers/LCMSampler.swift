@@ -186,11 +186,12 @@ extension LCMSampler: Sampler {
     var c = c
     var extraProjection = extraProjection
     // There is no tokenLengthUncond any more.
-    let tokenLengthUncond = version == .minimaxH3 ? tokenLengthUncond : tokenLengthCond
-    if version != .svdI2v && version != .minimaxH3 {
+    let tokenLengthUncond = tokenLengthCond
+    if version != .svdI2v {
       for i in 0..<c.count {
         let shape = c[i].shape
         let batchSize = shape[0] / 2
+        guard batchSize > 0 else { continue }
         if shape.count == 3 {
           let conditionalLength = version == .kandinsky21 ? shape[1] : tokenLengthCond
           // Only tokenLengthCond is used.

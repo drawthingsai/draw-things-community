@@ -10,7 +10,7 @@ public enum FeaturesMatrix {
       .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1,
       .wan22_5b, .flux2, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b,
       .ideogram4,
-      .longcatVideoAvatar1_5, .minimaxH3:
+      .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       return false
     }
   }
@@ -24,7 +24,7 @@ public enum FeaturesMatrix {
       .ernieImage, .flux2, .flux2_9b,
       .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4,
       .krea2,
-      .longcatVideoAvatar1_5, .minimaxH3:
+      .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       return false
     }
   }
@@ -36,7 +36,7 @@ public enum FeaturesMatrix {
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .sd3, .sd3Large, .pixart,
       .auraflow, .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1,
       .wan22_5b, .flux2, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5, .minimaxH3, .mossImage:
+      .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image, .mossImage:
       return false
     }
   }

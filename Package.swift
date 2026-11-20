@@ -12,11 +12,11 @@ let package = Package(
   ],
   dependencies: [
     .package(
-      url: "https://github.com/liuliu/ccv.git", revision: "0ab2d59e441191b09afebb7b7afe95a64c513a26"
+      url: "https://github.com/liuliu/ccv.git", revision: "710baf94e5a9cb289bd992bc428b994433bb4ce3"
     ),
     .package(
       url: "https://github.com/liuliu/s4nnc.git",
-      revision: "01d743a210b3f032393aeae51e00a41417ed4201"),
+      revision: "25e473a212d673ffebe0382da46d38927862eccb"),
     .package(
       url: "https://github.com/liuliu/dflat.git",
       revision: "73925e51e4f44add842177a229f9990cb13711ff"),
@@ -896,6 +896,16 @@ if FileManager.default.fileExists(atPath: localCodePath) {
       name: "DataChannel",
       dependencies: ["LibDataChannel"],
       path: "Libraries/DataChannel/Sources"
+    ),
+    .target(
+      name: "DeviceLink",
+      dependencies: [
+        "DataChannel",
+        .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+      ],
+      path: "Libraries/DeviceLink",
+      exclude: ["BUILD", "Protos", "Tests"],
+      sources: ["Sources"]
     ),
     .target(
       name: "LocalCodeApp",

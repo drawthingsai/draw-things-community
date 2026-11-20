@@ -263,7 +263,7 @@ struct Quantizer: ParsableCommand {
                 $0.write(key, tensor: fp16, codec: .ezm7)
               }
             }
-          case .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .minimaxH3:
+          case .ltx2, .ltx2_3, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
             fatalError()
           case .mossImage:
             if tensor.dataType == .Float32 {

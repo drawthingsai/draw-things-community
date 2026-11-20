@@ -21,7 +21,7 @@ public enum LoRAExporter {
     var metadata = [String: String]()
     metadata["name"] = humanName
     switch version {
-    case .mossImage, .longcatVideoAvatar1_5, .minimaxH3:
+    case .mossImage, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     case .v1:
       metadata["version"] = "v1"
@@ -170,7 +170,7 @@ public enum LoRAExporter {
     let textEncoderKeys2: [String]?
     let textEncoderKeysMapping2: ModelWeightMapping?
     switch version {
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     case .v1:
       textEncoderKeys = StableDiffusionMapping.CLIPTextModel.keys.sorted()

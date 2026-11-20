@@ -337,6 +337,9 @@ struct gRPCServerCLI: ParsableCommand {
   @Flag(help: "Enable model browsing.")
   var modelBrowser = false
 
+  @Flag(help: "Disable file upload.")
+  var noFileUpload = false
+
   @Flag(help: "Disable FlashAttention.")
   var noFlashAttention = false
 
@@ -554,7 +557,8 @@ struct gRPCServerCLI: ParsableCommand {
     let imageGenerationServiceImpl = ImageGenerationServiceImpl(
       imageGenerator: localImageGenerator, queue: queue, backupQueue: queue,
       serverConfigurationRewriter: serverLoRALoader,
-      cancellationMonitor: cancellationMonitor, echoOnQueue: echoOnQueue)
+      cancellationMonitor: cancellationMonitor, echoOnQueue: echoOnQueue,
+      enableFileUpload: !noFileUpload)
     if noResponseCompression {
       imageGenerationServiceImpl.responseCompression.store(false, ordering: .releasing)
     } else {

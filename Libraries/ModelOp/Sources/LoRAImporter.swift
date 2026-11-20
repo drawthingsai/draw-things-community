@@ -59,13 +59,17 @@ public enum LoRAImporter {
       (unetFixedMapper, unetFixed) = MOSSImageFixed(
         FloatType.self, batchSize: 1, tokenLengths: [32], timesteps: 1, channels: 3_072,
         usesFlashAttention: .scale1)
-    case .minimaxH3:
+    case .minimaxH3, .minimaxH3Image:
+      // H3 Image is the H3 transformer without audio, with one output head per distilled step.
+      let includeAudio = version == .minimaxH3
       (unetMapper, unet) = MiniMaxH3(
-        hiddenSize: 5_376, layers: 50, textLength: 2, audioLength: 4, videoFrames: 1,
-        videoHeight: 64, videoWidth: 64, usesFlashAttention: .scale1)
+        hiddenSize: 5_376, layers: 50, textLength: 2, audioLength: includeAudio ? 4 : 0,
+        videoFrames: 1, videoHeight: 64, videoWidth: 64, usesFlashAttention: .scale1,
+        includeAudio: includeAudio,
+        pddSteps: includeAudio ? 1 : MiniMaxH3Configuration.imageHeadSigmas.count)
       (unetFixedMapper, unetFixed) = MiniMaxH3Fixed(
         timesteps: 1, hiddenSize: 5_376, layers: 50, textLength: (0, 2),
-        usesFlashAttention: .scale1)
+        usesFlashAttention: .scale1, includeAudio: includeAudio)
     case .sdxlBase:
       UNetMapping = StableDiffusionMapping.UNetXLBase
       UNetMappingFixed = StableDiffusionMapping.UNetXLBaseFixed
@@ -305,7 +309,7 @@ public enum LoRAImporter {
       case .mossImage:
         inputDim = 32
         conditionalLength = 4_096
-      case .minimaxH3:
+      case .minimaxH3, .minimaxH3Image:
         inputDim = 24
         conditionalLength = 5_120
       case .v1:
@@ -403,13 +407,15 @@ public enum LoRAImporter {
           graph.variable(.CPU, .WC(1, 256), of: FloatType.self),
         ]
         tEmb = nil
-      case .minimaxH3:
+      case .minimaxH3, .minimaxH3Image:
         isCfgEnabled = false
         isGuidanceEmbedEnabled = false
         tEmb = nil
+        // Timestep columns: video, then audio for H3.
         crossattn = [
           graph.variable(.CPU, .HWC(1, 2, 5_120), of: FloatType.self),
-          graph.variable(.CPU, .HWC(1, 2, 256), of: FloatType.self),
+          graph.variable(
+            .CPU, .HWC(1, version == .minimaxH3 ? 2 : 1, 256), of: FloatType.self),
         ]
       case .sdxlBase, .ssd1b:
         isCfgEnabled = true
@@ -792,7 +798,7 @@ public enum LoRAImporter {
         .hunyuanVideo, .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
         .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2,
         .ltx2_3,
-        .cosmos2_5_2b, .cosmos2_5_2_9b, .ideogram4, .krea2, .minimaxH3:
+        .cosmos2_5_2b, .cosmos2_5_2_9b, .ideogram4, .krea2, .minimaxH3, .minimaxH3Image:
         vectors = []
       case .kandinsky21, .v1, .v2, .seedvr2_3b, .seedvr2_7b:
         fatalError()
@@ -815,6 +821,16 @@ public enum LoRAImporter {
             graph.variable(.CPU, .NHWC(1, 1_030, 1, 128), of: FloatType.self),
           ]
           + (0..<(50 * 18 + 4)).map { _ in
+            graph.variable(.CPU, .HWC(1, 1, 5_376), of: FloatType.self)
+          }
+      case .minimaxH3Image:
+        // No audio: 2 text rows plus 32 x 32 video rows, and no audio modulations.
+        cArr =
+          [
+            graph.variable(.CPU, .HWC(1, 2, 5_376), of: FloatType.self),
+            graph.variable(.CPU, .NHWC(1, 1_026, 1, 128), of: FloatType.self),
+          ]
+          + (0..<(50 * 12 + 2)).map { _ in
             graph.variable(.CPU, .HWC(1, 1, 5_376), of: FloatType.self)
           }
       case .sdxlBase, .ssd1b, .sdxlRefiner, .svdI2v, .wurstchenStageC, .wurstchenStageB, .pixart,
@@ -1177,9 +1193,10 @@ public enum LoRAImporter {
       isDiagonal = true
       for i in 0..<weights.count {
         let startOffset = weights.offsets?[i] ?? i * estimatedInputShape0
+        // Offsets may carry an end bound for the last element.
         let endOffset =
-          i < weights.count - 1
-          ? (weights.offsets?[i + 1] ?? (i + 1) * estimatedInputShape0) : shape[0]
+          weights.offsets.flatMap { i + 1 < $0.count ? $0[i + 1] : nil }
+          ?? (i < weights.count - 1 ? (i + 1) * estimatedInputShape0 : shape[0])
         for j in 0..<weights.count {
           // Now, only diag should have any value.
           guard i != j else { continue }
@@ -1227,8 +1244,8 @@ public enum LoRAImporter {
           guard i != j else { continue }
           let startOffset = weights.offsets?[j] ?? j * estimatedInputShape1
           let endOffset =
-            j < weights.count - 1
-            ? (weights.offsets?[j + 1] ?? (j + 1) * estimatedInputShape1) : shape[1]
+            weights.offsets.flatMap { j + 1 < $0.count ? $0[j + 1] : nil }
+            ?? (j < weights.count - 1 ? (j + 1) * estimatedInputShape1 : shape[1])
           let offDiagTensor = tensor[
             (i * inputShape0)..<((i + 1) * inputShape0),
             startOffset..<endOffset
@@ -1723,7 +1740,8 @@ public enum LoRAImporter {
     case .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
-    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
+    case .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3,
+      .minimaxH3Image:
       textModelMapping1 = [:]
       textModelMapping2 = [:]
     case .auraflow:
@@ -1948,7 +1966,7 @@ public enum LoRAImporter {
       switch modelVersion {
       case .longcatVideoAvatar1_5:
         fatalError()
-      case .minimaxH3:
+      case .minimaxH3, .minimaxH3Image:
         break
       case .v1, .v2, .kandinsky21, .svdI2v:
         if let tensorDesc = stateDict["emb_params"] {
@@ -2164,7 +2182,7 @@ public enum LoRAImporter {
         .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
         .seedvr2_3b,
         .seedvr2_7b,
-        .ideogram4, .krea2, .minimaxH3:
+        .ideogram4, .krea2, .minimaxH3, .minimaxH3Image:
         modelPrefix = "dit"
         modelPrefixFixed = "dit"
       }

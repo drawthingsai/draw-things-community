@@ -19,11 +19,13 @@ private func MiniMaxH3FeedForwardInstructionCount(rows: Int, hiddenSize: Int = 5
 
 public func MiniMaxH3InstructionCount(
   videoTime: Int, videoHeight: Int, videoWidth: Int, audioLength: Int, textLength: Int,
-  layers: Int = 50, referenceSequenceLength: Int = 0
+  layers: Int = 50, referenceSequenceLength: Int = 0, includeAudio: Bool = true,
+  pddSteps: Int = 1
 ) -> Int {
   precondition(videoTime > 0 && videoHeight > 0 && videoWidth > 0)
   precondition(videoHeight.isMultiple(of: 2) && videoWidth.isMultiple(of: 2))
-  precondition(audioLength > 0 && textLength > 0 && layers > 0)
+  precondition(includeAudio ? audioLength > 0 : audioLength == 0)
+  precondition(textLength > 0 && layers > 0 && pddSteps > 0)
   let hiddenSize = 5_376
   let videoRows = videoTime * (videoHeight / 2) * (videoWidth / 2)
   let rows = textLength + audioLength + videoRows + referenceSequenceLength
@@ -35,22 +37,24 @@ public func MiniMaxH3InstructionCount(
     total += MiniMaxH3AttentionInstructionCount(rows: rows)
     total += MiniMaxH3FeedForwardInstructionCount(rows: rows)
   }
-  total += DenseInstructionCount(rows: videoRows, input: hiddenSize, output: 96)
+  total += DenseInstructionCount(rows: videoRows, input: hiddenSize, output: 96 * pddSteps)
   total += DenseInstructionCount(rows: audioLength, input: hiddenSize, output: 32)
   return total
 }
 
 public func MiniMaxH3FixedInstructionCount(
   timesteps: Int, hiddenSize: Int, layers: Int, textLength: (Int, Int),
-  referenceSequenceLength: Int = 0
+  referenceSequenceLength: Int = 0, includeAudio: Bool = true
 ) -> Int {
   precondition(timesteps > 0 && hiddenSize > 0 && layers > 0)
   precondition(textLength.0 >= 0 && textLength.1 > 0)
   // Modulations are shared across CFG; each context is refined once, independently of timesteps.
-  let rows = timesteps * (referenceSequenceLength > 0 ? 3 : 2)
+  let rows = timesteps * ((includeAudio ? 2 : 1) + (referenceSequenceLength > 0 ? 1 : 0))
   var total = DenseInstructionCount(rows: rows, input: 256, output: hiddenSize)
   total += DenseInstructionCount(rows: rows, input: hiddenSize, output: 2_688)
-  total += (layers * 18 + 2) * DenseInstructionCount(rows: rows, input: 2_688, output: hiddenSize)
+  total +=
+    (layers * (includeAudio ? 18 : 12) + 2)
+    * DenseInstructionCount(rows: rows, input: 2_688, output: hiddenSize)
   total += DenseInstructionCount(
     rows: textLength.0 + textLength.1, input: 5_120, output: hiddenSize)
   total += DenseInstructionCount(rows: referenceSequenceLength, input: 96, output: hiddenSize)

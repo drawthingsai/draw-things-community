@@ -179,8 +179,8 @@ extension TCDSampler: Sampler {
     var c = c
     var extraProjection = extraProjection
     // There is no tokenLengthUncond any more.
-    let tokenLengthUncond = version == .minimaxH3 ? tokenLengthUncond : tokenLengthCond
-    if version != .svdI2v && version != .minimaxH3 {
+    let tokenLengthUncond = tokenLengthCond
+    if version != .svdI2v {
       for i in 0..<c.count {
         let shape = c[i].shape
         let batchSize = shape[0] / 2

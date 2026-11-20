@@ -14,6 +14,9 @@ public struct DeepSeek4_1ModelConfiguration: Codable, Sendable {
   public var rotaryDim = 64
   public var rawWindow = 128
   public var expertCount = 384
+  /// Experts kept per layer by a pruned checkpoint (gate rows, bias and expert banks share one
+  /// compact index). Empty means every layer keeps `expertCount`.
+  public var layerExpertCounts: [Int] = []
   public var routedExperts = 6
   public var expertIntermediateSize = 2_304
   public var sharedIntermediateSize = 2_304
@@ -121,6 +124,10 @@ public struct DeepSeek4_1ModelConfiguration: Codable, Sendable {
   public init() {}
 
   public static let deepSeekV4_1Flash = DeepSeek4_1ModelConfiguration()
+
+  public func expertCount(layer: Int) -> Int {
+    layerExpertCounts.isEmpty ? expertCount : layerExpertCounts[layer]
+  }
   public var hcMixDim: Int { (2 + hcCount) * hcCount }
   public var attentionOutputLowDim: Int { attentionOutputGroups * attentionLowRank }
 
@@ -643,14 +650,15 @@ private func DeepSeek4_1SharedFFN(
 /// shared expert then runs separately, before the routed experts wait for their weights.
 public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, prefix: String, tokenLength: Int, layerIndex: Int,
-  configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
+  outputRouting: Bool = false, configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> (model: Model, bias: Model.Parameters) {
   precondition(tokenLength >= 0 && layerIndex >= 0 && layerIndex < configuration.layers)
+  let expertCount = configuration.expertCount(layer: layerIndex)
   let x = Input()
   let logits = Dense(
-    count: configuration.expertCount, noBias: true, name: "\(prefix).gate")(
+    count: expertCount, noBias: true, name: "\(prefix).gate")(
       x.to(FloatType.dataType))
-  let bias = Parameter<Float>(.GPU(0), .C(configuration.expertCount), name: "\(prefix).gate.bias")
+  let bias = Parameter<Float>(.GPU(0), .C(expertCount), name: "\(prefix).gate.bias")
   // Routing widens FP16 logits itself and scores them in FP32 with the FP32 bias.
   let prepared = MoERouting(
     kth: configuration.routedExperts, weightScale: 1.5, normalizationEpsilon: 1e-20,
@@ -658,37 +666,37 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
   let pairs = tokenLength * configuration.routedExperts
   let shared: Model.IO
   let routed: Model.IO
-  if configuration.expertResidentSlots[layerIndex] == configuration.expertCount {
+  if configuration.expertResidentSlots[layerIndex] == expertCount {
     // The shared expert joins the routed decode dispatch with the routed experts' intermediate
     // width. Its gate and up weights follow theirs as `experts-0-2` and `experts-0-3`, which
     // loaders map to the checkpoint's `shared_experts-0-0` and `shared_experts-0-1`.
     precondition(configuration.sharedIntermediateSize == configuration.expertIntermediateSize)
     let hidden = SegmentedSwiGLU(
-      segments: configuration.expertCount, count: configuration.expertIntermediateSize,
+      segments: expertCount, count: configuration.expertIntermediateSize,
       clamp: 10, sharedExpertFused: true, name: "\(prefix).experts")([
         prepared[0], prepared[3], prepared[4], prepared[1].reshaped([pairs, 1]), x,
       ])
     shared = Dense(
       count: configuration.hiddenSize, noBias: true, name: "\(prefix).shared_experts.w2")(hidden[1])
     routed = SegmentedDense(
-      segments: configuration.expertCount, count: configuration.hiddenSize, noBias: true,
+      segments: expertCount, count: configuration.hiddenSize, noBias: true,
       name: "\(prefix).experts.w2")(hidden[0], prepared[3], prepared[4])
   } else {
     precondition(configuration.expertResidentSlots[layerIndex] >= configuration.routedExperts)
     let gateWeight = Parameter<Float>(
       .GPU(0),
       .HWC(
-        configuration.expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
+        expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
       name: "\(prefix).experts.streaming_gate")()
     let upWeight = Parameter<Float>(
       .GPU(0),
       .HWC(
-        configuration.expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
+        expertCount, configuration.expertIntermediateSize, configuration.hiddenSize),
       name: "\(prefix).experts.streaming_up")()
     let downWeight = Parameter<Float>(
       .GPU(0),
       .HWC(
-        configuration.expertCount, configuration.hiddenSize, configuration.expertIntermediateSize),
+        expertCount, configuration.hiddenSize, configuration.expertIntermediateSize),
       name: "\(prefix).experts.w2")()
     let resident = MoEWeightStreaming(
       residentSlots: configuration.expertResidentSlots[layerIndex],
@@ -721,7 +729,10 @@ public func DeepSeek4_1MoE<FloatType: TensorNumeric>(
     count: tokenLength, countPerOutput: configuration.routedExperts,
     routed, index: prepared[2]
   ).reshaped([tokenLength, configuration.hiddenSize])
-  return (Model([x], [scattered, shared]), bias.parameters)
+  // With outputRouting: the pairs' tokens grouped by expert, then each group's expert and count.
+  // Only then, since an output nothing reads breaks the graph build.
+  let routing = outputRouting ? [prepared[2], prepared[3], prepared[4]] : []
+  return (Model([x], [scattered, shared] + routing), bias.parameters)
 }
 
 /// Expands text or image embeddings into the initial HC residual streams. The caller
@@ -758,7 +769,7 @@ public func DeepSeek4_1Embedding<FloatType: TensorNumeric>(
 public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, layerIndex: Int,
   cachedRawTokenLength: Int? = nil, outputTokenLength: Int? = nil,
-  boundedReplayTokens: Int? = nil,
+  boundedReplayTokens: Int? = nil, outputRouting: Bool = false,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> (model: Model, bias: Model.Parameters) {
   let prefix = "layers.\(layerIndex)"
@@ -873,13 +884,14 @@ public func DeepSeek4_1Layer<FloatType: TensorNumeric>(
     incomingPre: incomingFFNPre, tokenLength: ffnTokenLength, configuration: configuration)
   let moe = DeepSeek4_1MoE(
     dataType, prefix: "\(prefix).ffn", tokenLength: ffnTokenLength, layerIndex: layerIndex,
-    configuration: configuration)
+    outputRouting: outputRouting, configuration: configuration)
   let ffn = moe.model(normalizedFFN)
   let expanded = HyperConnection(count: configuration.hcCount, operation: .expandSum)(
     ffn[0], ffnResidual, ffnPost, ffnCombination, ffn[1])[0]
   var outputs = [expanded, ffnPre]
   if let indices { outputs.append(indices) }
   if let candidates { outputs.append(candidates) }
+  if outputRouting { outputs.append(contentsOf: (2...4).map { ffn[$0] }) }
   return (Model(inputs, outputs), moe.bias)
 }
 
@@ -925,10 +937,10 @@ public func DeepSeek4_1CausalLMTokenLengths(
 private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int, boundedReplayTokens: Int?,
   logitTokenLength: Int, dsparkTargetLayers: [Int], cachedRawTokenLengths: [Int],
-  configuration: DeepSeek4_1ModelConfiguration
+  outputRouting: Bool, configuration: DeepSeek4_1ModelConfiguration
 ) -> (
   inputs: [Input], hidden: Model.IO, pre: Model.IO, targets: Model.IO?,
-  biases: [(key: String, bias: Model.Parameters)]
+  biases: [(key: String, bias: Model.Parameters)], routing: [Model.IO]
 ) {
   precondition(tokenLength > 0 && cachedTokenLength >= 0)
   precondition(configuration.layers > 0)
@@ -967,6 +979,7 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
     tokenLength: tokenLength, boundedReplayTokens: boundedReplayTokens,
     logitTokenLength: logitTokenLength, configuration: configuration)
   var targets = [Model.IO]()
+  var routing = [Model.IO]()
   for layer in 0..<configuration.layers {
     // The first decoder layer projects global KV/index keys from the complete
     // encoder chunk before slicing queries, raw KV, and the residual to replay.
@@ -1037,25 +1050,43 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
     let (decoderLayer, bias) = DeepSeek4_1Layer(
       dataType, tokenLength: layerTokenLength, cachedTokenLength: layerCachedTokenLength,
       layerIndex: layer, cachedRawTokenLength: cachedRawTokenLengths[layer],
-      outputTokenLength: layer == configuration.layers - 1 ? lengths.last! : nil,
+      // Routing covers every row, so the last FFN does too; the head takes its rows below.
+      outputTokenLength: layer == configuration.layers - 1 && !outputRouting ? lengths.last! : nil,
       boundedReplayTokens: layer == configuration.candidateSourceLayer ? lengths[layer] : nil,
-      configuration: configuration)
+      outputRouting: outputRouting, configuration: configuration)
     biases.append(("layers.\(layer).ffn.gate.bias_vl", bias))
     let outputs = decoderLayer(args)
     hidden = outputs[0]
     pre = outputs[1]
+    var next = 2
     if configuration.indexSourceLayers.contains(layer) {
       indices = outputs[2]
-      if layer == configuration.candidateSourceLayer { candidates = outputs[3] }
+      next = 3
+      if layer == configuration.candidateSourceLayer {
+        candidates = outputs[3]
+        next = 4
+      }
     }
+    if outputRouting { routing.append(contentsOf: (next..<(next + 3)).map { outputs[$0] }) }
+  }
+  if outputRouting {
+    let rows = lengths.last!
+    let total = lengths[configuration.layers - 1]
+    let hc = configuration.hcCount
+    let width = configuration.hiddenSize
+    hidden = hidden.reshaped(
+      [rows, hc, width], offset: [total - rows, 0, 0], strides: [hc * width, width, 1])
+    pre = pre.reshaped([rows, hc], offset: [total - rows, 0], strides: [hc, 1])
   }
   precondition(targets.count == dsparkTargetLayers.count)
   let concatenated: Model.IO? = targets.isEmpty ? nil : Concat(axis: 1)(targets)
-  return (inputs, hidden, pre, concatenated, biases)
+  return (inputs, hidden, pre, concatenated, biases, routing)
 }
 
 /// Complete text model, returning FP16/FP32 logits for the last logitTokenLength query tokens,
-/// then, with dsparkTargetLayers, the DSpark rows [replay rows, targets * hidden] in FP32.
+/// then, with dsparkTargetLayers, the DSpark rows [replay rows, targets * hidden] in FP32, then,
+/// with outputRouting, each layer's MoERouting token indices, expert ids and counts (Int32), for
+/// every row the layer's FFN sees.
 /// Inputs: text token IDs, image embeddings (one input is empty), initial FP32
 /// pre-mix [T, hc] with rows [1, 0, ...], raw rotary
 /// (if used), compressed and indexer rotary (if used), then compressor/indexer
@@ -1068,7 +1099,7 @@ private func DeepSeek4_1Prefix<FloatType: TensorNumeric>(
 public func DeepSeek4_1CausalLM<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, tokenLength: Int, cachedTokenLength: Int = 0,
   cachedRawTokenLengths: [Int]? = nil, boundedReplayTokens: Int? = nil, logitTokenLength: Int = 1,
-  dsparkTargetLayers: [Int] = [],
+  dsparkTargetLayers: [Int] = [], outputRouting: Bool = false,
   configuration: DeepSeek4_1ModelConfiguration = .deepSeekV4_1Flash
 ) -> (model: Model, biases: [(key: String, bias: Model.Parameters)]) {
   let prefix = DeepSeek4_1Prefix(
@@ -1078,10 +1109,13 @@ public func DeepSeek4_1CausalLM<FloatType: TensorNumeric>(
     cachedRawTokenLengths: cachedRawTokenLengths
       ?? Array(
         repeating: min(cachedTokenLength, configuration.rawWindow), count: configuration.layers),
-    configuration: configuration)
+    outputRouting: outputRouting, configuration: configuration)
   let output = DeepSeek4_1OutputHead(
     x: prefix.hidden, incomingPre: prefix.pre,
     tokenLength: min(logitTokenLength, boundedReplayTokens ?? tokenLength),
     configuration: configuration, of: dataType)
-  return (Model(prefix.inputs, [output] + (prefix.targets.map { [$0] } ?? [])), prefix.biases)
+  return (
+    Model(prefix.inputs, [output] + (prefix.targets.map { [$0] } ?? []) + prefix.routing),
+    prefix.biases
+  )
 }

@@ -69,10 +69,10 @@ index 2903871..3e463b7 100644
  
  #define LOG_SYSLOG_VIS	(VIS_CSTYLE|VIS_NL|VIS_TAB|VIS_OCTAL)
 diff --git a/includes.h b/includes.h
-index 882a394..4904283 100644
+index 96cddbc..4a6c8bf 100644
 --- a/includes.h
 +++ b/includes.h
-@@ -181,4 +181,20 @@
+@@ -181,4 +181,49 @@
  
  #include "entropy.h"
  
@@ -90,28 +90,109 @@ index 882a394..4904283 100644
 +#undef STDOUT_FILENO
 +#define STDOUT_FILENO fileno(thread_stdout)
 +#define isatty ios_isatty
++/*
++ * Sessions run concurrently with one process working directory: relative
++ * paths resolve against the invocation's directory (OpenSSHPort.h declares
++ * these, and each program's main sets that directory up). sftp's lcd moves
++ * only it.
++ */
++#define open(...) ios_system_open(__VA_ARGS__)
++#define fopen(path, mode) ios_system_fopen(path, mode)
++#define stat(path, info) ios_system_stat(path, info)
++#define lstat(path, info) ios_system_lstat(path, info)
++#define access(path, mode) ios_system_access(path, mode)
++#define unlink(path) ios_system_unlink(path)
++#define rename(source, destination) ios_system_rename(source, destination)
++#define link(source, destination) ios_system_link(source, destination)
++#define symlink(target, path) ios_system_symlink(target, path)
++#define readlink(path, destination, size) ios_system_readlink(path, destination, size)
++#define mkdir(path, mode) ios_system_mkdir(path, mode)
++#define rmdir(path) ios_system_rmdir(path)
++#define chmod(path, mode) ios_system_chmod(path, mode)
++#define utimes(path, times) ios_system_utimes(path, times)
++#define opendir(path) ios_system_opendir(path)
++#define realpath(path, resolved) ios_system_realpath(path, resolved)
++/* Not openbsd-compat's _ssh_mkstemp: its umask(0177) is process-wide, and
++ * mkstemp already creates the file 0600. */
++#undef mkstemp
++#define mkstemp(path) ios_system_mkstemp(path)
++#define mkdtemp(path) ios_system_mkdtemp(path)
++#define chdir(path) ios_system_chdir(path)
++#define getcwd(buffer, size) ios_system_getcwd(buffer, size)
 +#endif
 +
  #endif /* INCLUDES_H */
 diff --git a/misc.c b/misc.c
-index 517fa7a..a3acef9 100644
+index 517fa7a..e969946 100644
 --- a/misc.c
 +++ b/misc.c
-@@ -1304,6 +1304,13 @@ tilde_expand(const char *filename, uid_t uid, char **retp)
+@@ -1304,6 +1304,18 @@ tilde_expand(const char *filename, uid_t uid, char **retp)
  		error_f("No such uid %ld", (long)uid);
  		goto out;
  	}
 +#if IOS_SYSTEM_OPENSSH
++	struct passwd home_entry;
 +	if (user == NULL) {
 +		const char *ssh_home = getenv("SSH_HOME");
-+		if (ssh_home != NULL && *ssh_home != '\0')
-+			pw->pw_dir = (char *)ssh_home;
++		if (ssh_home != NULL && *ssh_home != '\0') {
++			/* A copy: getpwuid's entry is shared with the rest of the app. */
++			home_entry = *pw;
++			home_entry.pw_dir = (char *)ssh_home;
++			pw = &home_entry;
++		}
 +	}
 +#endif
  
  	/* Make sure directory has a trailing '/' */
  	slash = (len = strlen(pw->pw_dir)) == 0 || pw->pw_dir[len - 1] != '/';
-@@ -3219,6 +3226,10 @@ get_homedir(void)
+@@ -1596,6 +1608,14 @@ sanitise_stdfd(void)
+ {
+ 	int nullfd, dupfd;
+ 
++#if IOS_SYSTEM_OPENSSH
++	/*
++	 * The standard streams are the invocation's, and descriptors 0-2 the
++	 * app's. STDERR_FILENO is the invocation's stderr descriptor, so the
++	 * loop below would fill (and race with) every descriptor below it.
++	 */
++	return;
++#endif
+ 	if ((nullfd = dupfd = open(_PATH_DEVNULL, O_RDWR)) == -1) {
+ 		fprintf(stderr, "Couldn't open /dev/null: %s\n",
+ 		    strerror(errno));
+@@ -2782,6 +2802,16 @@ ssh_signal(int signum, sshsig_t handler)
+ {
+ 	struct sigaction sa, osa;
+ 
++#if IOS_SYSTEM_OPENSSH
++	/*
++	 * Signal dispositions belong to the whole app, where other sessions'
++	 * commands run: report the current one without changing it. Commands
++	 * are stopped by ios_kill, not by signals.
++	 */
++	if (sigaction(signum, NULL, &osa) == -1)
++		return SIG_ERR;
++	return osa.sa_handler;
++#endif
+ 	/* mask all other signals while in handler */
+ 	memset(&sa, 0, sizeof(sa));
+ 	sa.sa_handler = handler;
+@@ -2802,6 +2832,14 @@ stdfd_devnull(int do_stdin, int do_stdout, int do_stderr)
+ {
+ 	int devnull, ret = 0;
+ 
++#if IOS_SYSTEM_OPENSSH
++	/*
++	 * The invocation's streams belong to its caller, so there is nothing
++	 * to hand to /dev/null; dup2 here would only leave /dev/null as a
++	 * pending child stream and leak the descriptor.
++	 */
++	return 0;
++#endif
+ 	if ((devnull = open(_PATH_DEVNULL, O_RDWR)) == -1) {
+ 		error_f("open %s: %s", _PATH_DEVNULL,
+ 		    strerror(errno));
+@@ -3219,6 +3257,10 @@ get_homedir(void)
  	char *cp;
  	struct passwd *pw;
  
@@ -152,13 +233,13 @@ diff --git a/readpass.c b/readpass.c
 +	}
 +#endif
 diff --git a/openbsd-compat/readpassphrase.c b/openbsd-compat/readpassphrase.c
-index ff8ff3d..4af7159 100644
+index 4b710b4..b536a03 100644
 --- a/openbsd-compat/readpassphrase.c
 +++ b/openbsd-compat/readpassphrase.c
-@@ -76,6 +76,20 @@ restart:
- 	 * Read and write to /dev/tty if available.  If not, read from
- 	 * stdin and write to stderr unless a tty is required.
- 	 */
+@@ -94,6 +94,20 @@ restart:
+ #ifndef O_CLOEXEC
+ # define O_CLOEXEC 0
+ #endif
 +#if IOS_SYSTEM_OPENSSH
 +	if (flags & RPP_STDIN) {
 +		input = STDIN_FILENO;
@@ -174,9 +255,9 @@ index ff8ff3d..4af7159 100644
 +	fflush(thread_stderr);
 +#else
  	if ((flags & RPP_STDIN) ||
- 	    (input = output = open(_PATH_TTY, O_RDWR)) == -1) {
+ 	    (input = output = open(_PATH_TTY, O_RDWR | O_CLOEXEC)) == -1) {
  		if (flags & RPP_REQUIRE_TTY) {
-@@ -85,6 +99,7 @@ restart:
+@@ -103,6 +117,7 @@ restart:
  		input = STDIN_FILENO;
  		output = STDERR_FILENO;
  	}
@@ -184,10 +265,10 @@ index ff8ff3d..4af7159 100644
  
  	/*
  	 * Turn off echo if possible.
-@@ -166,8 +181,13 @@ restart:
- 	(void)sigaction(SIGTSTP, &savetstp, NULL);
- 	(void)sigaction(SIGTTIN, &savettin, NULL);
- 	(void)sigaction(SIGTTOU, &savettou, NULL);
+@@ -184,8 +199,13 @@ restart:
+ 	sigaction_except_ign(SIGTSTP, &savetstp, NULL);
+ 	sigaction_except_ign(SIGTTIN, &savettin, NULL);
+ 	sigaction_except_ign(SIGTTOU, &savettou, NULL);
 -	if (input != STDIN_FILENO)
 +	if (input != STDIN_FILENO) {
 +#if IOS_SYSTEM_OPENSSH
@@ -200,7 +281,7 @@ index ff8ff3d..4af7159 100644
  	/*
  	 * If we were interrupted by a signal, resend it to ourselves
 diff --git a/scp.c b/scp.c
-index 28ac7a2..0f669a8 100644
+index 28ac7a2..8008a7d 100644
 --- a/scp.c
 +++ b/scp.c
 @@ -290,6 +290,53 @@ do_cmd(char *program, char *host, char *remuser, int port, int subsystem,
@@ -303,7 +384,14 @@ index 28ac7a2..0f669a8 100644
  	while (waitpid(pid, &status, 0) == -1)
  		if (errno != EINTR)
  			fatal("do_cmd2: waitpid: %s", strerror(errno));
-@@ -454,11 +526,29 @@ main(int argc, char **argv)
+@@ -450,15 +522,36 @@ void throughlocal_sftp(struct sftp_conn *, struct sftp_conn *,
+ int
+ main(int argc, char **argv)
+ {
++#if IOS_SYSTEM_OPENSSH
++	ios_system_support_init_directory();
++#endif
+ 	int ch, fflag, tflag, status, r, n;
  	char **newargv, *argv0;
  	const char *errstr;
  	extern char *optarg;
@@ -335,10 +423,41 @@ index 28ac7a2..0f669a8 100644
  	sanitise_stdfd();
  
 diff --git a/sftp.c b/sftp.c
-index 31d8fa4..9ecec7c 100644
+index 31d8fa4..a6ad77f 100644
 --- a/sftp.c
 +++ b/sftp.c
-@@ -2408,6 +2408,19 @@ connect_to_server(char *path, char **args, int *in, int *out)
+@@ -320,6 +320,30 @@ local_do_shell(const char *args)
+ 	if (!*args)
+ 		args = NULL;
+ 
++#if IOS_SYSTEM_OPENSSH
++	/*
++	 * There is no process to fork: OSH runs the command in this invocation,
++	 * from the directory lcd chose. There is no interactive shell to start.
++	 */
++	if (args == NULL) {
++		error("No interactive local shell; give a command");
++		return;
++	}
++	char directory[PATH_MAX], *directory_argv[1], *quoted, *command;
++	if (getcwd(directory, sizeof(directory)) == NULL) {
++		error("Couldn't get local directory: %s", strerror(errno));
++		return;
++	}
++	directory_argv[0] = directory;
++	quoted = argv_assemble(1, directory_argv);
++	xasprintf(&command, "cd %s && %s", quoted, args);
++	status = system(command);
++	free(command);
++	free(quoted);
++	if (status != 0)
++		error("Shell exited with status %d", status);
++	return;
++#endif
+ 	if ((shell = getenv("SHELL")) == NULL || *shell == '\0')
+ 		shell = _PATH_BSHELL;
+ 
+@@ -2408,6 +2432,19 @@ connect_to_server(char *path, char **args, int *in, int *out)
  
  	if ((sshpid = fork()) == -1)
  		fatal("fork: %s", strerror(errno));
@@ -358,7 +477,7 @@ index 31d8fa4..9ecec7c 100644
  	else if (sshpid == 0) {
  		if ((dup2(c_in, STDIN_FILENO) == -1) ||
  		    (dup2(c_out, STDOUT_FILENO) == -1)) {
-@@ -2432,6 +2445,7 @@ connect_to_server(char *path, char **args, int *in, int *out)
+@@ -2432,6 +2469,7 @@ connect_to_server(char *path, char **args, int *in, int *out)
  		fprintf(stderr, "exec: %s: %s\n", path, strerror(errno));
  		_exit(1);
  	}
@@ -366,7 +485,17 @@ index 31d8fa4..9ecec7c 100644
  
  	ssh_signal(SIGTERM, killchild);
  	ssh_signal(SIGINT, killchild);
-@@ -2470,13 +2484,25 @@ main(int argc, char **argv)
+@@ -2462,6 +2500,9 @@ usage(void)
+ int
+ main(int argc, char **argv)
+ {
++#if IOS_SYSTEM_OPENSSH
++	ios_system_support_init_directory();
++#endif
+ 	int r, in, out, ch, err, tmp, port = -1, noisy = 0;
+ 	char *host = NULL, *user, *cp, **cpp, *file2 = NULL;
+ 	int debug_level = 0;
+@@ -2470,13 +2511,25 @@ main(int argc, char **argv)
  	const char *errstr;
  	LogLevel ll = SYSLOG_LEVEL_INFO;
  	arglist args;
@@ -394,10 +523,20 @@ index 31d8fa4..9ecec7c 100644
  	sanitise_stdfd();
  	msetlocale();
 diff --git a/ssh.c b/ssh.c
-index 7c644c2..f1c7896 100644
+index fe660ef..813962a 100644
 --- a/ssh.c
 +++ b/ssh.c
-@@ -636,6 +636,19 @@ main(int ac, char **av)
+@@ -619,6 +619,9 @@ set_addrinfo_port(struct addrinfo *addrs, int port)
+ int
+ main(int ac, char **av)
+ {
++#if IOS_SYSTEM_OPENSSH
++	ios_system_support_init_directory();
++#endif
+ 	struct ssh *ssh = NULL;
+ 	int i, r, opt, exit_status, use_syslog, direct, timeout_ms;
+ 	int was_addr, config_test = 0, dump_pubkeys = 0, opt_terminated = 0, want_final_pass = 0;
+@@ -636,6 +639,19 @@ main(int ac, char **av)
  	struct utsname utsname;
  	struct ssh_conn_info *cinfo = NULL;
  
@@ -417,7 +556,7 @@ index 7c644c2..f1c7896 100644
  	/* Ensure that fds 0, 1 and 2 are open or directed to /dev/null */
  	sanitise_stdfd();
  
-@@ -643,7 +656,9 @@ main(int ac, char **av)
+@@ -643,7 +659,9 @@ main(int ac, char **av)
  	 * Discard other fds that are hanging around. These can cause problem
  	 * with backgrounded ssh processes started by ControlPersist.
  	 */
@@ -427,18 +566,32 @@ index 7c644c2..f1c7896 100644
  
  	__progname = ssh_get_progname(av[0]);
  
-@@ -666,6 +681,10 @@ main(int ac, char **av)
- 		logit("No user exists for uid %lu", (u_long)getuid());
- 		exit(255);
+@@ -668,6 +686,13 @@ main(int ac, char **av)
  	}
-+#if IOS_SYSTEM_OPENSSH
-+	if ((p = getenv("SSH_HOME")) != NULL && *p != '\0')
-+		pw->pw_dir = p;
-+#endif
  	/* Take a copy of the returned structure. */
  	pw = pwcopy(pw);
++#if IOS_SYSTEM_OPENSSH
++	/* On the copy: getpwuid's entry is shared with the rest of the app. */
++	if ((p = getenv("SSH_HOME")) != NULL && *p != '\0') {
++		free(pw->pw_dir);
++		pw->pw_dir = xstrdup(p);
++	}
++#endif
  
-@@ -2195,9 +2214,15 @@ ssh_session2_setup(struct ssh *ssh, int id, int success, void *arg)
+ 	/*
+ 	 * Set our umask to something reasonable, as some files are created
+@@ -675,7 +700,10 @@ main(int ac, char **av)
+ 	 * writable only by the owner, which is ok for all files for which we
+ 	 * don't set the modes explicitly.
+ 	 */
++#if !IOS_SYSTEM_OPENSSH
++	/* iOS: the umask belongs to the whole app; it already masks 022. */
+ 	umask(022 | umask(077));
++#endif
+ 
+ 	msetlocale();
+ 
+@@ -2202,9 +2230,15 @@ ssh_session2_setup(struct ssh *ssh, int id, int success, void *arg)
  	if ((term = lookup_env_in_list("TERM", options.setenv,
  	    options.num_setenv)) == NULL || *term == '\0')
  		term = getenv("TERM");
@@ -526,9 +679,10 @@ index 91e69b7..17aeff1 100644
  		return ssh_connect_direct(ssh, host, addrs, hostaddr, port,
  		    connection_attempts, timeout_ms, want_keepalive);
 diff --git a/ssh-keygen.c b/ssh-keygen.c
+index 5c2d645..939a122 100644
 --- a/ssh-keygen.c
 +++ b/ssh-keygen.c
-@@ -136,7 +136,7 @@
+@@ -138,7 +138,7 @@ static struct cert_ext *cert_ext;
  static size_t ncert_ext;
  
  /* Conversion to/from various formats */
@@ -536,8 +690,8 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
 +static enum {
  	FMT_RFC4716,
  	FMT_PKCS8,
- 	FMT_PEM
-@@ -1296,7 +1296,7 @@
+ 	FMT_PEM,
+@@ -1318,7 +1318,7 @@ do_known_hosts(struct passwd *pw, const char *name, int find_host,
  		    strlcpy(old, identity_file, sizeof(old)) >= sizeof(old) ||
  		    strlcat(old, ".old", sizeof(old)) >= sizeof(old))
  			fatal("known_hosts path too long");
@@ -546,7 +700,7 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
  		if ((fd = mkstemp(tmp)) == -1)
  			fatal("mkstemp: %s", strerror(errno));
  		if ((ctx.out = fdopen(fd, "w")) == NULL) {
-@@ -3290,6 +3290,48 @@
+@@ -3347,12 +3347,57 @@ usage(void)
  	exit(1);
  }
  
@@ -595,7 +749,16 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
  /*
   * Main program for key management.
   */
-@@ -3322,6 +3364,28 @@
+ int
+ main(int argc, char **argv)
+ {
++#if IOS_SYSTEM_OPENSSH
++	ios_system_support_init_directory();
++#endif
+ 	char comment[KEY_COMMENT_MAX], *passphrase = NULL;
+ 	char *rr_hostname = NULL, *ep, *fp, *ra;
+ 	struct sshkey *private = NULL, *public = NULL;
+@@ -3379,6 +3424,28 @@ main(int argc, char **argv)
  	extern int optind;
  	extern char *optarg;
  
@@ -624,16 +787,18 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
  	/* Ensure that fds 0, 1 and 2 are open or directed to /dev/null */
  	sanitise_stdfd();
  
-@@ -3337,7 +3401,19 @@
- 	pw = getpwuid(getuid());
+@@ -3395,6 +3462,21 @@ main(int argc, char **argv)
  	if (!pw)
  		fatal("No user exists for uid %lu", (u_long)getuid());
-+#if IOS_SYSTEM_OPENSSH
-+	/* Match ssh_main: HOME is the workspace, SSH_HOME is project/.localc. */
-+	if ((p = getenv("SSH_HOME")) != NULL && *p != '\0')
-+		pw->pw_dir = (char *)p;
-+#endif
  	pw = pwcopy(pw);
++#if IOS_SYSTEM_OPENSSH
++	/* Match ssh_main: HOME is the workspace, SSH_HOME is project/.localc.
++	 * On the copy: getpwuid's entry is shared with the rest of the app. */
++	if ((p = getenv("SSH_HOME")) != NULL && *p != '\0') {
++		free(pw->pw_dir);
++		pw->pw_dir = xstrdup(p);
++	}
++#endif
 +#if IOS_SYSTEM_OPENSSH
 +	struct ssh_keygen_cleanup_context context = {
 +		.pw = pw, .private_key = &private, .public_key = &public,
@@ -644,7 +809,7 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
  	if (gethostname(hostname, sizeof(hostname)) == -1)
  		fatal("gethostname: %s", strerror(errno));
  
-@@ -3697,6 +3773,9 @@
+@@ -3758,6 +3840,9 @@ main(int argc, char **argv)
  	if (pkcs11provider != NULL)
  		do_download(pw);
  	if (download_sk) {
@@ -654,7 +819,7 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
  		for (i = 0; i < nopts; i++) {
  			if ((p = strprefix(opts[i], "device=", 1)) != NULL) {
  				sk_device = xstrdup(p);
-@@ -3780,6 +3859,11 @@
+@@ -3841,6 +3926,11 @@ main(int argc, char **argv)
  
  	type = sshkey_type_from_shortname(key_type_name);
  	type_bits_valid(type, key_type_name, &bits);
@@ -666,7 +831,7 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
  
  	if (!quiet)
  		printf("Generating public/private %s key pair.\n",
-@@ -3895,10 +3979,13 @@
+@@ -3958,10 +4048,13 @@ main(int argc, char **argv)
  	    comment, private_key_format, openssh_format_cipher, rounds)) != 0) {
  		error_r(r, "Saving key \"%s\" failed", identity_file);
  		freezero(passphrase, strlen(passphrase));
@@ -680,7 +845,7 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
  
  	if (!quiet) {
  		printf("Your identification has been saved in %s\n",
-@@ -3932,6 +4019,11 @@
+@@ -3995,6 +4088,11 @@ main(int argc, char **argv)
   done:
  	sshbuf_free(attest);
  	sshkey_free(public);
@@ -692,3 +857,32 @@ diff --git a/ssh-keygen.c b/ssh-keygen.c
 +#endif
  	exit(ret);
  }
+diff --git a/utf8.c b/utf8.c
+index 7f63b25..3f3c09a 100644
+--- a/utf8.c
++++ b/utf8.c
+@@ -313,6 +313,24 @@ mprintf(const char *fmt, ...)
+ 	return ret;
+ }
+ 
++#if IOS_SYSTEM_OPENSSH
++/*
++ * setlocale(3) changes the locale of every thread in the app: set only this
++ * command's character type, taking "" from the session's environment.
++ */
++static const char *
++openssh_set_thread_ctype(const char *name)
++{
++	locale_t locale = ios_system_ctype_locale(name);
++
++	if (locale == NULL)
++		return NULL;
++	uselocale(locale);
++	return name;
++}
++#define setlocale(category, name) openssh_set_thread_ctype(name)
++#endif
++
+ /*
+  * Set up libc for multibyte output in the user's chosen locale.
+  *

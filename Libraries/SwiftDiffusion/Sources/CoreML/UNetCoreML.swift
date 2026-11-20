@@ -360,7 +360,7 @@ extension UNetFromCoreML {
         .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
-        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       let channels = xT.shape[3]

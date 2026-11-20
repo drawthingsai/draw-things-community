@@ -2,11 +2,13 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(["ios.patch"])
 
+# OpenSSH includes <openssl/...>; these map it to swift-nio-ssl's prefixed
+# BoringSSL, the same copy curl uses.
 cc_library(
     name = "boringssl_headers",
     hdrs = glob(["BoringSSL/openssl/*.h"]),
     includes = ["BoringSSL"],
-    deps = ["@SwiftCrypto//:CCryptoBoringSSL"],
+    deps = ["@SwiftNIOSSL//:CNIOBoringSSL"],
 )
 
 cc_library(
@@ -20,6 +22,7 @@ cc_library(
 
 cc_library(
     name = "compat_headers",
+    includes = ["CompatInclude"],
     textual_hdrs = [
         "CompatInclude/OpenSSHPort.h",
         "CompatInclude/endian.h",
@@ -30,6 +33,8 @@ cc_library(
         "CompatInclude/sys/queue.h",
         "CompatInclude/sys/tree.h",
     ],
-    includes = ["CompatInclude"],
-    deps = ["//Vendors/ios_system:api"],
+    deps = [
+        "//Vendors/ios_system:api",
+        "//Vendors/ios_system:ios_system_support",
+    ],
 )

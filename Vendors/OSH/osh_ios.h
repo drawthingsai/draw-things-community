@@ -1,6 +1,7 @@
 #ifndef VENDORS_OSH_OSH_IOS_H
 #define VENDORS_OSH_OSH_IOS_H
 
+#include <limits.h>
 #include <stdio.h>
 
 #ifdef __cplusplus
@@ -59,6 +60,11 @@ typedef struct osh_ios_config {
   osh_ios_pipeline_runner run_pipeline;
   /* Optional capability check, called before opening redirects or pipe streams. */
   int (*can_run_pipeline)(int count, const char* const names[], void* context);
+  /* Optional: the shell's absolute working directory. Shells can run
+   * concurrently in different directories within one process, so relative
+   * paths that OSH opens, tests, or globs resolve against it rather than the
+   * process-wide cwd. */
+  const char* (*current_directory)(void* context);
 } osh_ios_config;
 
 /* argv is a complete shell invocation, such as {"sh", "-c", "echo $1", "name",
@@ -69,12 +75,22 @@ typedef struct osh_ios_config {
 int osh_ios_run(int argc, const char* const argv[], FILE* input, FILE* output,
                  FILE* error, const osh_ios_config* config);
 
+/* Called by run_external when no command of that name exists, so OSH reports
+ * "not found" only then: a command that runs can also exit with status 127. */
+void osh_ios_note_command_not_found(void);
+
 #ifdef __cplusplus
 }
 
 namespace osh_ios {
 
 const osh_ios_config* CurrentConfig();
+/* The shell's directory from current_directory, or nullptr for the process cwd. */
+const char* CurrentDirectory();
+/* path itself when absolute or without a shell directory; otherwise path
+ * joined to it in buffer, or nullptr (errno ENAMETOOLONG) if too long. */
+const char* ResolvePath(const char* path, char buffer[PATH_MAX]);
+bool CommandWasNotFound();
 bool IsCancelled();
 void MarkUnsupported();
 bool WasUnsupported();

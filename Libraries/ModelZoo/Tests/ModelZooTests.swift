@@ -2,11 +2,26 @@ import ModelZoo
 import XCTest
 
 final class ModelZooTests: XCTestCase {
+  func testLLMInkling2SmallCatalogAndEncoding() throws {
+    let specification = try XCTUnwrap(LLMZoo.specificationForModel("inkling_2_small_i2x.ckpt"))
+    XCTAssertEqual(specification.version.rawValue, "inkling_2_small")
+    XCTAssertEqual(specification.requiredFiles, [specification.file])
+    XCTAssertEqual(specification.files, [specification.file])
+    XCTAssertEqual(LLMZoo.subtitleForModel(specification.file), "Thinking Machines Lab")
+    XCTAssertFalse(LLMZoo.isModelDeprecated(specification.file))
+    XCTAssertEqual(
+      try JSONDecoder().decode(
+        LLMZoo.Specification.self,
+        from: JSONEncoder().encode(specification)), specification)
+  }
+
   func testLLMGLM53FlashCatalogAndEncoding() throws {
-    let specification = try XCTUnwrap(LLMZoo.specificationForModel("glm_5.3_flash_i2x.ckpt"))
+    let specification = try XCTUnwrap(LLMZoo.specificationForModel("glm_5.3_flash_i4x.ckpt"))
     XCTAssertEqual(specification.version.rawValue, "glm_5.3_flash")
     XCTAssertEqual(specification.requiredFiles, [specification.file])
-    XCTAssertNil(specification.draftFile)
+    XCTAssertEqual(specification.draftFile, "glm_5.3_flash_dflash2_i5x.ckpt")
+    XCTAssertEqual(
+      specification.files, [specification.file, "glm_5.3_flash_dflash2_i5x.ckpt"])
     XCTAssertEqual(LLMZoo.subtitleForModel(specification.file), "Z.ai")
     XCTAssertEqual(
       try JSONDecoder().decode(
