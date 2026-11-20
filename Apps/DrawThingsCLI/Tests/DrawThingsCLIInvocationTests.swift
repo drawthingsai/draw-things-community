@@ -283,11 +283,44 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
         "--image", "second.png", "--image", "first.png", "--audio", "audio.wav",
       ]) as? DrawThingsCLI.Generate)
     XCTAssertEqual(command.imageInput.image, ["first.png", "second.png", "first.png"])
-    XCTAssertEqual(command.imageInput.audio, "audio.wav")
+    XCTAssertEqual(command.imageInput.audio, ["audio.wav"])
     XCTAssertEqual(try GenerateImageInputOptions.parse([]).image, [])
     XCTAssertEqual(
       try GenerateImageInputOptions.parse(["--image", "first.png"]).image, ["first.png"])
     XCTAssertThrowsError(try GenerateImageInputOptions.parse(["--image", "first.png", "--image"]))
+  }
+
+  func testRepeatedAudioPreservesOrderAndDuplicates() throws {
+    let command = try XCTUnwrap(
+      DrawThingsCLI.parseAsRoot([
+        "generate", "--audio", "first.wav", "--prompt", "two speakers",
+        "--audio", "second.wav", "--audio", "first.wav",
+      ]) as? DrawThingsCLI.Generate)
+    XCTAssertEqual(command.imageInput.audio, ["first.wav", "second.wav", "first.wav"])
+    XCTAssertEqual(try GenerateImageInputOptions.parse([]).audio, [])
+    XCTAssertEqual(
+      try GenerateImageInputOptions.parse(["--audio", "first.wav"]).audio, ["first.wav"])
+    XCTAssertThrowsError(try GenerateImageInputOptions.parse(["--audio", "first.wav", "--audio"]))
+  }
+
+  func testLongCatRejectsMultipleAudioFilesBeforeLoading() throws {
+    let model = "test-longcat-\(UUID().uuidString).ckpt"
+    let originalOverrides = ModelZoo.overrideMapping
+    defer { ModelZoo.overrideMapping = originalOverrides }
+    ModelZoo.overrideMapping[model] = ModelZoo.Specification(
+      name: "Test LongCat", file: model, prefix: "", version: .longcatVideoAvatar1_5)
+    for avcOptions in [[], ["--avc"]] {
+      try withContext { context, _, contents in
+        XCTAssertEqual(
+          DrawThingsCLI.run(
+            arguments: [
+              "generate", "--model", model,
+              "--image", "missing.png", "--audio", "first.wav", "--audio", "second.wav",
+              "--prompt", "two speakers", "--output", "video.mp4", "--no-download-missing",
+            ] + avcOptions, context: context), 1)
+        XCTAssertTrue(contents().1.contains("accepts exactly one --audio"))
+      }
+    }
   }
 
   func testCanvasAndMoodboardImages() {
