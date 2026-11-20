@@ -165,7 +165,7 @@ final class ComputeUnitsTests: XCTestCase {
       return 1.176470588 * 0.8
     case .seedvr2_7b:
       return 1.176470588
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     }
   }
@@ -222,7 +222,7 @@ final class ComputeUnitsTests: XCTestCase {
           lowerTriangle + upperRidge * Double(configuration.causalInference) / Double(numFrames)
         modelCoefficient = modelCoefficient * (totalArea / (sequenceLength * sequenceLength))
       }
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     }
     root = root * Double(numFrames)

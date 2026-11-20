@@ -285,7 +285,7 @@ public struct TextualInversionZoo: DownloadZoo {
     case .kandinsky21, .svdI2v, .wurstchenStageC, .wurstchenStageB, .hunyuanVideo, .wan21_1_3b,
       .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .wan22_5b, .zImage,
       .ernieImage, .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-      .longcatVideoAvatar1_5, .minimaxH3, .mossImage:
+      .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image, .mossImage:
       fatalError()
     }
     var tensor: Tensor<FloatType>? = nil
@@ -324,7 +324,7 @@ public struct TextualInversionZoo: DownloadZoo {
         .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage, .ltx2, .ltx2_3,
         .seedvr2_3b,
         .seedvr2_7b,
-        .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       guard let anyTensor = $0.read(tensorName) else { return }

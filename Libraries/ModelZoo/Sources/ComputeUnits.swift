@@ -112,6 +112,9 @@ public enum ComputeUnits {
     case .minimaxH3:
       let frames = Int(configuration.numFrames)
       return (cfgChannels, frames == 1 ? 1 : ((max(frames, 5) - 5 + 16) / 17) * 5 + 2)
+    case .minimaxH3Image:
+      // The H3 graph treats its batch as frames, so H3 Image generates one image at a time.
+      return (cfgChannels, 1)
     }
   }
 
@@ -140,7 +143,7 @@ public enum ComputeUnits {
       return paddedLength
     }
     switch version {
-    case .flux1, .minimaxH3:
+    case .flux1, .minimaxH3, .minimaxH3Image:
       return 512
     case .hunyuanVideo:
       return 256
@@ -173,7 +176,7 @@ public enum ComputeUnits {
         Int((Double(rawWidth) * 3.0 / 2.0).rounded(.up)),
         Int((Double(rawHeight) * 3.0 / 2.0).rounded(.up))
       )
-    case .wan22_5b, .minimaxH3, .qwenImage2_1:
+    case .wan22_5b, .minimaxH3, .qwenImage2_1, .minimaxH3Image:
       return (rawWidth * 4, rawHeight * 4)
     case .ltx2, .ltx2_3:
       return (rawWidth * 2, rawHeight * 2)
@@ -234,6 +237,16 @@ public enum ComputeUnits {
         timesteps: max(1, Int(configuration.steps)), hiddenSize: 5_376, layers: 50,
         textLength: (cfgChannels > 1 ? baseTokenLength : 0, baseTokenLength),
         referenceSequenceLength: referenceSequenceLength)
+      return (main: mainCount * batchSize, fixed: fixedCount)
+    case .minimaxH3Image:
+      let mainCount = MiniMaxH3InstructionCount(
+        videoTime: 1, videoHeight: startHeight, videoWidth: startWidth, audioLength: 0,
+        textLength: baseTokenLength, referenceSequenceLength: referenceSequenceLength,
+        includeAudio: false, pddSteps: MiniMaxH3Configuration.imageHeadSigmas.count)
+      let fixedCount = MiniMaxH3FixedInstructionCount(
+        timesteps: max(1, Int(configuration.steps)), hiddenSize: 5_376, layers: 50,
+        textLength: (cfgChannels > 1 ? baseTokenLength : 0, baseTokenLength),
+        referenceSequenceLength: referenceSequenceLength, includeAudio: false)
       return (main: mainCount * batchSize, fixed: fixedCount)
     case .v1:
       let mainCount = UNetInstructionCount(

@@ -868,7 +868,7 @@ public struct DeviceCapability {
       guard !isUltraPerformance || force else {
         return false
       }
-    case .minimaxH3:
+    case .minimaxH3, .minimaxH3Image:
       guard !isUltraPerformance || force else {
         return false
       }

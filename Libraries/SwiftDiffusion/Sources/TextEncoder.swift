@@ -60,7 +60,9 @@ extension TextEncoder {
     var imageStarts = [Int]()
     var imageGrids = [(t: Int, h: Int, w: Int)]()
     var imageFeatures = [DynamicGraph.Tensor<FloatType>]()
-    if (modifier == .fl2va || modifier == .ref2va) && !images.isEmpty {
+    // H3 Image always reads its reference images; H3 reads them for FL2VA / Ref2VA.
+    if (version == .minimaxH3Image || modifier == .fl2va || modifier == .ref2va) && !images.isEmpty
+    {
       let tokenIDs = tokens[0].rawValue.toCPU()
       imageStarts = (0..<tokenLengthCond).filter {
         tokenIDs[originalTokenLength + $0] == 151_655
@@ -73,16 +75,28 @@ extension TextEncoder {
         // H3 uses Qwen3-VL's image resize policy, not the Qwen3.5 chat token budget.
         let height = image.shape[1]
         let width = image.shape[2]
-        var resizedHeight = max(32, Int((Double(height) / 32).rounded()) * 32)
-        var resizedWidth = max(32, Int((Double(width) / 32).rounded()) * 32)
-        if resizedHeight * resizedWidth > 12_845_056 {
-          let scale = sqrt(Double(height * width) / 12_845_056)
-          resizedHeight = max(32, Int(floor(Double(height) / scale / 32)) * 32)
-          resizedWidth = max(32, Int(floor(Double(width) / scale / 32)) * 32)
+        var sourceHeight = Double(height)
+        var sourceWidth = Double(width)
+        let maxPixels: Double
+        if version == .minimaxH3Image {
+          // H3 Image first scales each reference to a 1024-pixel short edge, in multiples of 32.
+          let scale = 1_024 / Double(min(height, width))
+          sourceHeight = Double(max(32, Int((Double(height) * scale / 32).rounded()) * 32))
+          sourceWidth = Double(max(32, Int((Double(width) * scale / 32).rounded()) * 32))
+          maxPixels = 16_777_216
+        } else {
+          maxPixels = 12_845_056
+        }
+        var resizedHeight = max(32, Int((sourceHeight / 32).rounded()) * 32)
+        var resizedWidth = max(32, Int((sourceWidth / 32).rounded()) * 32)
+        if Double(resizedHeight * resizedWidth) > maxPixels {
+          let scale = sqrt(sourceHeight * sourceWidth / maxPixels)
+          resizedHeight = max(32, Int(floor(sourceHeight / scale / 32)) * 32)
+          resizedWidth = max(32, Int(floor(sourceWidth / scale / 32)) * 32)
         } else if resizedHeight * resizedWidth < 3_136 {
-          let scale = sqrt(3_136 / Double(height * width))
-          resizedHeight = Int(ceil(Double(height) * scale / 32)) * 32
-          resizedWidth = Int(ceil(Double(width) * scale / 32)) * 32
+          let scale = sqrt(3_136 / (sourceHeight * sourceWidth))
+          resizedHeight = Int(ceil(sourceHeight * scale / 32)) * 32
+          resizedWidth = Int(ceil(sourceWidth * scale / 32)) * 32
         }
         let (patches, grid) = Qwen3_5VisionPreprocess(
           image[0..<1, 0..<height, 0..<width, 0..<3].copied().rawValue.toCPU(),
@@ -266,35 +280,16 @@ extension TextEncoder {
       0..<5_120
     ].copied()
     weightsCache.attach(filePaths[0], from: textModel.parameters)
+    guard !imageStarts.isEmpty else { return ([encoding], [textModel]) }
+    // H3 places the vision tokens with the media rather than the text. The labelled images lead
+    // both prompts, so their vision tokens depend only on that shared prefix. Return the text
+    // tokens, the conditional prompt's vision tokens, and a mask of their Qwen positions.
     let visionRanges = zip(expandedImageStarts, imageGrids).map {
       ($0.0 - 1)..<($0.0 + $0.1.h * $0.1.w / 4 + 1)
     }
     let visionLength = visionRanges.reduce(0) { $0 + $1.count }
-    let textLengths = isCfgEnabled ? [tokenLengthUncond, tokenLengthCond] : [tokenLengthCond]
-    var rotary = graph.variable(
-      .GPU(0), .NHWC(batchSize, encoding.shape[1], 1, 128), of: FloatType.self)
-    rotary.full(0)
-    for (batch, length) in textLengths.enumerated() {
-      let rows = graph.variable(
-        Tensor<FloatType>(
-          from: MiniMaxH3RotaryEmbedding(
-            textLength: length, visionTokenRanges: visionRanges)
-        ).toGPU(0))
-      let count = length - visionLength
-      rotary[batch..<(batch + 1), 0..<count, 0..<1, 0..<128] =
-        rows[0..<1, 0..<count, 0..<1, 0..<128]
-      if visionLength > 0 {
-        rotary[
-          batch..<(batch + 1), (encoding.shape[1] - visionLength)..<encoding.shape[1], 0..<1,
-          0..<128] =
-          rows[0..<1, count..<length, 0..<1, 0..<128]
-      }
-    }
     tokenLengthUncond -= visionLength
     tokenLengthCond -= visionLength
-    guard !visionRanges.isEmpty else { return ([encoding, rotary], [textModel]) }
-    // Qwen remains causal in the original presentation order. Pack its output once for H3,
-    // keeping the corresponding rotary rows alongside it, including unequal CFG padding.
     var textRows = [DynamicGraph.Tensor<FloatType>]()
     var start = 0
     for range in visionRanges {
@@ -306,10 +301,21 @@ extension TextEncoder {
     if start < encoding.shape[1] {
       textRows.append(encoding[0..<batchSize, start..<encoding.shape[1], 0..<5_120].copied())
     }
-    textRows += visionRanges.map { encoding[0..<batchSize, $0, 0..<5_120].copied() }
-    let context = Concat(axis: 1)(inputs: textRows[0], Array(textRows.dropFirst()))[0].as(
+    let text = Concat(axis: 1)(inputs: textRows[0], Array(textRows.dropFirst()))[0].as(
       of: FloatType.self)
-    return ([context, rotary], [textModel])
+    let visionRows = visionRanges.map {
+      encoding[(batchSize - 1)..<batchSize, $0, 0..<5_120].copied()
+    }
+    let vision = Concat(axis: 1)(inputs: visionRows[0], Array(visionRows.dropFirst()))[0].as(
+      of: FloatType.self)
+    var visionMask = Tensor<FloatType>(
+      Array(repeating: 0, count: encoding.shape[1]), .CPU, .HWC(1, encoding.shape[1], 1))
+    for range in visionRanges {
+      for row in range {
+        visionMask[0, row, 0] = 1
+      }
+    }
+    return ([text, vision, graph.variable(visionMask.toGPU(0))], [textModel])
   }
 
   private func encodeHiDreamO1(
@@ -4382,7 +4388,7 @@ extension TextEncoder {
   {
     let conditionalLength: Int
     switch version {
-    case .minimaxH3:
+    case .minimaxH3, .minimaxH3Image:
       return encodeMiniMaxH3(
         images: images, tokens: tokens, tokenLengthUncond: &tokenLengthUncond,
         tokenLengthCond: &tokenLengthCond, modifier: modifier)
@@ -4589,7 +4595,7 @@ extension TextEncoder {
         .ideogram4, .krea2, .ltx2,
         .ltx2_3,
         .seedvr2_3b,
-        .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3:
+        .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       if let maskGPU = maskGPU.first, let injectedEmbeddingsGPU = injectedEmbeddingsGPU.first {
@@ -4631,7 +4637,7 @@ extension TextEncoder {
                   .mossImage,
                   .cosmos2_5_2b, .cosmos2_5_2_9b,
                   .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2,
-                  .longcatVideoAvatar1_5, .minimaxH3:
+                  .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
                   fatalError()
                 }
                 return loader.mergeLoRA(
@@ -4675,7 +4681,7 @@ extension TextEncoder {
                 .mossImage,
                 .cosmos2_5_2b, .cosmos2_5_2_9b, .ltx2,
                 .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5,
-                .minimaxH3:
+                .minimaxH3, .minimaxH3Image:
                 fatalError()
               }
               return .continue(name)

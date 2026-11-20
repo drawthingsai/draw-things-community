@@ -130,6 +130,43 @@ func MiniMaxH3VideoDecoderRotaryEmbedding(latentFrames: Int, latentHeight: Int, 
   return rotary
 }
 
+/// The H3 Image decoder rotates the first 32 channels of each head by (y, x) only.
+func MiniMaxH3ImageDecoderRotaryEmbedding(latentHeight: Int, latentWidth: Int) -> Tensor<Float> {
+  let patchCount = latentHeight * latentWidth
+  let suffixCount = 4 + 1
+  var rotary = Tensor<Float>(
+    .CPU, .NHWC(1, patchCount + suffixCount, 1, 64))
+  let inverseFrequencies = (0..<8).map { index in
+    pow(100.0, -Double(index) / 8)
+  }
+  var row = 0
+  for yIndex in 0..<latentHeight {
+    let y = 2 * (Double(yIndex) + 0.5) / Double(latentHeight) - 1
+    for xIndex in 0..<latentWidth {
+      let x = 2 * (Double(xIndex) + 0.5) / Double(latentWidth) - 1
+      var angleIndex = 0
+      for coordinate in [y, x] {
+        for inverseFrequency in inverseFrequencies {
+          let angle = 2 * Double.pi * coordinate * inverseFrequency
+          rotary[0, row, 0, 2 * angleIndex] = Float(cos(angle))
+          rotary[0, row, 0, 2 * angleIndex + 1] = Float(sin(angle))
+          angleIndex += 1
+        }
+      }
+      for index in 32..<64 {
+        rotary[0, row, 0, index] = index % 2 == 0 ? 1 : 0
+      }
+      row += 1
+    }
+  }
+  for suffix in 0..<suffixCount {
+    for index in 0..<64 {
+      rotary[0, patchCount + suffix, 0, index] = index % 2 == 0 ? 1 : 0
+    }
+  }
+  return rotary
+}
+
 func H3VideoDecoderAttention(sequenceLength: Int, hiddenSize: Int) -> Model {
   let x = Input()
   let rot = Input()
@@ -163,8 +200,8 @@ func H3VideoDecoderBlock(sequenceLength: Int, hiddenSize: Int) -> Model {
     x + attention(norm1(x).to(.Float16), rot).to(of: x) .* scale1
   let residual = out
   let norm2 = RMSNorm(epsilon: 1e-5, axis: [2], name: "norm2")
-  let up = Dense(count: 8_192, name: "ff_up")
-  let gate = Dense(count: 8_192, name: "ff_gate")
+  let up = Dense(count: 4 * hiddenSize, name: "ff_up")
+  let gate = Dense(count: 4 * hiddenSize, name: "ff_gate")
   let down = Dense(count: hiddenSize, name: "ff_down")
   let normed = norm2(out).to(.Float16)
   let scale2 = Parameter<Float>(
@@ -173,10 +210,12 @@ func H3VideoDecoderBlock(sequenceLength: Int, hiddenSize: Int) -> Model {
   return Model([x, rot], [out])
 }
 
+/// The H3 Image decoder uses a temporal patch of 1, so each latent frame decodes to one image.
 public func MiniMaxH3VideoDecoder(
   latentFrames: Int, latentHeight: Int, latentWidth: Int, hiddenSize: Int, layers: Int,
-  includeHidden: Bool = false
+  temporalPatch: Int = 4, includeHidden: Bool = false
 ) -> Model {
+  precondition(temporalPatch == 4 || temporalPatch == 1)
   let numPatches = latentFrames * latentHeight * latentWidth
   let latentTokens = Input()
   let rot = Input()
@@ -197,18 +236,24 @@ public func MiniMaxH3VideoDecoder(
   let hidden = out
   let norm = LayerNorm(epsilon: 1e-5, axis: [2], name: "decoder_norm_out")
   out = norm(out).to(of: latentTokens)
-  let output = Dense(count: 3 * 4 * 16 * 16, name: "decoder_proj_out")
+  let output = Dense(count: 3 * temporalPatch * 16 * 16, name: "decoder_proj_out")
   out = output(out).reshaped(
     [
       1, numPatches,
-      3 * 4 * 16 * 16,
+      3 * temporalPatch * 16 * 16,
     ],
     offset: [0, 0, 0],
     strides: [
-      sequenceLength * 3 * 4 * 16 * 16,
-      3 * 4 * 16 * 16, 1,
+      sequenceLength * 3 * temporalPatch * 16 * 16,
+      3 * temporalPatch * 16 * 16, 1,
     ]
   ).contiguous()
+  guard temporalPatch == 4 else {
+    out = out.reshaped([latentFrames, latentHeight, latentWidth, 3, 16, 16])
+      .permuted(0, 1, 4, 2, 5, 3).contiguous().reshaped(
+        .NHWC(latentFrames, latentHeight * 16, latentWidth * 16, 3))
+    return Model([latentTokens, rot, zeroToken], includeHidden ? [out, hidden] : [out])
+  }
   out = out.reshaped([latentFrames, latentHeight, latentWidth, 3, 4, 16, 16])
     .permuted(0, 4, 1, 5, 2, 6, 3).contiguous().reshaped(
       .NHWC((latentFrames - 1) * 4 + 1, latentHeight * 16, latentWidth * 16, 3),

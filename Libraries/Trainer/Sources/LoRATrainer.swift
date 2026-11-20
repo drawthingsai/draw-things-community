@@ -117,7 +117,7 @@ public struct LoRATrainer {
           return "sd3_vae_f16.ckpt"
         case .flux1, .hiDreamI1, .zImage:
           return "flux_1_vae_f16.ckpt"
-        case .hiDreamO1, .qwenImage2_1, .minimaxH3:
+        case .hiDreamO1, .qwenImage2_1, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .hunyuanVideo:
           return "hunyuan_video_vae_f16.ckpt"
@@ -142,7 +142,7 @@ public struct LoRATrainer {
           return "clip_vit_l14_f16.ckpt"
         case .v2:
           return "open_clip_vit_h14_f16.ckpt"
-        case .svdI2v, .minimaxH3:
+        case .svdI2v, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .kandinsky21:
           return "xlm_roberta_f16.ckpt"
@@ -1954,7 +1954,7 @@ public struct LoRATrainer {
       let textModel: [Model]
       let embeddingSize: Int
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       case .v1:
         embeddingSize = 768
@@ -2052,7 +2052,7 @@ public struct LoRATrainer {
           // Need to handle clip skip.
           var name = name
           switch version {
-          case .longcatVideoAvatar1_5, .minimaxH3:
+          case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
             fatalError()
           case .v1:
             if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
@@ -6138,7 +6138,7 @@ public struct LoRATrainer {
       let timeEmbeddingSize: Int
       let tokenLength: Int
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       case .v1:
         embeddingSize = (768, 768)
@@ -6482,7 +6482,7 @@ public struct LoRATrainer {
             // Need to handle clip skip.
             var name = name
             switch version {
-            case .longcatVideoAvatar1_5, .minimaxH3:
+            case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
               fatalError()
             case .v1:
               if name == "__text_model__[t-\(98 - (min(clipSkip, 12) - 1) * 8)-0]" {
@@ -6695,7 +6695,7 @@ public struct LoRATrainer {
       latents.full(0)
       let c: DynamicGraph.Tensor<FloatType>
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       case .v1, .v2:
         c = graph.variable(.GPU(0), .HWC(1, 77, embeddingSize.0), of: FloatType.self)
@@ -6906,7 +6906,7 @@ public struct LoRATrainer {
         let embeddingName: (String, String)
         let firstStd: Float
         switch version {
-        case .longcatVideoAvatar1_5, .minimaxH3:
+        case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
@@ -7141,7 +7141,7 @@ public struct LoRATrainer {
               tokenMaskGPU = tokenMask.toGPU(0)
               var hasTrainableEmbeddings = false
               switch version {
-              case .longcatVideoAvatar1_5, .minimaxH3:
+              case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
                 fatalError()
               case .v1, .v2, .sdxlRefiner:
                 var injectedEmbedding = graph.variable(
@@ -7218,7 +7218,7 @@ public struct LoRATrainer {
             }
             let tokensTensorGPU = tokensTensor.toGPU(0)
             switch version {
-            case .longcatVideoAvatar1_5, .minimaxH3:
+            case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
               fatalError()
             case .v1, .v2:
               if let tokenMaskGPU = tokenMaskGPU, let injectedEmbedding = injectedEmbeddings.first {
@@ -7360,7 +7360,7 @@ public struct LoRATrainer {
             let textEncodingPath = captionDropout ? "" : imagePath
             guard let tensor = sessionStore.read("cond_\(textEncodingPath)") else { continue }
             switch version {
-            case .longcatVideoAvatar1_5, .minimaxH3:
+            case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
               fatalError()
             case .v1, .v2:
               c = graph.variable(Tensor<FloatType>(from: tensor).toGPU(0))

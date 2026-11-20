@@ -258,7 +258,7 @@ public final class ControlNetImporter {
     let tembed = graph.variable(.CPU, .WC(2, 320), of: FloatType.self)
     let dim: Int
     switch modelVersion {
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     case .v1:
       dim = 768
@@ -288,7 +288,7 @@ public final class ControlNetImporter {
     let isControlUnion = stateDict["control_add_embedding.linear_1.weight"] != nil
     var transformerBlocks = [Int]()
     switch modelVersion {
-    case .longcatVideoAvatar1_5, .minimaxH3:
+    case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     case .v1:
       (controlNet, controlNetReader) = ControlNet(
@@ -382,7 +382,7 @@ public final class ControlNetImporter {
         let mappingFixed: ModelWeightMapping
         let hintMapping: ModelWeightMapping
         switch modelVersion {
-        case .longcatVideoAvatar1_5, .minimaxH3:
+        case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .sdxlBase:
           let vector = graph.variable(.GPU(0), .WC(2, 2816), of: FloatType.self)

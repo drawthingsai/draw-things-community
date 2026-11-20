@@ -199,7 +199,7 @@ extension FirstStage {
       .cosmos2_5_2_9b, .ideogram4,
       .krea2,
       .seedvr2_3b,
-      .seedvr2_7b, .longcatVideoAvatar1_5:
+      .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3Image:
       z = x
       audioZ = nil
     }
@@ -271,7 +271,7 @@ extension FirstStage {
     case .hiDreamO1:
       scaleFactor = 32
       scaleFactorZ = 1
-    case .qwenImage2_1:
+    case .qwenImage2_1, .minimaxH3Image:
       scaleFactor = 16
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
@@ -486,6 +486,49 @@ extension FirstStage {
         store.read(
           "audio_decoder", model: audioDecoder[0],
           codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+      }
+      outputChannels = 3
+      causalAttentionMask = nil
+    case .minimaxH3Image:
+      if !tiledDecodingConfiguration.isEnabled {
+        // The reference decodes 256-pixel tiles with 64-pixel overlap.
+        decodingTileSize.height = min(startHeight, 16)
+        decodingTileSize.width = min(startWidth, 16)
+        decodingTileOverlap = 2
+        tiledDecoding = startWidth > 16 || startHeight > 16
+      }
+      let tileHeight = tiledDecoding ? decodingTileSize.height : startHeight
+      let tileWidth = tiledDecoding ? decodingTileSize.width : startWidth
+      let zero = graph.variable(.GPU(0), .HWC(1, 1, 1_024), of: Float.self)
+      zero.full(0)
+      // The decoder normalizes coordinates within each tile, not the full canvas.
+      let rotary = graph.variable(
+        Tensor<FloatType>(
+          from: MiniMaxH3ImageDecoderRotaryEmbedding(
+            latentHeight: tileHeight, latentWidth: tileWidth)
+        ).toGPU(0))
+      decoderInputs = [rotary, zero]
+      decoder =
+        existingDecoder
+        ?? MiniMaxH3VideoDecoder(
+          latentFrames: 1, latentHeight: tileHeight, latentWidth: tileWidth, hiddenSize: 1_024,
+          layers: 24, temporalPatch: 1)
+      decoder.maxConcurrency = .limit(1)
+      if existingDecoder == nil {
+        let placeholder = graph.variable(
+          .GPU(0), .NHWC(1, tileHeight, tileWidth, 24), of: FloatType.self)
+        if highPrecision {
+          decoder.compile(inputs: DynamicGraph.Tensor<Float>(from: placeholder), rotary, zero)
+        } else {
+          decoder.compile(inputs: placeholder, rotary, zero)
+        }
+        graph.openStore(
+          filePath, flags: .readOnly, externalStore: TensorData.externalStore(filePath: filePath)
+        ) { store in
+          store.read(
+            "video_decoder", model: decoder,
+            codec: [.jit, .q6p, .q8p, .i8x, .ezm7, externalData])
+        }
       }
       outputChannels = 3
       causalAttentionMask = nil
@@ -1120,7 +1163,7 @@ extension FirstStage {
           .cosmos2_5_2_9b,
           .ideogram4, .krea2,
           .seedvr2_3b,
-          .seedvr2_7b, .longcatVideoAvatar1_5:
+          .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3Image:
           audio = nil
         }
       } else {
@@ -1243,7 +1286,7 @@ extension FirstStage {
   {
     func rescalePixels(_ result: DynamicGraph.Tensor<FloatType>) -> DynamicGraph.Tensor<FloatType> {
       switch version {
-      case .minimaxH3:
+      case .minimaxH3, .minimaxH3Image:
         let graph = result.graph
         let mean = graph.variable(
           Tensor<FloatType>([0.485, 0.456, 0.406], .GPU(0), .NHWC(1, 1, 1, 3)))
@@ -1511,7 +1554,7 @@ extension FirstStage {
     case .hiDreamO1:
       scaleFactor = 32
       scaleFactorZ = 1
-    case .qwenImage2_1:
+    case .qwenImage2_1, .minimaxH3Image:
       scaleFactor = 16
       scaleFactorZ = 1
     case .hunyuanVideo, .wan21_1_3b, .wan21_14b, .qwenImage, .krea2, .cosmos2_5_2b,
@@ -1547,7 +1590,7 @@ extension FirstStage {
     var temporalTiledEncodingConfiguration: (overlap: Int, trailingFrameDrop: Int)? = nil
     let causalAttentionMask: DynamicGraph.Tensor<Float>?
     switch version {
-    case .minimaxH3:
+    case .minimaxH3, .minimaxH3Image:
       // H3 expects ImageNet-normalized RGB, not the app's [-1, 1] pixels.
       let mean = graph.variable(
         Tensor<FloatType>([0.485, 0.456, 0.406], .GPU(0), .NHWC(1, 1, 1, 3)))
@@ -1556,8 +1599,15 @@ extension FirstStage {
           [FloatType(1 / 0.229), FloatType(1 / 0.224), FloatType(1 / 0.225)], .GPU(0),
           .NHWC(1, 1, 1, 3)))
       x = invStd .* ((x + 1) * 0.5 - mean)
-      let frames = batchSize > 1 ? 17 : 1
-      if batchSize > 1 {
+      let frames = batchSize > 1 && version == .minimaxH3 ? 17 : 1
+      if version == .minimaxH3Image && !tiledDiffusion.isEnabled {
+        // The reference encodes 256-pixel tiles with 64-pixel overlap.
+        encodingTileSize.width = min(startWidth, 16)
+        encodingTileSize.height = min(startHeight, 16)
+        encodingTileOverlap = 2
+        tiledEncoding = startWidth > 16 || startHeight > 16
+      }
+      if frames > 1 {
         // Independent 17-frame clips produce 5 latents each; drop the final 3 latents.
         if !tiledEncoding {
           encodingTileSize.width = startWidth

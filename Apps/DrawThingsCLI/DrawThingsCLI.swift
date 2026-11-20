@@ -1123,6 +1123,12 @@ private enum RecommendedSettingsResolver {
       builder.startHeight = 12
       builder.numFrames = 124
       builder.shift = 12
+    } else if modelSpecification.version == .minimaxH3Image {
+      // Distilled to 6 steps without guidance. Shift 3 best approximates the distilled schedule.
+      builder.steps = 6
+      builder.guidanceScale = 1
+      builder.sampler = .dDIMTrailing
+      builder.shift = 3
     }
     return builder.build()
   }
@@ -1717,6 +1723,8 @@ private func defaultImportScale(for version: ModelVersion, artifactFileName: Str
   switch version {
   case .hunyuanVideo, .wan21_14b, .wan22_5b, .longcatVideoAvatar1_5, .minimaxH3:
     return 12
+  case .minimaxH3Image:
+    return 32
   case .wan21_1_3b:
     return 8
   case .sdxlBase, .sdxlRefiner, .ssd1b, .hiDreamI1, .hiDreamO1, .qwenImage, .qwenImage2_1, .zImage,
@@ -1748,7 +1756,8 @@ private func validateCustomTextEncoderSupport(
     .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
     .cosmos2_5_2b, .cosmos2_5_2_9b,
     .ltx2, .ltx2_3,
-    .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+    .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3,
+    .minimaxH3Image:
     throw ValidationError(
       "Custom text encoder import is not supported for \(ModelZoo.humanReadableNameForVersion(version))."
     )
@@ -1778,7 +1787,8 @@ private func projectedImportedOutputFiles(
       .qwenImage2_1, .wan22_5b, .zImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b, .mossImage,
       .cosmos2_5_2b, .cosmos2_5_2_9b,
       .ltx2,
-      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+      .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3,
+      .minimaxH3Image:
       break
     }
   }

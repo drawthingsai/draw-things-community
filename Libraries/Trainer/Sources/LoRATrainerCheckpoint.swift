@@ -62,7 +62,7 @@ extension LoRATrainerCheckpoint {
     graph.openStore(filePath) {
       if let textEmbedding1 = textEmbedding1 {
         switch version {
-        case .longcatVideoAvatar1_5, .minimaxH3:
+        case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
@@ -98,7 +98,7 @@ extension LoRATrainerCheckpoint {
       }
       let modelName: String
       switch version {
-      case .longcatVideoAvatar1_5, .minimaxH3:
+      case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       case .v1, .v2, .ssd1b, .sdxlBase, .sdxlRefiner:
         modelName = "unet"
@@ -132,7 +132,7 @@ extension LoRATrainerCheckpoint {
       store.removeAll()
       if let textEmbedding1 = textEmbedding1 {
         switch version {
-        case .longcatVideoAvatar1_5, .minimaxH3:
+        case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
@@ -152,7 +152,7 @@ extension LoRATrainerCheckpoint {
       if let textModel1 = textModel1 {
         let textModelMapping: [Int: Int]
         switch version {
-        case .longcatVideoAvatar1_5, .minimaxH3:
+        case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .v1:
           textModelMapping = LoRAMapping.CLIPTextModel
@@ -219,7 +219,7 @@ extension LoRATrainerCheckpoint {
       let modelName: String
       let UNetMapping: [Int: Int]
       switch version {
-      case .mossImage, .longcatVideoAvatar1_5, .minimaxH3:
+      case .mossImage, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       case .v1, .v2:
         UNetMapping = LoRAMapping.SDUNet
@@ -342,7 +342,7 @@ extension LoRATrainerCheckpoint {
       store.removeAll()
       if let textEmbedding1 = exponentialMovingAverage.textEmbedding1 {
         switch version {
-        case .longcatVideoAvatar1_5, .minimaxH3:
+        case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .v1, .v2, .kandinsky21, .svdI2v, .pixart, .auraflow, .flux1, .hunyuanVideo,
           .wan21_1_3b, .wan21_14b, .hiDreamI1, .hiDreamO1, .qwenImage2_1, .qwenImage,
@@ -362,7 +362,7 @@ extension LoRATrainerCheckpoint {
       if !exponentialMovingAverage.textModel1.isEmpty {
         let textModelMapping: [Int: Int]
         switch version {
-        case .longcatVideoAvatar1_5, .minimaxH3:
+        case .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         case .v1:
           textModelMapping = LoRAMapping.CLIPTextModel
@@ -436,7 +436,7 @@ extension LoRATrainerCheckpoint {
       let modelName: String
       let UNetMapping: [Int: Int]
       switch version {
-      case .mossImage, .longcatVideoAvatar1_5, .minimaxH3:
+      case .mossImage, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       case .v1, .v2:
         UNetMapping = LoRAMapping.SDUNet

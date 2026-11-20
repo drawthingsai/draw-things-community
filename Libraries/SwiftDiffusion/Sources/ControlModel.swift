@@ -399,7 +399,7 @@ extension ControlModel {
         ? min(tiledDiffusion.tileSize.height * 2, startHeight) : startHeight
       tiledWidth =
         tiledDiffusion.isEnabled ? min(tiledDiffusion.tileSize.width * 2, startWidth) : startWidth
-    case .wurstchenStageC, .minimaxH3:
+    case .wurstchenStageC, .minimaxH3, .minimaxH3Image:
       tiledHeight = startHeight
       tiledWidth = startWidth
     case .hiDreamO1:
@@ -510,7 +510,7 @@ extension ControlModel {
     case .controlnet, .controlnetlora, .controlnetunion:
       if let firstStage = firstStage {  // For FLUX.1, we use the VAE as encoder.
         switch version {
-        case .minimaxH3:
+        case .minimaxH3, .minimaxH3Image:
           fatalError("MiniMax H3 does not support control models.")
         case .flux1:
           var encoder: Model? = nil
@@ -935,7 +935,7 @@ extension ControlModel {
           .cosmos2_5_2_9b, .ltx2, .ltx2_3,
           .seedvr2_3b,
           .seedvr2_7b,
-          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         }
       }
@@ -971,7 +971,7 @@ extension ControlModel {
           .cosmos2_5_2_9b, .ltx2, .ltx2_3,
           .seedvr2_3b,
           .seedvr2_7b,
-          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         }
       }
@@ -995,7 +995,7 @@ extension ControlModel {
         .ltx2, .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
-        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1051,7 +1051,7 @@ extension ControlModel {
               .cosmos2_5_2b, .cosmos2_5_2_9b,
               .ltx2, .ltx2_3,
               .seedvr2_3b,
-              .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+              .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
               fatalError()
             }
           }
@@ -1091,7 +1091,7 @@ extension ControlModel {
         .ltx2, .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
-        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       projModel.compile(inputs: imageEmbeds[0])
@@ -1125,7 +1125,7 @@ extension ControlModel {
           .cosmos2_5_2_9b, .ltx2, .ltx2_3,
           .seedvr2_3b,
           .seedvr2_7b,
-          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         }
       }
@@ -1149,7 +1149,7 @@ extension ControlModel {
         .ltx2, .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
-        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1206,7 +1206,7 @@ extension ControlModel {
               .cosmos2_5_2b, .cosmos2_5_2_9b,
               .ltx2, .ltx2_3,
               .seedvr2_3b,
-              .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+              .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
               fatalError()
             }
           }
@@ -1331,7 +1331,7 @@ extension ControlModel {
           .cosmos2_5_2_9b, .ltx2, .ltx2_3,
           .seedvr2_3b,
           .seedvr2_7b,
-          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+          .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         }
       }
@@ -1355,7 +1355,7 @@ extension ControlModel {
         .ltx2, .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
-        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       unetIPFixed.maxConcurrency = .limit(4)
@@ -1415,7 +1415,7 @@ extension ControlModel {
               .cosmos2_5_2b, .cosmos2_5_2_9b,
               .ltx2, .ltx2_3,
               .seedvr2_3b,
-              .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+              .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
               fatalError()
             }
           }
@@ -1522,7 +1522,7 @@ extension ControlModel {
           .cosmos2_5_2_9b, .ltx2,
           .ltx2_3,
           .seedvr2_3b,
-          .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+          .seedvr2_7b, .ideogram4, .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
           fatalError()
         }
       }
@@ -1542,7 +1542,7 @@ extension ControlModel {
         .ltx2, .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
-        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       pulidFixed.maxConcurrency = .limit(4)
@@ -1843,7 +1843,7 @@ extension ControlModel {
       .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
       .mossImage,
       .cosmos2_5_2b, .cosmos2_5_2_9b,
-      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
+      .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3, .minimaxH3Image:
       fatalError()
     }
     for emptyControl in emptyControls {
@@ -1995,7 +1995,7 @@ extension ControlModel {
       .seedvr2_3b, .seedvr2_7b,
       .ideogram4,
       .krea2,
-      .longcatVideoAvatar1_5, .minimaxH3:
+      .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     }
     for emptyAdapter in emptyAdapters {
@@ -2396,7 +2396,7 @@ extension ControlModel {
       .seedvr2_3b, .seedvr2_7b,
       .ideogram4,
       .krea2,
-      .longcatVideoAvatar1_5, .minimaxH3:
+      .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       fatalError()
     }
   }
@@ -2553,7 +2553,7 @@ extension ControlModel {
         .seedvr2_3b, .seedvr2_7b,
         .ideogram4,
         .krea2,
-        .longcatVideoAvatar1_5, .minimaxH3:
+        .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
     } else {
@@ -2638,7 +2638,7 @@ extension ControlModel {
         .qwenImage2_1, .wan22_5b, .zImage, .ernieImage, .flux2, .flux2_9b, .flux2_4b, .flux3_5b,
         .mossImage,
         .cosmos2_5_2b, .cosmos2_5_2_9b,
-        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3:
+        .ltx2, .ltx2_3, .seedvr2_3b, .seedvr2_7b, .ideogram4, .krea2, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
     }
@@ -2754,7 +2754,7 @@ extension ControlModel {
     }
     // If it is Flux1, expand the result to the Flux layers.
     switch version {
-    case .minimaxH3:
+    case .minimaxH3, .minimaxH3Image:
       fatalError("MiniMax H3 does not support control models.")
     case .flux1:
       if transformerBlocks[0] != 19 || transformerBlocks[1] != 38 {

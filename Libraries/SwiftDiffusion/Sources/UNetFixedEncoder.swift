@@ -61,7 +61,7 @@ extension UNetFixedEncoder {
       .seedvr2_3b, .seedvr2_7b,
       .ideogram4,
       .krea2,
-      .longcatVideoAvatar1_5, .minimaxH3:
+      .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       return true
     case .v1, .v2, .kandinsky21:
       return false
@@ -209,7 +209,7 @@ extension UNetFixedEncoder {
       .ltx2_3, .seedvr2_3b,
       .seedvr2_7b,
       .ideogram4,
-      .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+      .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
       return []
     case .v1, .v2, .kandinsky21:
       fatalError()
@@ -257,7 +257,9 @@ extension UNetFixedEncoder {
       externalOnDemand
       ? .externalOnDemand : .externalData(deviceProperties.isFreadPreferred ? .fread : .mmap)
     switch version {
-    case .minimaxH3:
+    case .minimaxH3, .minimaxH3Image:
+      // H3 Image is the H3 transformer without audio. Its references follow Ref2VA.
+      let includeAudio = version == .minimaxH3
       let externalOnDemand =
         self.externalOnDemand
         || externalOnDemandPartially(
@@ -270,36 +272,43 @@ extension UNetFixedEncoder {
       let referenceImageCount = referenceImages.count
       let referenceAudioCount = referenceAudios.count
       let videoLatentFrames = batchSize
-      let audioHeight = MiniMaxH3AudioHeight(
-        videoLatentFrames: videoLatentFrames, latentWidth: startWidth)
+      let audioHeight =
+        includeAudio
+        ? MiniMaxH3AudioHeight(videoLatentFrames: videoLatentFrames, latentWidth: startWidth) : 0
       let frames =
         videoLatentFrames == 1 ? 1 : (videoLatentFrames - 2) / 5 * 17 + 5
       let audioRows =
-        2
-        * Int(
-          (Double(frames) / Double(MiniMaxH3Configuration.framesPerSecond) * 40).rounded())
+        includeAudio
+        ? 2
+          * Int(
+            (Double(frames) / Double(MiniMaxH3Configuration.framesPerSecond) * 40).rounded()) : 0
       let videoHeight = startHeight - audioHeight
       let textBatchSize = isCfgEnabled ? 2 : 1
+      // Without CFG the conditional text is the last row, whether or not the sampler trimmed it.
       let textBatchOffset = isCfgEnabled ? 0 : textEncoding[0].shape[0] - 1
       let textLength =
         isCfgEnabled ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
-      // Select text and its packed rotary rows together, including when CFG=1 skips
-      // the unconditional branch. Generic sampler trimming only handles rank-2/3 inputs.
-      let contextTextLength =
-        textEncoding[0].shape[0] > 1 ? max(tokenLengthUncond, tokenLengthCond) : tokenLengthCond
-      let visionLength = textEncoding[0].shape[1] - contextTextLength
       var text = textEncoding[0][
         textBatchOffset..<(textBatchOffset + textBatchSize), 0..<textLength,
         0..<textEncoding[0].shape[2]
       ].copied()
-      if visionLength > 0 {
+      // With reference images, the shared vision tokens follow each prompt's text, and the mask
+      // marks their Qwen positions.
+      var visionRanges = [Range<Int>]()
+      if textEncoding.count > 1 {
+        let vision = textEncoding[1]
         text = Functional.concat(
-          axis: 1, text,
-          textEncoding[0][
-            textBatchOffset..<(textBatchOffset + textBatchSize),
-            contextTextLength..<(contextTextLength + visionLength), 0..<textEncoding[0].shape[2]
-          ].copied())
+          axis: 1, text, textBatchSize > 1 ? Functional.concat(axis: 0, vision, vision) : vision)
+        let visionMask = textEncoding[2].rawValue.toCPU()
+        for row in 0..<visionMask.shape[1] where visionMask[0, row, 0] > 0 {
+          if let last = visionRanges.last, last.upperBound == row {
+            visionRanges[visionRanges.count - 1] = last.lowerBound..<(row + 1)
+          } else {
+            visionRanges.append(row..<(row + 1))
+          }
+        }
       }
+      let visionLength = visionRanges.reduce(0) { $0 + $1.count }
       let referenceLength =
         referenceImages.reduce(0) { $0 + $1.shape[1] / 2 * ($1.shape[2] / 2) }
         + referenceAudios.reduce(0) { $0 + $1.shape[1] }
@@ -319,51 +328,42 @@ extension UNetFixedEncoder {
                 ? (index == 0 ? 0 : Float(frames - 1) * 5 / 3) : Float(index))
           )
         }
-        var mediaPosition = Float(contextLength + (modifier == .ref2va ? referenceImageCount : 0))
+        var mediaPosition = Float(
+          contextLength + (modifier == .ref2va || !includeAudio ? referenceImageCount : 0))
         let audioPositions = referenceAudios.map { audio in
           let position = mediaPosition
           mediaPosition += Float(audio.shape[1] / 2)
           return (length: audio.shape[1], position: position)
         }
+        // Text and vision tokens keep their Qwen positions; the vision rows sit with the media.
         let embedding = graph.variable(
           Tensor<FloatType>(
             from: MiniMaxH3RotaryEmbedding(
-              textLength: 0, audioLength: audioRows,
+              textLength: contextLength, audioLength: audioRows,
               videoFrames: videoLatentFrames,
               videoHeight: videoHeight, videoWidth: startWidth, referenceImages: positions,
-              referenceAudios: audioPositions, videoPosition: mediaPosition)
+              referenceAudios: audioPositions, videoPosition: mediaPosition,
+              visionTokenRanges: visionRanges)
           ).toGPU(0))
-        let contextBatch = (batch + textBatchOffset)..<(batch + textBatchOffset + 1)
         rotary[batch..<(batch + 1), 0..<length, 0..<1, 0..<128] =
-          textEncoding[1][contextBatch, 0..<length, 0..<1, 0..<128]
-        let visionOffset = textLength + referenceLength + audioRows
-        rotary[batch..<(batch + 1), textLength..<visionOffset, 0..<1, 0..<128] =
-          embedding[0..<1, 0..<(referenceLength + audioRows), 0..<1, 0..<128]
-        if visionLength > 0 {
-          rotary[
-            batch..<(batch + 1), visionOffset..<(visionOffset + visionLength), 0..<1, 0..<128] =
-            textEncoding[1][
-              contextBatch, contextTextLength..<(contextTextLength + visionLength), 0..<1, 0..<128]
-        }
-        rotary[
-          batch..<(batch + 1), (visionOffset + visionLength)..<(textLength + mediaLength), 0..<1,
-          0..<128] =
-          embedding[
-            0..<1, (referenceLength + audioRows)..<(referenceLength + audioRows + videoLength),
-            0..<1, 0..<128]
+          embedding[0..<1, 0..<length, 0..<1, 0..<128]
+        rotary[batch..<(batch + 1), textLength..<(textLength + mediaLength), 0..<1, 0..<128] =
+          embedding[0..<1, length..<(length + mediaLength), 0..<1, 0..<128]
       }
       var frequencies = Tensor<Float>(
         .CPU,
         .HWC(
           timesteps.count,
-          2 + (referenceImageCount > 0 ? 1 : 0) + (referenceAudioCount > 0 ? 1 : 0), 256))
+          (includeAudio ? 2 : 1) + (referenceImageCount > 0 ? 1 : 0)
+            + (referenceAudioCount > 0 ? 1 : 0), 256))
       for index in timesteps.indices {
         let videoSigma = timesteps[index] / 1_000
         let audioSigma = MiniMaxH3AudioSigma(
           forVideoSigma: videoSigma, audioShiftRatio: audioShiftRatio)
+        // H3 Image holds its references at 0.999 for every step.
         let values =
-          [1 - videoSigma, 1 - audioSigma]
-          + (referenceImageCount > 0 ? [max(1 - videoSigma, 0.999)] : [])
+          [1 - videoSigma] + (includeAudio ? [1 - audioSigma] : [])
+          + (referenceImageCount > 0 ? [includeAudio ? max(1 - videoSigma, 0.999) : 0.999] : [])
           + (referenceAudioCount > 0 ? [Float(1)] : [])
         for (modality, timestep) in values.enumerated() {
           frequencies[
@@ -386,9 +386,10 @@ extension UNetFixedEncoder {
       let isLoHa = lora.contains { $0.isLoHa }
       var configuration = LoRANetworkConfiguration(rank: rankOfLoRA, scale: 1, highPrecision: false)
       let runLoRASeparatelyIsPreferred = isQuantizedModel || externalOnDemand || isBF16
+      // The LoRA graph only covers H3 with audio; H3 Image merges LoRA into its weights.
       let shouldRunLoRASeparately =
         !lora.isEmpty && !isLoHa && runLoRASeparatelyIsPreferred && rankOfLoRA > 0
-        && canRunLoRASeparately
+        && canRunLoRASeparately && includeAudio
       let unetFixed: Model
       if shouldRunLoRASeparately {
         configuration.keys = LoRALoader.keys(graph, of: lora.map { $0.file }, modelFile: filePath)
@@ -411,7 +412,7 @@ extension UNetFixedEncoder {
             ),
             usesFlashAttention: valueOr(usesFlashAttention, .scale1),
             referenceImageCount: referenceImageCount, referenceAudioCount: referenceAudioCount,
-            visionLength: visionLength
+            visionLength: visionLength, includeAudio: includeAudio
           ).1
       }
       unetFixed.maxConcurrency = .limit(4)
@@ -471,7 +472,9 @@ extension UNetFixedEncoder {
       let fixedConditions = unetFixed(
         inputs: text, [timestepFrequencies] + references + referenceAudios)
       let fixedConditionCount =
-        50 * (18 + (referenceImageCount > 0 ? 6 : 0) + (referenceAudioCount > 0 ? 6 : 0)) + 4
+        50
+        * ((includeAudio ? 18 : 12) + (referenceImageCount > 0 ? 6 : 0)
+          + (referenceAudioCount > 0 ? 6 : 0)) + (includeAudio ? 4 : 2)
       precondition(
         fixedConditions.count == fixedConditionCount + 1 + referenceImageCount + referenceAudioCount
       )
@@ -1226,7 +1229,7 @@ extension UNetFixedEncoder {
         .ltx2_3, .seedvr2_3b,
         .seedvr2_7b,
         .ideogram4,
-        .krea2, .longcatVideoAvatar1_5, .minimaxH3:
+        .krea2, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
         fatalError()
       }
       var timeEmbeds = graph.variable(

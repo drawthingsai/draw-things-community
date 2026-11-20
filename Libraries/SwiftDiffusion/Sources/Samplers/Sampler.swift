@@ -41,6 +41,7 @@ public enum ModelVersion: String, Codable {
   case longcatVideoAvatar1_5 = "longcat_video_avatar_v1.5"
   case minimaxH3 = "minimax_h3"
   case mossImage = "moss_image"
+  case minimaxH3Image = "minimax_h3_image"
 }
 
 public enum TextEncoderVersion: String, Codable {
@@ -545,7 +546,7 @@ func isBatchEnabled(_ version: ModelVersion) -> Bool {
     .krea2:
     return true
   case .hunyuanVideo, .svdI2v, .wan21_14b, .wan21_1_3b, .wan22_5b, .ltx2, .ltx2_3, .seedvr2_3b,
-    .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3:
+    .seedvr2_7b, .longcatVideoAvatar1_5, .minimaxH3, .minimaxH3Image:
     return false
   }
 }

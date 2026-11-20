@@ -6,7 +6,7 @@ import NNC
 import XCTest
 
 final class MiniMaxH3LoRATests: XCTestCase {
-  private func writeAdapter(to url: URL, fused: Bool) throws {
+  private func writeAdapter(to url: URL, fused: Bool, adaLNRows: Int = 0) throws {
     var header = [String: Any]()
     var data = Data()
     func append(_ key: String, shape: [Int], values: [Float]) {
@@ -60,6 +60,14 @@ final class MiniMaxH3LoRATests: XCTestCase {
           return up(($0 / 2) % 14_336, $0 % 2, fused ? 1 - part : part)
         })
       if fused { append("\(ff).alpha", shape: [], values: [2 * 0.0625]) }
+    }
+    if adaLNRows > 0 {
+      // Every row of the up projection carries its 5,376-row block number, counted from 1.
+      let prefix = "transformer_blocks.0.adaln_proj.linear"
+      append("\(prefix).lora_A.default.weight", shape: [2, 5_376], values: down(0))
+      append(
+        "\(prefix).lora_B.default.weight", shape: [adaLNRows, 2],
+        values: (0..<(adaLNRows * 2)).map { Float($0 / 2 / 5_376 + 1) })
     }
     var json = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
     while json.count % 8 != 0 { json.append(0x20) }
@@ -137,6 +145,93 @@ final class MiniMaxH3LoRATests: XCTestCase {
           isQuery || isKey || isValue ? Float((part + 1) * (part + 1)) : (part == 2 ? 2 : 1)
         let expected = Float(sourceRow + 1) * 5 / 64 * 0.0625 * multiplier
         XCTAssertEqual(split, expected, accuracy: 1e-6, "\(name), row \(row)")
+      }
+    }
+  }
+
+  func testImageImportMatchesH3() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let previousUrls = ModelZoo.externalUrls
+    let previousPreference = ModelZoo.isExternalUrlsPreferred
+    ModelZoo.isExternalUrlsPreferred = true
+    ModelZoo.externalUrls = [directory]
+    defer {
+      ModelZoo.externalUrls = previousUrls
+      ModelZoo.isExternalUrlsPreferred = previousPreference
+      try? FileManager.default.removeItem(at: directory)
+    }
+    let source = directory.appendingPathComponent("split.safetensors")
+    try writeAdapter(to: source, fused: false)
+    let graph = DynamicGraph()
+    var imported = [ModelVersion: [String: Tensor<Float>]]()
+    // H3 Image shares H3's transformer, so the same adapter imports to the same weights; the
+    // version has to be chosen because the keys can't tell them apart.
+    for forceVersion in [nil, ModelVersion.minimaxH3Image] {
+      let filename = "\(forceVersion?.rawValue ?? "minimax_h3").ckpt"
+      let (version, embedding, _, loHa) = try LoRAImporter.import(
+        downloadedFile: source.path, name: "H3 test", filename: filename, scaleFactor: 1,
+        forceVersion: forceVersion, progress: { _ in })
+      XCTAssertEqual(version, forceVersion ?? .minimaxH3)
+      XCTAssertFalse(embedding)
+      XCTAssertFalse(loHa)
+      var tensors = [String: Tensor<Float>]()
+      graph.openStore(directory.appendingPathComponent(filename).path, flags: .readOnly) { store in
+        for key in store.keys {
+          tensors[key] = store.read(key).map { Tensor<Float>(from: $0) }
+        }
+      }
+      imported[version] = tensors
+    }
+    let h3 = try XCTUnwrap(imported[.minimaxH3])
+    let image = try XCTUnwrap(imported[.minimaxH3Image])
+    XCTAssertEqual(
+      image.keys.filter { $0.hasSuffix("__up__") || $0.hasSuffix("__down__") }.count, 40)
+    XCTAssertEqual(Set(h3.keys), Set(image.keys))
+    for (name, tensor) in h3 {
+      let other = try XCTUnwrap(image[name])
+      XCTAssertEqual(Array(tensor.shape), Array(other.shape), name)
+      XCTAssertEqual(
+        tensor.withUnsafeBytes { Data($0) }, other.withUnsafeBytes { Data($0) }, name)
+    }
+  }
+
+  func testImageImportDropsAudioAdaLNRows() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let previousUrls = ModelZoo.externalUrls
+    let previousPreference = ModelZoo.isExternalUrlsPreferred
+    ModelZoo.isExternalUrlsPreferred = true
+    ModelZoo.externalUrls = [directory]
+    defer {
+      ModelZoo.externalUrls = previousUrls
+      ModelZoo.isExternalUrlsPreferred = previousPreference
+      try? FileManager.default.removeItem(at: directory)
+    }
+    // H3 Image's checkpoint keeps the audio AdaLN rows: 3 modalities x 6 modulations.
+    let source = directory.appendingPathComponent("adaln.safetensors")
+    try writeAdapter(to: source, fused: false, adaLNRows: 18 * 5_376)
+    let (version, _, _, _) = try LoRAImporter.import(
+      downloadedFile: source.path, name: "H3 test", filename: "adaln.ckpt", scaleFactor: 1,
+      forceVersion: .minimaxH3Image, progress: { _ in })
+    XCTAssertEqual(version, .minimaxH3Image)
+    let (fixed, _, _, _) = LoRAImporter.modelWeightsMapping(
+      by: .minimaxH3Image, qkNorm: true, dualAttentionLayers: [], format: [.diffusers])
+    let names = try XCTUnwrap(fixed["transformer_blocks.0.adaln_proj.linear.weight"])
+    XCTAssertEqual(names.count, 12)
+    let graph = DynamicGraph()
+    graph.openStore(directory.appendingPathComponent("adaln.ckpt").path, flags: .readOnly) {
+      store in
+      // Video and text take the first 12 blocks; nothing from the audio blocks is kept.
+      for (block, name) in names.enumerated() {
+        guard let up = store.read("__dit__[\(name)]__up__").map({ Tensor<Float>(from: $0) })
+        else {
+          XCTFail("Missing \(name)")
+          continue
+        }
+        XCTAssertEqual(Array(up.shape), [5_376, 2], name)
+        XCTAssertEqual(up[0, 0], Float(block + 1), name)
+        XCTAssertEqual(up[5_375, 1], Float(block + 1), name)
       }
     }
   }
