@@ -74,6 +74,9 @@ extension UNetFixedEncoder {
     aestheticScore: Float, negativeOriginalSize: (width: Int, height: Int),
     negativeAestheticScore: Float, fpsId: Int, motionBucketId: Int, condAug: Float
   ) -> [DynamicGraph.Tensor<FloatType>] {
+    let textEmbedding = SequentialBatchScope.firstImage(
+      textEncoding: [textEmbedding], batchSize: SequentialBatchScope.current?.batchSize ?? 1
+    ).0[0]
     let graph = textEmbedding.graph
     let batchSize = textEmbedding.shape[0]
     switch version {
@@ -228,6 +231,10 @@ extension UNetFixedEncoder {
     )], referenceImages: [DynamicGraph.Tensor<FloatType>],
     referenceAudios: [DynamicGraph.Tensor<FloatType>]
   ) -> ([DynamicGraph.AnyTensor], ModelWeightMapper?) {
+    // Inside SequentialBatchScope the model runs one image at a time with the same conditioning
+    // for every image, so the fixed conditioning is computed once, for a batch of 1.
+    let (textEncoding, batchSize) = SequentialBatchScope.firstImage(
+      textEncoding: textEncoding, batchSize: batchSize)
     func valueOr(
       _ usesFlashAttention: UseFlashAttention, _ value: FlashAttentionLevel
     ) -> FlashAttentionLevel {
