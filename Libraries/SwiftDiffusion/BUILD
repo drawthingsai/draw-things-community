@@ -101,6 +101,15 @@ swift_test(
 )
 
 swift_test(
+    name = "LTX2AudioEncodingTests",
+    srcs = ["Tests/LTX2AudioEncodingTests.swift"],
+    deps = [
+        ":SwiftDiffusion",
+        "@s4nnc//nnc",
+    ],
+)
+
+swift_test(
     name = "QwenImage2_1ContractTests",
     srcs = ["Tests/QwenImage2_1ContractTests.swift"],
     deps = [

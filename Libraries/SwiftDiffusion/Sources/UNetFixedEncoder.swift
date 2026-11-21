@@ -3768,7 +3768,9 @@ extension UNetFixedEncoder {
           time: batchSize, height: h, width: w, audioTime: (batchSize - 1) * 8 + 1,
           channels: (4096, 2048), numberOfHeads: 32)
       var timesteps = timesteps
-      if !referenceImages.isEmpty {  // Need condition on 0 timestep.
+      // Need condition on 0 timestep: for the first-frame reference, and for a reference audio
+      // (audio-to-video, where the audio stays clean through sampling).
+      if !referenceImages.isEmpty || !referenceAudios.isEmpty {
         timesteps.append(0)
       }
       var timeEmbeds = graph.variable(.GPU(0), .HWC(timesteps.count, 1, 256), of: FloatType.self)
@@ -3854,7 +3856,7 @@ extension UNetFixedEncoder {
         weightsCache.attach("\(filePath):[fixed]", from: unetFixed.parameters)
       }
       return (
-        referenceImages + [
+        referenceImages + referenceAudios + [
           graph.variable(Tensor<FloatType>(from: rotaryEmbedding).toGPU(0)),
           graph.variable(Tensor<FloatType>(from: rotaryEmbeddingAudio).toGPU(0)),
           graph.variable(Tensor<FloatType>(from: rotaryEmbeddingVideoToAudio).toGPU(0)),

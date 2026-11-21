@@ -1152,7 +1152,8 @@ extension LocalImageGenerator {
 
     let audioHint = hints.first(where: { $0.0 == .audio })?.1 ?? []
     // Audio hints carry one Float32 PCM tensor in [channels, samples] order, resampled to
-    // ModelZoo.audioSampleRateForModel. Feature tensors stay inside the model-specific path.
+    // ModelZoo.audioSampleRateForModel (LTX-2.3: 16 kHz, the audio VAE encoder rate, already cut
+    // to the clip). Feature tensors stay inside the model-specific path.
     let audio = audioHint.first?.0 as? Tensor<Float>
     if !audioHint.isEmpty {
       guard audioHint.count == 1, let audio, audio.kind == .CPU, audio.shape.count == 2,
@@ -1183,6 +1184,10 @@ extension LocalImageGenerator {
           ImageGeneratorUtils.modifierForModel(
             file, LoRAs: configuration.loras.compactMap { $0.file }) == .ref2va
         else { return (nil, nil, 1) }
+      case .ltx2_3:
+        // Audio-to-video: the audio hint is the 16 kHz waveform of the clip, encoded with the LTX
+        // audio VAE and kept clean while the video is denoised. Needs the first-frame image.
+        guard audioContext == nil, image != nil, audio != nil else { return (nil, nil, 1) }
       default:
         return (nil, nil, 1)
       }
@@ -1213,9 +1218,10 @@ extension LocalImageGenerator {
       shift = Double(configuration.shift)
     }
     let sampling = Sampling(steps: Int(configuration.steps), shift: shift)
+    let ltxAudio: Tensor<Float>? = modelVersion == .ltx2_3 ? audio : nil
     let audioContext =
       audioContext
-      ?? audio.map { waveform in
+      ?? (ltxAudio != nil ? nil : audio).map { waveform in
         let encoderFilePath = ModelZoo.audioEncoderForModel(file).map {
           fileMapping[$0] ?? ModelZoo.filePathForModelDownloaded($0)
         }
@@ -1223,6 +1229,15 @@ extension LocalImageGenerator {
           waveform: waveform, encoderFilePath: encoderFilePath,
           videoFrames: Int(configuration.numFrames))
       }
+    // LTX-2.3 audio-to-video: first-frame image-to-video (text-only path), with the audio frozen.
+    if let ltxAudio {
+      return generateTextOnly(
+        image, scaleFactor: scaleFactor, depth: depth, hints: hints, custom: custom,
+        shuffles: shuffles, poses: poses, text: text, negativeText: negativeText,
+        configuration: configuration,
+        denoiserParameterization: denoiserParameterization, sampling: sampling,
+        ltxAudio: ltxAudio, cancellation: cancellation, feedback: feedback)
+    }
     // Audio-conditioned LongCat and H3 Ref2VA treat images as references and start from full noise.
     if let audioContext {
       return generateTextOnly(
@@ -3993,6 +4008,7 @@ extension LocalImageGenerator {
     text: String, negativeText: String, configuration: GenerationConfiguration,
     denoiserParameterization: Denoiser.Parameterization, sampling: Sampling,
     audio: AudioConditioningContext? = nil,
+    ltxAudio: Tensor<Float>? = nil,
     colorCalibrationReference: Tensor<FloatType>? = nil,
     colorCalibrationMask: Tensor<UInt8>? = nil,
     cancellation: (@escaping () -> Void) -> Void,
@@ -4802,6 +4818,45 @@ extension LocalImageGenerator {
           framesPerSecond: max(Int(ModelZoo.framesPerSecondForModel(file).rounded()), 1),
           cancellation: cancellation)
       else { return (nil, nil, 1) }
+      // LTX-2.3 audio-to-video: encode the clip's audio (16 kHz) with the audio VAE. The latents
+      // go to the samplers as a reference audio, which the transformer reads as clean conditioning
+      // (zero audio timestep, as `freeze_audio` in ltx-core), and fill the audio rows of the latent
+      // before sampling and before decoding, so the output carries the clip's own audio.
+      var ltxAudioReference: DynamicGraph.Tensor<FloatType>? = nil
+      if let ltxAudio, firstPassAudioHeight > 0 {
+        guard let audioMean = latentsScaling.audioMean, let audioStd = latentsScaling.audioStd,
+          audioMean.count == firstPassChannels, audioStd.count == firstPassChannels
+        else { return (nil, nil, 1) }
+        let audioFrames = LTX2ExtractAudioFramesAndHeight([batchSize.0, 1, firstPassStartWidth]).0
+        let mel = LTX2AudioMelSpectrogram(waveform: ltxAudio)
+        let encoded = LTX2AudioVAEEncoder(
+          filePath: ModelZoo.filePathForModelDownloaded(autoencoderFile)
+        ).encode(mel, latentsMean: audioMean, latentsStd: audioStd, graph: graph)
+        let copiedFrames = min(audioFrames, encoded.shape[1])
+        var reference = graph.variable(
+          .GPU(0), .HWC(1, audioFrames, firstPassChannels), of: FloatType.self)
+        reference.full(0)
+        let encodedOnGPU = graph.variable(Tensor<FloatType>(from: encoded).toGPU(0))
+        reference[0..<1, 0..<copiedFrames, 0..<firstPassChannels] =
+          encodedOnGPU[0..<1, 0..<copiedFrames, 0..<firstPassChannels]
+        ltxAudioReference = reference
+      }
+      let ltxReferenceAudios = ltxAudioReference.map { [$0] } ?? []
+      // Writes the reference audio into the audio rows (the last `audioHeight` rows) of a latent.
+      func withLTXAudio(_ x: DynamicGraph.Tensor<FloatType>, audioHeight: Int)
+        -> DynamicGraph.Tensor<FloatType>
+      {
+        guard let ltxAudioReference, audioHeight > 0 else { return x }
+        let shape = x.shape
+        var packed = graph.variable(
+          .GPU(0), .HWC(1, shape[0] * audioHeight * shape[2], shape[3]), of: FloatType.self)
+        packed.full(0)
+        packed[0..<1, 0..<ltxAudioReference.shape[1], 0..<shape[3]] = ltxAudioReference
+        var x = x.copied()
+        x[0..<shape[0], (shape[1] - audioHeight)..<shape[1], 0..<shape[2], 0..<shape[3]] =
+          packed.reshaped(.NHWC(shape[0], audioHeight, shape[2], shape[3]))
+        return x
+      }
 
       let injectedControls = generateInjectedControls(
         graph: graph, batchSize: batchSize.0, startHeight: firstPassStartHeight,
@@ -4822,13 +4877,13 @@ extension LocalImageGenerator {
         var x =
           try? modelPreloader.consumeUNet(
             sampler.sample(
-              x_T,
+              withLTXAudio(x_T, audioHeight: firstPassAudioHeight),
               unets: modelPreloader.retrieveUNet(
                 sampler: sampler, scale: firstPassScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond), sample: nil,
               conditionImage: maskedImage ?? firstPassImageCond.0,
               referenceImages: firstPassImageCond.1,
-              referenceAudios: encodedAudioCond,
+              referenceAudios: encodedAudioCond + ltxReferenceAudios,
               mask: mask, negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: injectedControls, textGuidanceScale: textGuidanceScale,
@@ -4856,6 +4911,7 @@ extension LocalImageGenerator {
       }
       x = applyImageCond(
         x, modifier: modifier, version: modelVersion, imageCond: firstPassImageCond)
+      x = withLTXAudio(x, audioHeight: firstPassAudioHeight)
       if modelVersion == .longcatVideoAvatar1_5, videoContinuationFrames != nil {
         let shape = x.shape
         x = x[1..<shape[0], 0..<shape[1], 0..<shape[2], 0..<shape[3]].copied()
@@ -5318,13 +5374,13 @@ extension LocalImageGenerator {
         var x =
           try? modelPreloader.consumeUNet(
             secondPassSampler.sample(
-              xEnc,
+              withLTXAudio(xEnc, audioHeight: audioHeight),
               unets: modelPreloader.retrieveUNet(
                 sampler: secondPassSampler, scale: imageScale, tokenLengthUncond: tokenLengthUncond,
                 tokenLengthCond: tokenLengthCond),
               sample: nil, conditionImage: maskedImage ?? secondPassImageCond.0,
               referenceImages: secondPassImageCond.1,
-              referenceAudios: encodedAudioCond, mask: mask,
+              referenceAudios: encodedAudioCond + ltxReferenceAudios, mask: mask,
               negMask: nil, conditioning: c, tokenLengthUncond: tokenLengthUncond,
               tokenLengthCond: tokenLengthCond, extraProjection: extraProjection,
               injectedControls: secondPassInjectedControls,
@@ -5357,6 +5413,7 @@ extension LocalImageGenerator {
       }
       x = applyImageCond(
         x, modifier: modifier, version: modelVersion, imageCond: secondPassImageCond)
+      x = withLTXAudio(x, audioHeight: audioHeight)
       if modelVersion == .v2 || modelVersion == .sdxlBase || modelVersion == .sdxlRefiner
         || modelVersion == .ssd1b || modelVersion == .wurstchenStageC || modelVersion == .sd3
         || modelVersion == .pixart
