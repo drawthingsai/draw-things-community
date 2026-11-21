@@ -927,17 +927,6 @@ public struct ModelZoo: DownloadZoo {
       copyright: "© 2026 OpenMOSS", huggingFaceLink: "OpenMOSS-Team/MOSS-Image-Base"
     ),
     Specification(
-      name: "MiniMax H3 Image (4-bit S)", file: "minimax_h3_image_i4x.ckpt",
-      prefix: "", version: .minimaxH3Image, defaultScale: 64,
-      textEncoder: "qwen_3_vl_32b_50_i8x.ckpt",
-      autoencoder: "minimax_h3_image_vae_f16.ckpt",
-      modifier: .kontext,
-      objective: .u(conditionScale: 1_000), hiresFixScale: 96,
-      note:
-        "[MiniMax H3 Image](https://huggingface.co/MiniMaxAI/MiniMax-H3-Image) generates and edits images. The canvas and moodboard images are its reference images, which the prompt refers to as <Picture 1>, <Picture 2> and so on. The model is distilled to 6 steps without guidance: use 6 steps, Text Guidance 1, Shift 3 and DDIM Trailing. It works best at 4 to 16 megapixels with a detailed English prompt.",
-      copyright: "© 2026 MiniMax", huggingFaceLink: "MiniMaxAI/MiniMax-H3-Image"
-    ),
-    Specification(
       name: "LTX-2.3 22B [distilled] 1.1", file: "ltx_2.3_22b_distilled_1.1_q8p.ckpt", prefix: "",
       version: .ltx2_3, defaultScale: 12, textEncoder: "gemma_3_12b_it_qat_q8p.ckpt",
       autoencoder: "ltx_2.3_audio_video_vae_f16.ckpt", modifier: .kontext,
