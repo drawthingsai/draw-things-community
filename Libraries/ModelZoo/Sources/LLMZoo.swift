@@ -102,6 +102,20 @@ public struct LLMZoo: DownloadZoo {
         "A new general-purpose model from Thinking Machines Lab, made in the U.S. Excels at understanding images, and strong at search, tool use and knowledge work."
     ),
     Specification(
+      name: "Inkling 2 Mini (3-bit S)", file: "inkling_2_mini_i3x.ckpt",
+      draftFile: "inkling_2_mini_dspark_i5x.ckpt",
+      version: .inkling_2_mini, huggingFaceLink: "thinkingmachines/Inkling-2-Mini",
+      note:
+        "A compact general-purpose model from Thinking Machines Lab, made in the U.S. Understands images, and runs on devices with 16 GB of memory or less."
+    ),
+    Specification(
+      name: "Inkling 2 Mini (4-bit S)", file: "inkling_2_mini_i4x.ckpt",
+      draftFile: "inkling_2_mini_dspark_i5x.ckpt",
+      version: .inkling_2_mini, huggingFaceLink: "thinkingmachines/Inkling-2-Mini",
+      note:
+        "A compact general-purpose model from Thinking Machines Lab, made in the U.S. Understands images, and is fast at tool use and everyday work."
+    ),
+    Specification(
       name: "GLM 5.3 Flash (2-bit S)", file: "glm_5.3_flash_i2x.ckpt",
       version: .glm_5_3_flash, deprecated: true),
     Specification(
@@ -230,7 +244,7 @@ public struct LLMZoo: DownloadZoo {
       return "DeepSeek AI"
     case .glm_5_3_flash:
       return "Z.ai"
-    case .inkling_2_small:
+    case .inkling_2_small, .inkling_2_mini:
       return "Thinking Machines Lab"
     }
   }

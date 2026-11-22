@@ -1,8 +1,8 @@
 import Foundation
 import NNC
 
-/// Inkling 2 Small's DSpark drafter (`mtp.safetensors`): five dense layers fill a block [anchor,
-/// mask x 7] in one pass, attending both ways to themselves and to keys and values made from the
+/// Inkling 2 Small's DSpark drafter (`mtp.safetensors`), and Inkling 2 Mini's: dense layers fill a
+/// block [anchor, mask x 7] in one pass, attending both ways to themselves and to keys and values made from the
 /// target's features of the committed positions, which each layer mixes from the target layers with
 /// its own softmax weights and normalizes (DFlare). Layers in `localLayers` see the windowRows
 /// positions before the block, the others every committed position. A recurrent (`rnn_hidden`)
@@ -22,10 +22,31 @@ public struct Inkling2SmallDSparkConfiguration: Codable, Sendable {
   public var targetLayers = [5, 11, 17, 23, 29, 35, 41, 48]
   public var ropeTheta = 1_000_000.0
   public var normEpsilon: Float = 1e-6
+  /// The text model's width, which the drafter's residual stream shares, and its vocabulary and
+  /// logit soft cap: the drafter embeds with the text model's `embed_tokens` and picks with its
+  /// `lm_head`.
+  public var hiddenSize = 4_608
+  public var vocabularySize = 201_024
+  public var unpaddedVocabularySize = 200_058
+  public var logitSoftcap: Float = 30
 
   public init() {}
 
   public static let inkling2Small = Inkling2SmallDSparkConfiguration()
+
+  /// Inkling 2 Mini's drafter. Its target layers count layer applications: the looped layers'
+  /// three passes are applications 6 through 41, and 48, the application count, is the final
+  /// normalized output.
+  public static let inkling2Mini: Inkling2SmallDSparkConfiguration = {
+    var draft = Inkling2SmallDSparkConfiguration()
+    draft.layers = 3
+    draft.queryHeads = 24
+    draft.intermediateSize = 9_216
+    draft.localLayers = [0, 2]
+    draft.targetLayers = [5, 23, 41, 48]
+    draft.hiddenSize = 2_304
+    return draft
+  }()
 
   public var proposals: Int { blockSize - 1 }
   public var keyValueWidth: Int { keyValueHeads * headDim }
@@ -75,11 +96,10 @@ private func Inkling2SmallDSparkMix(
 /// Outputs: the first value of each cache [1, 2 * layers] (FP32), read only so the writes land.
 public func Inkling2SmallDSparkContext<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, rows: Int, globalRow: Int, localRow: Int,
-  configuration: Inkling2SmallConfiguration = .inkling2Small,
   draft: Inkling2SmallDSparkConfiguration = .inkling2Small
 ) -> Model {
   precondition(rows > 0 && globalRow >= 0 && localRow >= 0)
-  let hidden = configuration.hiddenSize
+  let hidden = draft.hiddenSize
   let width = draft.keyValueWidth
   let targetLayers = draft.targetLayers.count
   let targetFeatures = Input()
@@ -152,18 +172,17 @@ public func Inkling2SmallDSparkContext<FloatType: TensorNumeric>(
 /// of its best token.
 public func Inkling2SmallDSpark<FloatType: TensorNumeric>(
   _ dataType: FloatType.Type, mainRows: Int, globalRow: Int, localOffset: Int,
-  temperature: Float, configuration: Inkling2SmallConfiguration = .inkling2Small,
-  draft: Inkling2SmallDSparkConfiguration = .inkling2Small
+  temperature: Float, draft: Inkling2SmallDSparkConfiguration = .inkling2Small
 ) -> Model {
   precondition(mainRows > 0 && globalRow >= 0 && localOffset >= 0)
-  let hidden = configuration.hiddenSize
+  let hidden = draft.hiddenSize
   let dim = draft.headDim
   let heads = draft.queryHeads
   let kvHeads = draft.keyValueHeads
   let width = draft.keyValueWidth
   let block = draft.blockSize
   let epsilon = draft.normEpsilon
-  let vocabulary = configuration.unpaddedVocabularySize
+  let vocabulary = draft.unpaddedVocabularySize
   let localView = draft.windowRows + mainRows + block
   let globalView = globalRow + mainRows + block
   let targetLayers = draft.targetLayers.count
@@ -196,7 +215,7 @@ public func Inkling2SmallDSpark<FloatType: TensorNumeric>(
   var out = Concat(axis: 0)(
     [
       Embedding(
-        dataType, vocabularySize: configuration.vocabularySize, embeddingSize: hidden,
+        dataType, vocabularySize: draft.vocabularySize, embeddingSize: hidden,
         name: "embed_tokens")(
           anchor
         ).to(.Float32)
@@ -290,7 +309,7 @@ public func Inkling2SmallDSpark<FloatType: TensorNumeric>(
     Dense(count: 3 * rank, noBias: true, name: "dspark.markov_head.rnn_hidden")(predicted)
     + Dense(count: 3 * rank, name: "dspark.markov_head.rnn_feature")(feature)
   let markovEmbedding = Embedding(
-    dataType, vocabularySize: configuration.vocabularySize, embeddingSize: rank,
+    dataType, vocabularySize: draft.vocabularySize, embeddingSize: rank,
     name: "dspark.markov_head.markov_w1")
   let previousProjection = Dense(
     count: 3 * rank, noBias: true, name: "dspark.markov_head.rnn_previous")
@@ -323,7 +342,7 @@ public func Inkling2SmallDSpark<FloatType: TensorNumeric>(
     }
     let biased =
       (baseLogits.reshaped([1, vocabulary], offset: [position, 0], strides: [vocabulary, 1])
-      + fold(latent.to(dataType.dataType)).to(.Float32)).tanh(softCap: configuration.logitSoftcap)
+      + fold(latent.to(dataType.dataType)).to(.Float32)).tanh(softCap: draft.logitSoftcap)
     biasedRows.append(biased)
     let centered = biased - biased.reduced(.max, axis: [1])
     // 1 / sum is the top token's probability, the draft's confidence.
