@@ -322,12 +322,14 @@ public func Inkling2SmallDSpark<FloatType: TensorNumeric>(
   var biasedRows = [Model.IO]()
   var partitions = [Model.IO]()
   for position in 0..<proposals {
-    var raw =
-      context.reshaped([1, 3 * rank], offset: [position, 0], strides: [3 * rank, 1])
-      + previousProjection(markovEmbedding(previous).to(.Float32))
+    // The projections come first: a sum is computed in place over its first operand read for the
+    // last time, and over the row of `context` it would be a view, whose slices below compiling the
+    // graph asserts against.
+    var raw = previousProjection(markovEmbedding(previous).to(.Float32))
     if let state {
       raw = raw + stateProjection(state)
     }
+    raw = raw + context.reshaped([1, 3 * rank], offset: [position, 0], strides: [3 * rank, 1])
     let latent = raw.reshaped([1, rank], offset: [0, 2 * rank], strides: [3 * rank, 1]).tanh()
     // gate * state + (1 - gate) * candidate, from a zero state at the first position. The last
     // position's state is never read, and an unread node breaks the build.
