@@ -84,6 +84,17 @@ extension UNetWrapper {
     activationProjScaling: [Int: Int], activationFfnProjUpScaling: [Int: Int],
     activationFfnScaling: [Int: Int], weightsCache: WeightsCache
   ) -> Bool {
+    // Inside SequentialBatchScope every forward call gets the rows of one image (see
+    // callAsFunction), so the model is compiled for that shape. The timestep embedding and the
+    // conditions are already sized for one image.
+    let xT = SequentialBatchScope.current.map {
+      SequentialBatchScope.rows(xT, image: 0, batchSize: $0.batchSize)
+    } ?? xT
+    let extraProjection = extraProjection.map { projection in
+      SequentialBatchScope.current.map {
+        SequentialBatchScope.rows(projection, image: 0, batchSize: $0.batchSize)
+      } ?? projection
+    }
     #if !os(Linux)
 
       if unetFromCoreML.compileModel(
@@ -134,6 +145,66 @@ extension UNetWrapper {
   }
 
   public func callAsFunction(
+    timestep t: (now: Float, next: Float), audioShiftRatio: Float,
+    inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
+    _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
+    injectedControlsAndAdapters: (
+      _ xT: DynamicGraph.Tensor<FloatType>, _ restInputs: [DynamicGraph.AnyTensor],
+      _ inputStartYPad: Int, _ inputEndYPad: Int,
+      _ inputStartXPad: Int, _ inputEndXPad: Int, _ existingControlNets: inout [Model?]
+    ) -> (
+      injectedControls: [DynamicGraph.Tensor<FloatType>],
+      injectedT2IAdapters: [DynamicGraph.Tensor<FloatType>],
+      injectedAttentionKVs: [NNC.DynamicGraph.Tensor<FloatType>]
+    ),
+    injectedIPAdapters: [DynamicGraph.Tensor<FloatType>], referenceImageCount: Int,
+    referenceAudioCount: Int, step: Int,
+    tokenLengthUncond: Int, tokenLengthCond: Int, isCfgEnabled: Bool,
+    tiledDiffusion: TiledConfiguration, controlNets: inout [Model?]
+  ) -> DynamicGraph.Tensor<FloatType> {
+    // Sequential batch: split the forward of a [groups * N, ...] input (row j * N + i is image i
+    // of CFG branch j) into N forwards of one image each and reassemble the output, so only the
+    // activations of one image are alive at a time. Timestep embedding and conditions are already
+    // sized for one image (SequentialBatchScope in timeEmbed / UNetExtractConditions / encode).
+    if let scope = SequentialBatchScope.current, scope.batchSize > 1,
+      xT.shape[0] >= scope.batchSize, xT.shape[0] % scope.batchSize == 0
+    {
+      let b = scope.batchSize
+      var output: DynamicGraph.Tensor<FloatType>? = nil
+      for i in 0..<b {
+        // Cancelled: the rest is never used, the sampler stops after this step.
+        if i > 0, scope.isCancelled { break }
+        let part = forward(
+          timestep: t, audioShiftRatio: audioShiftRatio,
+          inputs: SequentialBatchScope.rows(xT, image: i, batchSize: b), timestep, c,
+          extraProjection: extraProjection.map {
+            SequentialBatchScope.rows($0, image: i, batchSize: b)
+          },
+          injectedControlsAndAdapters: injectedControlsAndAdapters,
+          injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+          referenceAudioCount: referenceAudioCount, step: step,
+          tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+          isCfgEnabled: isCfgEnabled, tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
+        scope.forwardCalls += 1
+        let shape = part.shape
+        if output == nil {
+          output = xT.graph.variable(
+            .GPU(0), .NHWC(shape[0] * b, shape[1], shape[2], shape[3]), of: FloatType.self)
+        }
+        SequentialBatchScope.scatter(part, into: &output!, image: i, batchSize: b)
+      }
+      return output!
+    }
+    return forward(
+      timestep: t, audioShiftRatio: audioShiftRatio, inputs: xT, timestep, c,
+      extraProjection: extraProjection, injectedControlsAndAdapters: injectedControlsAndAdapters,
+      injectedIPAdapters: injectedIPAdapters, referenceImageCount: referenceImageCount,
+      referenceAudioCount: referenceAudioCount, step: step,
+      tokenLengthUncond: tokenLengthUncond, tokenLengthCond: tokenLengthCond,
+      isCfgEnabled: isCfgEnabled, tiledDiffusion: tiledDiffusion, controlNets: &controlNets)
+  }
+
+  private func forward(
     timestep t: (now: Float, next: Float), audioShiftRatio: Float,
     inputs xT: DynamicGraph.Tensor<FloatType>, _ timestep: DynamicGraph.Tensor<FloatType>?,
     _ c: [DynamicGraph.AnyTensor], extraProjection: DynamicGraph.Tensor<FloatType>?,
