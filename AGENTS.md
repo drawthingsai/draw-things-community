@@ -103,6 +103,18 @@
   - a fallback constraint uses `.low` priority, never `.high`, which ties with the default 750 compression resistance.
 - A refactor keeps behavior identical: the same visuals, timings and state transitions. If the new structure cannot reproduce something, ask before dropping it.
 
+## Auto Layout Conflicts (Simulator)
+- After a UIKit layout change, check for "Unable to simultaneously satisfy constraints" in every state and transition the change touches: rotation, iPhone Duo fold and unfold, sheets, first run. Xcode's console shows them; a headless simulator run does not, so read the log.
+- Launch with `-_UIConstraintBasedLayoutLogUnsatisfiable YES` after the bundle ID (`xcrun simctl launch <udid> <bundle id> -_UIConstraintBasedLayoutLogUnsatisfiable YES`). Without it the iOS 27 simulator can log none.
+- The conflicts go to the unified log, not to `simctl launch --console-pty` output. Read them with a relative window:
+  - `xcrun simctl spawn <udid> log show --last <seconds>s --style compact --predicate 'process == "<App>" AND eventMessage CONTAINS "simultaneously satisfy"'`
+  - do not pass host time to `--start`: the simulator's `log` reads it in another time zone, the window lands in the future, and the count is always 0.
+- Before trusting a zero count, confirm the same query reports a known conflict.
+- Conflicts on `TUIPredictionViewCell` (width == 0) come from the system keyboard's prediction bar on iOS 27. They are not the app's.
+- Causes found so far:
+  - a required size constraint created at a placeholder constant (such as width 0) and corrected on the next layout pass. The engine logs as soon as the constraint is activated, so create it at a value the view can lay out in.
+  - a window resize that arrives a moment before the trait change handler that rearranges the layout (an iPhone Duo fold shrinks the window first). A constraint that only holds when there is room, such as the chat's offset beside settings, uses `.required` minus one, so it yields for that moment instead of breaking the content's required constraints. This is not a fallback constraint; fallbacks still use `.low`.
+
 ## Localization Keys
 - A short phrase uses itself in snake_case as its key (`"run_on_this_device" = "Run on this device"`). Long text gets a named key ending in `_detail`, and an item ending in an ellipsis uses `_dot`.
   - do not prefix keys with a feature name (`value_sheet_title`).
