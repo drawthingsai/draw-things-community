@@ -4348,6 +4348,7 @@ extension DrawThingsCLI {
       imageInput.image = imageInput.image.map(context.path)
       imageInput.initImage = imageInput.initImage.map(context.path)
       imageInput.inputImage = imageInput.inputImage.map(context.path)
+      imageInput.video = imageInput.video.map(context.path)
       imageInput.audio = imageInput.audio.map(context.path)
       output.output = output.output.map(context.path)
 
