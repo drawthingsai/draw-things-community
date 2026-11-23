@@ -27,12 +27,16 @@ import Utils
 
   import UIKit
 
-  private func isPhone() -> Bool {
-    return UIDevice.current.userInterfaceIdiom == .phone
+  extension DeviceCapability {
+    public static func isPhone() -> Bool {
+      return UIDevice.current.userInterfaceIdiom == .phone
+    }
   }
 #else
-  private func isPhone() -> Bool {
-    return false
+  extension DeviceCapability {
+    public static func isPhone() -> Bool {
+      return false
+    }
   }
 #endif
 
