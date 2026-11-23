@@ -40,23 +40,24 @@ public func Inkling2SmallVisionGrid(
 /// Pads RGB `[1, height, width, 3]` values in `[0, 1]` to whole tokens with the reference's fill
 /// (-1 on the 0-255 scale), normalizes them to `[-1, 1]` and emits block-major patches
 /// `[4 * tokens + 1, patchVectorSize]` in (pixel row, pixel column, channel) order; the last row is
-/// the class token's zero patch.
-public func Inkling2SmallVisionPreprocess(
-  _ input: Tensor<Float>, configuration: Inkling2SmallVisionConfiguration = .inkling2Small
-) -> (patches: Tensor<Float>, grid: (height: Int, width: Int)) {
+/// the class token's zero patch. The patches keep the input's float type, which stays generic:
+/// this library also builds for Intel Macs, where Float16 is unavailable.
+public func Inkling2SmallVisionPreprocess<FloatType: TensorNumeric & BinaryFloatingPoint>(
+  _ input: Tensor<FloatType>, configuration: Inkling2SmallVisionConfiguration = .inkling2Small
+) -> (patches: Tensor<FloatType>, grid: (height: Int, width: Int)) {
   let shape = input.shape
   precondition(shape.count == 4 && shape[0] == 1 && shape[3] == 3)
   let (height, width) = (shape[1], shape[2])
   let grid = Inkling2SmallVisionGrid(height: height, width: width, configuration: configuration)
   let patch = configuration.patchSize
   let merge = configuration.spatialMergeSize
-  let fill: Float = (-1 / 255 - 0.5) / 0.5
-  var patches = Tensor<Float>(
+  let fill: FloatType = (-1 / 255 - 0.5) / 0.5
+  var patches = Tensor<FloatType>(
     .CPU, .WC(grid.height * grid.width * merge * merge + 1, configuration.patchVectorSize))
   patches.withUnsafeMutableBytes { patchBuffer in
-    let destination = patchBuffer.baseAddress!.assumingMemoryBound(to: Float.self)
+    let destination = patchBuffer.baseAddress!.assumingMemoryBound(to: FloatType.self)
     input.withUnsafeBytes { inputBuffer in
-      let pixels = inputBuffer.baseAddress!.assumingMemoryBound(to: Float.self)
+      let pixels = inputBuffer.baseAddress!.assumingMemoryBound(to: FloatType.self)
       var index = 0
       for tokenY in 0..<grid.height {
         for tokenX in 0..<grid.width {
