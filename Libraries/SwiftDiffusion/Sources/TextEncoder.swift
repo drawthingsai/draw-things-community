@@ -98,9 +98,23 @@ extension TextEncoder {
           resizedHeight = Int(ceil(sourceHeight * scale / 32)) * 32
           resizedWidth = Int(ceil(sourceWidth * scale / 32)) * 32
         }
-        let (patches, grid) = Qwen3_5VisionPreprocess(
+        var (patches, grid) = Qwen3_5VisionPreprocess(
           image[0..<1, 0..<height, 0..<width, 0..<3].copied().rawValue.toCPU(),
           configuration: configuration, size: (resizedHeight, resizedWidth))
+        if image.shape[0] == 2 {
+          // Two frames of a reference clip: the second is the later half of every temporal patch,
+          // which a picture fills with itself.
+          let later = Qwen3_5VisionPreprocess(
+            image[1..<2, 0..<height, 0..<width, 0..<3].copied().rawValue.toCPU(),
+            configuration: configuration, size: (resizedHeight, resizedWidth)
+          ).patches
+          let patchArea = configuration.patchSize * configuration.patchSize
+          for channel in 0..<3 {
+            let offset = (channel * configuration.temporalPatchSize + 1) * patchArea
+            patches[0..<patches.shape[0], offset..<(offset + patchArea)] =
+              later[0..<patches.shape[0], offset..<(offset + patchArea)]
+          }
+        }
         imageGrids.append(grid)
         imagePatches.append(graph.variable(patches.toGPU(0)))
         let imageLength = grid.h * grid.w / 4

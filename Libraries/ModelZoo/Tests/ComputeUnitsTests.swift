@@ -407,6 +407,26 @@ final class ComputeUnitsTests: XCTestCase {
     }
   }
 
+  func testMiniMaxH3ReferenceClipCountsItsFrames() throws {
+    let modelName = "test-minimax-h3-reference-clip"
+    let specification = ModelZoo.Specification(
+      name: modelName, file: "test.ckpt", prefix: "test", version: .minimaxH3, modifier: .ref2va)
+    let cfg = configuration(modelName: modelName, width: 14, height: 8, numFrames: 56)
+    func estimate(imageFrames: Int, shuffleCount: Int) throws -> Int {
+      return try XCTUnwrap(
+        ComputeUnits.from(
+          cfg, hasImage: true, imageFrames: imageFrames, shuffleCount: shuffleCount,
+          overrideMapping: (model: [modelName: specification], lora: [:])))
+    }
+    // Fewer than 22 frames on the canvas are a picture: one reference.
+    XCTAssertEqual(
+      try estimate(imageFrames: 21, shuffleCount: 2), try estimate(imageFrames: 1, shuffleCount: 2))
+    // 56 frames are 17 latent frames, as long as a picture and 16 more on the Moodboard.
+    XCTAssertEqual(
+      try estimate(imageFrames: 56, shuffleCount: 2),
+      try estimate(imageFrames: 1, shuffleCount: 18))
+  }
+
   func testMiniMaxH3FrameAlignmentMatchesGeneration() throws {
     let modelName = "test-minimax-h3-frame-alignment"
     let overrideMapping = mapping(modelName: modelName, version: .minimaxH3)

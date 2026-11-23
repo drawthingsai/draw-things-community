@@ -1613,7 +1613,7 @@ extension LocalImageGenerator {
     graph: DynamicGraph, modelVersion: ModelVersion, textEncoderVersion: TextEncoderVersion?,
     modifier: SamplerModifier, paddedTextEncodingLength: Int, text: String, negativeText: String,
     negativePromptForImagePrior: Bool, potentials: [String], T5TextEncoder: Bool, clipL: String?,
-    openClipG: String?, t5: String?, images: Int, audios: Int = 0
+    openClipG: String?, t5: String?, images: Int, audios: Int = 0, videoFrames: Int = 0
   ) -> (
     //  return:
     //  tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
@@ -1743,10 +1743,20 @@ extension LocalImageGenerator {
         ? (1...images).map { "<Picture \($0)>: <|vision_start|><|image_pad|><|vision_end|>" }
           .joined() : ""
       let audioPrefix = (0..<audios).map { "<Audio \($0 + 1)>: " }.joined()
+      // A reference clip is shown two frames at a time, each pair under the time it is from:
+      // `videoFrames` frames, half a second apart. An odd frame at the end stands alone.
+      let videoPrefix =
+        videoFrames > 0
+        ? "<Video 1>: "
+          + stride(from: 0, to: videoFrames, by: 2).map {
+            String(format: "<%.1f seconds>", Double($0) / 2 + ($0 + 1 < videoFrames ? 0.25 : 0))
+              + "<|vision_start|><|image_pad|><|vision_end|>"
+          }.joined() : ""
       return tokenize(
         graph: graph, tokenizer: tokenizerQwen3MinimaxH3,
-        text: imagePrefix + audioPrefix + (text.isEmpty ? " " : text),
-        negativeText: imagePrefix + audioPrefix + (negativeText.isEmpty ? " " : negativeText),
+        text: videoPrefix + imagePrefix + audioPrefix + (text.isEmpty ? " " : text),
+        negativeText: videoPrefix + imagePrefix + audioPrefix
+          + (negativeText.isEmpty ? " " : negativeText),
         paddingToken: nil, addSpecialTokens: false, conditionalLength: 5120, modifier: .qwen3,
         potentials: potentials, startLength: 0, endLength: 0, maxLength: 0, paddingLength: 0)
     case .minimaxH3Image:
@@ -3707,7 +3717,10 @@ extension LocalImageGenerator {
       }
       let encoded = images.map { image in
         let shape = image.shape
-        var image = image[0..<1, 0..<shape[1], 0..<shape[2], 0..<3].copied()
+        // A reference clip keeps as many frames as the autoencoder takes whole, 17 n + 5; anything
+        // shorter is a picture.
+        let frames = modifier == .ref2va && shape[0] >= 22 ? (shape[0] - 5) / 17 * 17 + 5 : 1
+        var image = image[0..<frames, 0..<shape[1], 0..<shape[2], 0..<3].copied()
         let height: Int
         let width: Int
         if modifier == .fl2va {
@@ -3726,7 +3739,8 @@ extension LocalImageGenerator {
         }
         let encoded = firstStage.encode(image, encoder: nil, cancellation: { _ in }).0
         return firstStage.scale(
-          encoded[0..<1, 0..<encoded.shape[1], 0..<encoded.shape[2], 0..<24].copied())
+          encoded[0..<encoded.shape[0], 0..<encoded.shape[1], 0..<encoded.shape[2], 0..<24]
+            .copied())
       }
       return (nil, encoded)
     case .double, .editing, .inpainting, .none:
@@ -4517,6 +4531,12 @@ extension LocalImageGenerator {
         for: ModelZoo.filePathForModelDownloaded(diffusionMappingFile), graph: graph)
     }
     let potentials = lora.map { ($0.file as NSString).lastPathComponent }
+    // A clip on the canvas is a reference video for MiniMax H3 Ref2VA, when it is long enough for
+    // the autoencoder to take (17 n + 5 frames). The text encoder sees two of its frames a second.
+    let referenceClipStride = MiniMaxH3Configuration.framesPerSecond / 2
+    let referenceClipSamples =
+      modifier == .ref2va && (image?.shape[0] ?? 1) >= 22
+      ? ((image?.shape[0] ?? 1) - 1) / referenceClipStride + 1 : 0
     let (
       tokensTensors, positionTensors, embedMask, injectedEmbeddings, unconditionalAttentionWeights,
       attentionWeights, hasNonOneWeights, tokenLengthUncond, tokenLengthCond, lengthsOfUncond,
@@ -4530,7 +4550,8 @@ extension LocalImageGenerator {
       clipL: configuration.separateClipL ? (configuration.clipLText ?? "") : nil,
       openClipG: configuration.separateOpenClipG ? (configuration.openClipGText ?? "") : nil,
       t5: configuration.separateT5 ? (configuration.t5Text ?? "") : nil,
-      images: (image == nil ? 0 : 1) + shuffles.count, audios: audio == nil ? 0 : 1
+      images: (image == nil || referenceClipSamples > 0 ? 0 : 1) + shuffles.count,
+      audios: audio == nil ? 0 : 1, videoFrames: referenceClipSamples
     )
     return graph.withNoGrad {
       let injectedTextEmbeddings = generateInjectedTextEmbeddings(
@@ -4560,7 +4581,25 @@ extension LocalImageGenerator {
       if modifier == .kontext || modifier == .kontextKv || modifier == .qwenimageEditPlus
         || modifier == .qwenimageEdit2511 || modifier == .fl2va || modifier == .ref2va
       {
-        textImages = (image.map { [$0] } ?? []) + shuffles.map { graph.variable($0.0) }
+        var canvasImages = image.map { [$0] } ?? []
+        if referenceClipSamples > 0, let image = image {
+          // The reference clip's sampled frames, in pairs as the prompt labels them.
+          let shape = image.shape
+          canvasImages = stride(from: 0, to: referenceClipSamples, by: 2).map { sample in
+            let first = image[
+              (sample * referenceClipStride)..<(sample * referenceClipStride + 1), 0..<shape[1],
+              0..<shape[2], 0..<3
+            ].copied()
+            guard sample + 1 < referenceClipSamples else { return first }
+            return Functional.concat(
+              axis: 0, first,
+              image[
+                ((sample + 1) * referenceClipStride)..<((sample + 1) * referenceClipStride + 1),
+                0..<shape[1], 0..<shape[2], 0..<3
+              ].copied())
+          }
+        }
+        textImages = canvasImages + shuffles.map { graph.variable($0.0) }
       } else {
         textImages = image.map { [$0] } ?? []
       }
