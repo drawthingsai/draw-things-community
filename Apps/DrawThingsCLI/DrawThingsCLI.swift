@@ -23,6 +23,11 @@ import ScriptDataModels
 import Tokenizer
 import Trainer
 
+#if canImport(C_ccv)
+  import C_ccv
+#elseif canImport(C_swiftpm_ccv)
+  import C_swiftpm_ccv
+#endif
 #if canImport(Darwin)
   import Darwin
 #elseif canImport(Glibc)
@@ -1045,7 +1050,7 @@ private enum ConfigurationLoader {
   }
 }
 
-private enum RecommendedSettingsResolver {
+enum RecommendedSettingsResolver {
   static func resolve(
     modelSpecification: ModelZoo.Specification, overrideDictionary: [String: Any]?,
     modelsDirectory: URL, allowNetwork: Bool
@@ -1129,6 +1134,17 @@ private enum RecommendedSettingsResolver {
       builder.guidanceScale = 1
       builder.sampler = .dDIMTrailing
       builder.shift = 3
+    } else if modelSpecification.version == .seedvr2_3b
+      || modelSpecification.version == .seedvr2_7b
+    {
+      // One-step restoration model: upstream samples once from pure noise without guidance, then
+      // takes the low frequencies from the input with a wavelet color fix. DDIM Trailing takes that
+      // single step at t = 1000.
+      builder.steps = 1
+      builder.guidanceScale = 1
+      builder.strength = 1
+      builder.sampler = .dDIMTrailing
+      builder.colorCalibration = .lab
     }
     return builder.build()
   }
@@ -4506,7 +4522,10 @@ extension DrawThingsCLI {
       let canvasImage = try canvasIndex.map {
         try loadInputImageTensor(
           path: imagePaths[$0], imageWidth: canvasWidth, imageHeight: canvasHeight,
-          preserveAlpha: modelSpecification.version == .qwenImage2_1)
+          preserveAlpha: modelSpecification.version == .qwenImage2_1,
+          // SeedVR2 was trained on bicubic upsampled inputs.
+          resamplesWithBicubic: modelSpecification.version == .seedvr2_3b
+            || modelSpecification.version == .seedvr2_7b)
       }
       let moodboardImages = try moodboardIndices.map { index in
         var imageWidth = canvasWidth
@@ -5342,7 +5361,8 @@ private func validateVideoOutputOptions(outputPath: String, videoFormat: VideoEx
 }
 
 private func loadInputImageTensor(
-  path: String, imageWidth: Int, imageHeight: Int, preserveAlpha: Bool = false
+  path: String, imageWidth: Int, imageHeight: Int, preserveAlpha: Bool = false,
+  resamplesWithBicubic: Bool = false
 ) throws
   -> Tensor<FloatType>
 {
@@ -5350,12 +5370,58 @@ private func loadInputImageTensor(
   guard FileManager.default.fileExists(atPath: filePath) else {
     throw DrawThingsCLIError.invalidInputImagePath(filePath)
   }
+  let url = URL(fileURLWithPath: filePath)
+  // To resample with bicubic, load the image at its own size, so the loader doesn't resize it.
+  let size = resamplesWithBicubic ? inspectTrainingImage(url: url) : nil
   guard
     let (tensor, _, _, _) = loadTrainingTensor(
-      url: URL(fileURLWithPath: filePath), imageWidth: imageWidth, imageHeight: imageHeight,
+      url: url, imageWidth: size?.width ?? imageWidth, imageHeight: size?.height ?? imageHeight,
       preserveAlpha: preserveAlpha)
   else {
     throw DrawThingsCLIError.invalidInputImage(filePath)
+  }
+  guard size != nil else { return tensor }
+  return bicubicResampled(tensor, width: imageWidth, height: imageHeight)
+}
+
+/// Scales the image to cover `width` x `height` with bicubic (Keys, a = -0.75, as OpenCV and
+/// torchvision upsample) and center-crops it, the way `loadTrainingTensor` fits an image.
+private func bicubicResampled(_ image: Tensor<FloatType>, width: Int, height: Int)
+  -> Tensor<FloatType>
+{
+  let sourceHeight = image.shape[1]
+  let sourceWidth = image.shape[2]
+  let channels = image.shape[3]
+  guard sourceWidth != width || sourceHeight != height else { return image }
+  let scaledWidth: Int
+  let scaledHeight: Int
+  if sourceWidth * height > sourceHeight * width {
+    scaledHeight = height
+    scaledWidth = Int((Double(sourceWidth) * Double(height) / Double(sourceHeight)).rounded())
+  } else {
+    scaledWidth = width
+    scaledHeight = Int((Double(sourceHeight) * Double(width) / Double(sourceWidth)).rounded())
+  }
+  let source = Tensor<Float>(from: image).reshaped(.HWC(sourceHeight, sourceWidth, channels))
+  var output: UnsafeMutablePointer<ccv_dense_matrix_t>? = ccv_dense_matrix_new(
+    Int32(scaledHeight), Int32(scaledWidth), Int32(CCV_32F) | Int32(channels), nil, 0)
+  ccv_resample(
+    UnsafeMutableRawPointer(source.cTensor).assumingMemoryBound(to: ccv_dense_matrix_t.self),
+    &output, 0, Double(scaledHeight) / Double(sourceHeight),
+    Double(scaledWidth) / Double(sourceWidth), Int32(CCV_INTER_AREA | CCV_INTER_CUBIC))
+  guard let output else { return image }
+  defer { ccv_matrix_free(output) }
+  let offsetX = (scaledWidth - width) / 2
+  let offsetY = (scaledHeight - height) / 2
+  let step = Int(output.pointee.step) / MemoryLayout<Float>.size
+  var tensor = Tensor<FloatType>(.CPU, .NHWC(1, height, width, channels))
+  for y in 0..<height {
+    let row = output.pointee.data.f32.advanced(by: (y + offsetY) * step + offsetX * channels)
+    for x in 0..<width {
+      for channel in 0..<channels {
+        tensor[0, y, x, channel] = FloatType(min(max(row[x * channels + channel], -1), 1))
+      }
+    }
   }
   return tensor
 }

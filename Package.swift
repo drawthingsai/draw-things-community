@@ -524,6 +524,7 @@ let package = Package(
         "Tokenizer",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "PNG", package: "swift-png"),
+        .product(name: "ccv", package: "ccv"),
       ],
       path: "Apps/DrawThingsCLI",
       exclude: ["Executable", "IOSSystem", "Tests"],

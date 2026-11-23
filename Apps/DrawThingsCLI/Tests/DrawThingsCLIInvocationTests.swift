@@ -1,6 +1,7 @@
 import ArgumentParser
 import CLICloudAuth
 import CoreGraphics
+import DataModels
 import Diffusion
 import Downloader
 import Foundation
@@ -470,6 +471,27 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
       XCTAssertEqual(ModelZoo.isExternalUrlsPreferred, originalPreference)
       XCTAssertEqual(DrawThingsCLI.run(arguments: ["--help"], context: context), 0)
       XCTAssertFalse(context.offline)
+    }
+  }
+
+  func testSeedVR2DefaultsToOneStepWithoutGuidanceAndWithColorFix() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      UUID().uuidString, isDirectory: true)
+    for file in ["seedvr2_3b_q8p.ckpt", "seedvr2_7b_i8x.ckpt", "flux_2_klein_4b_q6p.ckpt"] {
+      let specification = try XCTUnwrap(ModelZoo.specificationForModel(file))
+      let (configuration, _) = RecommendedSettingsResolver.resolve(
+        modelSpecification: specification, overrideDictionary: nil, modelsDirectory: directory,
+        allowNetwork: false)
+      if file.hasPrefix("seedvr2") {
+        XCTAssertEqual(configuration.steps, 1, file)
+        XCTAssertEqual(configuration.guidanceScale, 1, file)
+        XCTAssertEqual(configuration.strength, 1, file)
+        XCTAssertEqual(configuration.sampler, .dDIMTrailing, file)
+        XCTAssertEqual(configuration.colorCalibration, .lab, file)
+      } else {
+        XCTAssertNotEqual(configuration.steps, 1, file)
+        XCTAssertEqual(configuration.colorCalibration, .disabled, file)
+      }
     }
   }
 
