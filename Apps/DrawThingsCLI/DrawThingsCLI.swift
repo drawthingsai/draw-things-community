@@ -4572,10 +4572,7 @@ extension DrawThingsCLI {
         ?? canvasIndex.map {
           try loadInputImageTensor(
             path: imagePaths[$0], imageWidth: canvasWidth, imageHeight: canvasHeight,
-            preserveAlpha: modelSpecification.version == .qwenImage2_1,
-            // SeedVR2 was trained on bicubic upsampled inputs.
-            resamplesWithBicubic: modelSpecification.version == .seedvr2_3b
-              || modelSpecification.version == .seedvr2_7b)
+            preserveAlpha: modelSpecification.version == .qwenImage2_1)
         }
       let moodboardImages = try moodboardIndices.map { index in
         var imageWidth = canvasWidth
@@ -5410,9 +5407,8 @@ private func validateVideoOutputOptions(outputPath: String, videoFormat: VideoEx
   }
 }
 
-private func loadInputImageTensor(
-  path: String, imageWidth: Int, imageHeight: Int, preserveAlpha: Bool = false,
-  resamplesWithBicubic: Bool = false
+func loadInputImageTensor(
+  path: String, imageWidth: Int, imageHeight: Int, preserveAlpha: Bool = false
 ) throws
   -> Tensor<FloatType>
 {
@@ -5421,28 +5417,31 @@ private func loadInputImageTensor(
     throw DrawThingsCLIError.invalidInputImagePath(filePath)
   }
   let url = URL(fileURLWithPath: filePath)
-  // To resample with bicubic, load the image at its own size, so the loader doesn't resize it.
-  let size = resamplesWithBicubic ? inspectTrainingImage(url: url) : nil
+  // Load the image at its own size, so the loader, which picks the nearest pixel from a PNG,
+  // doesn't resize it.
   guard
+    let size = inspectTrainingImage(url: url),
     let (tensor, _, _, _) = loadTrainingTensor(
-      url: url, imageWidth: size?.width ?? imageWidth, imageHeight: size?.height ?? imageHeight,
-      preserveAlpha: preserveAlpha)
+      url: url, imageWidth: size.width, imageHeight: size.height, preserveAlpha: preserveAlpha)
   else {
     throw DrawThingsCLIError.invalidInputImage(filePath)
   }
-  guard size != nil else { return tensor }
-  return bicubicResampled(tensor, width: imageWidth, height: imageHeight)
+  return resizeImage(tensor, width: imageWidth, height: imageHeight)
 }
 
-/// Scales the image to cover `width` x `height` with bicubic (Keys, a = -0.75, as OpenCV and
-/// torchvision upsample) and center-crops it, the way `loadTrainingTensor` fits an image.
-private func bicubicResampled(_ image: Tensor<FloatType>, width: Int, height: Int)
+/// Scales the image to cover `width` x `height` and center-crops it, the way `loadTrainingTensor`
+/// fits an image, with ccv: bicubic (a = -0.75, as OpenCV) when it enlarges, area averaging when
+/// it shrinks. Colors next to an alpha channel are resized premultiplied, so what a transparent
+/// pixel stores doesn't bleed into the edges.
+private func resizeImage(_ image: Tensor<FloatType>, width: Int, height: Int)
   -> Tensor<FloatType>
 {
   let sourceHeight = image.shape[1]
   let sourceWidth = image.shape[2]
   let channels = image.shape[3]
   guard sourceWidth != width || sourceHeight != height else { return image }
+  // Four channels are alpha, then the colors, as `loadTrainingTensor` stores them.
+  let hasAlpha = channels == 4
   let scaledWidth: Int
   let scaledHeight: Int
   if sourceWidth * height > sourceHeight * width {
@@ -5452,7 +5451,19 @@ private func bicubicResampled(_ image: Tensor<FloatType>, width: Int, height: In
     scaledWidth = width
     scaledHeight = Int((Double(sourceHeight) * Double(width) / Double(sourceWidth)).rounded())
   }
-  let source = Tensor<Float>(from: image).reshaped(.HWC(sourceHeight, sourceWidth, channels))
+  var source = Tensor<Float>(from: image).reshaped(.HWC(sourceHeight, sourceWidth, channels))
+  if hasAlpha {
+    source = source.copied()
+    source.withUnsafeMutableBytes {
+      guard let f32 = $0.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+      for i in stride(from: 0, to: sourceHeight * sourceWidth * 4, by: 4) {
+        let alpha = f32[i]
+        for channel in 1..<4 {
+          f32[i + channel] = (f32[i + channel] + 1) * 0.5 * alpha
+        }
+      }
+    }
+  }
   var output: UnsafeMutablePointer<ccv_dense_matrix_t>? = ccv_dense_matrix_new(
     Int32(scaledHeight), Int32(scaledWidth), Int32(CCV_32F) | Int32(channels), nil, 0)
   ccv_resample(
@@ -5468,8 +5479,18 @@ private func bicubicResampled(_ image: Tensor<FloatType>, width: Int, height: In
   for y in 0..<height {
     let row = output.pointee.data.f32.advanced(by: (y + offsetY) * step + offsetX * channels)
     for x in 0..<width {
-      for channel in 0..<channels {
-        tensor[0, y, x, channel] = FloatType(min(max(row[x * channels + channel], -1), 1))
+      if hasAlpha {
+        let alpha = min(max(row[x * 4], 0), 1)
+        tensor[0, y, x, 0] = FloatType(alpha)
+        for channel in 1..<4 {
+          // A transparent pixel is black, as the loader leaves it when it draws the image.
+          let color = alpha > 0 ? min(max(row[x * 4 + channel] / alpha, 0), 1) : 0
+          tensor[0, y, x, channel] = FloatType(color * 2 - 1)
+        }
+      } else {
+        for channel in 0..<channels {
+          tensor[0, y, x, channel] = FloatType(min(max(row[x * channels + channel], -1), 1))
+        }
       }
     }
   }

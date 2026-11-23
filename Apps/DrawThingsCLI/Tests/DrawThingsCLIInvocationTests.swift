@@ -495,6 +495,85 @@ final class DrawThingsCLIInvocationTests: XCTestCase {
     }
   }
 
+  private func inputImageTensor(
+    width: Int, height: Int, imageWidth: Int, imageHeight: Int, preserveAlpha: Bool = false,
+    pixel: (Int, Int) -> [UInt8]
+  ) throws -> Tensor<FloatType> {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("image.png")
+    var pixels = [UInt8]()
+    for y in 0..<height {
+      for x in 0..<width {
+        pixels += pixel(x, y)
+      }
+    }
+    let image = try XCTUnwrap(
+      CGImage(
+        width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+        bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+        provider: try XCTUnwrap(CGDataProvider(data: Data(pixels) as CFData)), decode: nil,
+        shouldInterpolate: false, intent: .defaultIntent))
+    let destination = try XCTUnwrap(
+      CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    XCTAssertTrue(CGImageDestinationFinalize(destination))
+    return try loadInputImageTensor(
+      path: url.path, imageWidth: imageWidth, imageHeight: imageHeight,
+      preserveAlpha: preserveAlpha)
+  }
+
+  func testInputImageShrinksWithAreaAveragingAndEnlargesWithBicubic() throws {
+    // A one pixel checkerboard averages to gray. The nearest pixel would keep black or white.
+    let shrunk = try inputImageTensor(width: 8, height: 8, imageWidth: 4, imageHeight: 4) {
+      ($0 + $1) % 2 == 0 ? [255, 255, 255, 255] : [0, 0, 0, 255]
+    }
+    XCTAssertEqual(shrunk.shape, [1, 4, 4, 3])
+    for y in 0..<4 {
+      for x in 0..<4 {
+        XCTAssertEqual(Float(shrunk[0, y, x, 0]), 0, accuracy: 0.01, "\(x), \(y)")
+      }
+    }
+    // A black to white step, four times larger. Three eighths of a pixel past the last black one,
+    // bicubic (a = -0.75) weighs black 0.6396 and white 0.3604. Bilinear would give -0.25.
+    let enlarged = try inputImageTensor(width: 4, height: 4, imageWidth: 16, imageHeight: 16) {
+      x, _ in x < 2 ? [0, 0, 0, 255] : [255, 255, 255, 255]
+    }
+    XCTAssertEqual(enlarged.shape, [1, 16, 16, 3])
+    XCTAssertEqual(Float(enlarged[0, 8, 7, 0]), -0.2793, accuracy: 0.005)
+    XCTAssertEqual(Float(enlarged[0, 8, 8, 0]), 0.2793, accuracy: 0.005)
+    XCTAssertEqual(Float(enlarged[0, 8, 4, 0]), -1, accuracy: 0.005)
+    XCTAssertEqual(Float(enlarged[0, 8, 11, 0]), 1, accuracy: 0.005)
+  }
+
+  func testInputImageWithAlphaResizesPremultiplied() throws {
+    // Opaque red beside transparent green. The green a transparent pixel stores must not reach
+    // the edge, and the red must not darken toward it.
+    let image = try inputImageTensor(
+      width: 4, height: 4, imageWidth: 8, imageHeight: 8, preserveAlpha: true
+    ) { x, _ in x < 2 ? [255, 0, 0, 255] : [0, 255, 0, 0] }
+    XCTAssertEqual(image.shape, [1, 8, 8, 4])
+    var partiallyTransparent = 0
+    for y in 0..<8 {
+      for x in 0..<8 {
+        let alpha = Float(image[0, y, x, 0])
+        XCTAssertGreaterThanOrEqual(alpha, 0, "\(x), \(y)")
+        XCTAssertLessThanOrEqual(alpha, 1, "\(x), \(y)")
+        if alpha > 0 && alpha < 1 { partiallyTransparent += 1 }
+        guard alpha > 0.01 else { continue }
+        XCTAssertEqual(Float(image[0, y, x, 1]), 1, accuracy: 0.01, "\(x), \(y)")
+        XCTAssertEqual(Float(image[0, y, x, 2]), -1, accuracy: 0.01, "\(x), \(y)")
+        XCTAssertEqual(Float(image[0, y, x, 3]), -1, accuracy: 0.01, "\(x), \(y)")
+      }
+    }
+    XCTAssertGreaterThan(partiallyTransparent, 0)
+    XCTAssertEqual(Float(image[0, 4, 0, 0]), 1, accuracy: 0.005)
+    XCTAssertEqual(Float(image[0, 4, 7, 0]), 0, accuracy: 0.005)
+  }
+
   func testCommunityModelListRefreshesCachedCatalog() throws {
     let stale = ModelZoo.Specification(
       name: "Stale community model", file: "test-stale-community.ckpt", prefix: "", version: .v1)
