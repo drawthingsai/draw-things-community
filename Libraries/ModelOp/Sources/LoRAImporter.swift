@@ -1548,6 +1548,20 @@ public enum LoRAImporter {
       if isMiniMaxH3 {
         return forceVersionOr(.minimaxH3)
       }
+      // LTX-2 / LTX-2.3: 48 transformer blocks whose self-attention takes 4,096-wide inputs.
+      // Video-only LoRAs, such as the official LTX-2.3 IC-LoRAs (Union Control, Motion Track,
+      // HDR), have no audio weights and would otherwise match the PixArt check below
+      // (transformer_blocks_27_attn2_to_).
+      let isLTX2 = stateDict.contains { key, descriptor in
+        descriptor.shape.last == 4096 && key.hasSuffix(".lora_down.weight")
+          && (key.contains("transformer_blocks_47_attn1_")
+            || key.contains("transformer_blocks.47.attn1."))
+      }
+      if isLTX2 {
+        // LTX-2 and LTX-2.3 share these weight names and widths, so a LoRA alone does not tell
+        // them apart: assume the current release.
+        return forceVersionOr(.ltx2_3)
+      }
       let isQwenImage2_1 = stateDict.contains { key, descriptor in
         descriptor.shape.last == 4096 && key.hasSuffix(".lora_down.weight")
           && (key.contains("transformer_blocks_31_attn_to_")
