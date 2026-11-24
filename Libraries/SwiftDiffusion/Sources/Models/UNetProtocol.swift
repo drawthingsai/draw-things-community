@@ -493,6 +493,10 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
   case .ltx2_3:
     let offset = conditions.count - 1545
     let tokenModulation = referenceImageCount > 0
+    // Audio-to-video: a reference audio is clean conditioning (sigma 0 in ltx-core). Every
+    // modulation computed from the audio timestep or the audio sigma then reads the appended
+    // zero-timestep row (the last one), while the video keeps the current step.
+    let freezesAudio = referenceAudioCount > 0
     let batchSize = isCfgEnabled ? batchSize / 2 : batchSize
     return conditions.enumerated().map {
       let outputIndex = $0.0 - 3 - offset
@@ -503,9 +507,24 @@ public func UNetExtractConditions<FloatType: TensorNumeric & BinaryFloatingPoint
       let modulationIndex =
         outputIndex >= 48 * 32
         ? outputIndex - 48 * 32 + 32 : (outputIndex % 32)
-      guard tokenModulation,
-        [0, 1, 2, 6, 7, 10, 11, 12, 16, 17, 18, 22, 23, 24, 32, 33].contains(modulationIndex)
-      else {
+      let isVideoTokenModulation =
+        tokenModulation
+        && [0, 1, 2, 6, 7, 10, 11, 12, 16, 17, 18, 22, 23, 24, 32, 33].contains(modulationIndex)
+      if freezesAudio && LTX2_3AudioTimestepModulationIndices.contains(modulationIndex) {
+        let zeroTimestepRow = DynamicGraph.Tensor<Float>($0.1)[
+          (shape[0] - 1)..<shape[0], 0..<shape[1], 0..<shape[2]
+        ].copied()
+        guard isVideoTokenModulation else {
+          return zeroTimestepRow
+        }
+        var modulation = graph.variable(
+          .GPU(0), .HWC(batchSize, shape[1], shape[2]), of: Float.self)
+        for i in 0..<batchSize {
+          modulation[i..<(i + 1), 0..<shape[1], 0..<shape[2]] = zeroTimestepRow
+        }
+        return modulation
+      }
+      guard isVideoTokenModulation else {
         return DynamicGraph.Tensor<Float>($0.1)[index..<(index + 1), 0..<shape[1], 0..<shape[2]]
           .copied()
       }
@@ -5534,10 +5553,13 @@ extension UNetFromNNC {
       guard isCfgEnabled else {
         var videoInput = firstInput[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
           .copied()
-        let audioInput = firstInput[
+        var audioInput = firstInput[
           0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
         ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
-        if restInputs.count > 1545 {
+        if referenceAudioCount > 0 {
+          audioInput = LTX2FrozenAudioInput(audioInput, reference: restInputs[referenceImageCount])
+        }
+        if referenceImageCount > 0 {
           let firstFrame = DynamicGraph.Tensor<FloatType>(restInputs[0])
           let firstFrameShape = firstFrame.shape
           videoInput[
@@ -5567,10 +5589,14 @@ extension UNetFromNNC {
       let xUncond = firstInput[0..<batchSize, 0..<shape[1], 0..<shape[2], 0..<shape[3]]
       var videoInputUncond = xUncond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
         .copied()
-      let audioInputUncond = xUncond[
+      var audioInputUncond = xUncond[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
-      if restInputs.count > 1545 {
+      if referenceAudioCount > 0 {
+        audioInputUncond = LTX2FrozenAudioInput(
+          audioInputUncond, reference: restInputs[referenceImageCount])
+      }
+      if referenceImageCount > 0 {
         let firstFrame = DynamicGraph.Tensor<FloatType>(restInputs[0])
         let firstFrameShape = firstFrame.shape
         videoInputUncond[
@@ -5613,10 +5639,14 @@ extension UNetFromNNC {
       let xCond = firstInput[batchSize..<(batchSize * 2), 0..<shape[1], 0..<shape[2], 0..<shape[3]]
       var videoInputCond = xCond[0..<batchSize, 0..<startHeight, 0..<startWidth, 0..<shape[3]]
         .copied()
-      let audioInputCond = xCond[
+      var audioInputCond = xCond[
         0..<batchSize, startHeight..<shape[1], 0..<startWidth, 0..<shape[3]
       ].copied().reshaped(.HWC(1, audioFrames, shape[3]))
-      if restInputs.count > 1545 {
+      if referenceAudioCount > 0 {
+        audioInputCond = LTX2FrozenAudioInput(
+          audioInputCond, reference: restInputs[referenceImageCount])
+      }
+      if referenceImageCount > 0 {
         let firstFrame = DynamicGraph.Tensor<FloatType>(restInputs[0])
         let firstFrameShape = firstFrame.shape
         videoInputCond[

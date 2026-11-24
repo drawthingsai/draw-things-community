@@ -585,8 +585,14 @@ struct GenerateImageInputOptions: ParsableArguments {
 
   @Option(
     name: .long,
-    help: "Audio file for LongCat driving audio or MiniMax H3 Ref2VA native audio references.")
+    help:
+      "Audio file for LongCat driving audio, MiniMax H3 Ref2VA native audio references, or LTX-2.3 audio-to-video (the clip follows this audio).")
   var audio: String?
+
+  @Option(
+    name: .customLong("audio-start-time"),
+    help: "LTX-2.3 audio-to-video: start of the audio segment, in seconds.")
+  var audioStartTime: Double = 0
 
   @Option(
     name: .customLong("audio-encoder-file"),
@@ -4524,7 +4530,14 @@ extension DrawThingsCLI {
 
       var files = requiredFiles(for: configuration)
       var fileMapping = [String: String]()
-      if imageInput.audio != nil {
+      let isLTXAudioToVideo = imageInput.audio != nil && modelSpecification.version == .ltx2_3
+      if isLTXAudioToVideo {
+        // LTX encodes the audio with its audio-video VAE, already in the required files.
+        guard canvasIndex != nil else {
+          throw ValidationError(
+            "LTX-2.3 audio-to-video needs a first-frame --image with the aspect ratio of the output.")
+        }
+      } else if imageInput.audio != nil {
         guard let defaultEncoder = ModelZoo.audioEncoderForModel(modelSpecification.file) else {
           throw ValidationError("--audio supports LongCat-Video-Avatar 1.5 and MiniMax H3 Ref2VA.")
         }
@@ -4632,7 +4645,23 @@ extension DrawThingsCLI {
 
       var audio: Tensor<Float>? = nil
       var fallbackAudio: Tensor<Float>? = nil
-      if let audioPath = imageInput.audio {
+      if let audioPath = imageInput.audio, isLTXAudioToVideo {
+        let fps = ModelZoo.framesPerSecondForModel(configuration.model ?? "")
+        let duration = Double(max(Int(configuration.numFrames), 1)) / fps
+        let audioInput = try AudioInput(
+          contentsOf: audioPath, sampleRate: LTX2AudioEncoding.sampleRate)
+        guard
+          let segment = LTX2AudioEncoding.segment(
+            audioInput.waveform, sampleRate: LTX2AudioEncoding.sampleRate,
+            startTime: imageInput.audioStartTime, duration: duration)
+        else {
+          throw ValidationError("--audio-start-time is past the end of \(audioPath).")
+        }
+        context.print(
+          "Loading audio: \(audioPath) (from \(imageInput.audioStartTime) s, \(String(format: "%.2f", duration)) s)"
+        )
+        audio = segment
+      } else if let audioPath = imageInput.audio {
         let fps = max(
           Int(ModelZoo.framesPerSecondForModel(configuration.model ?? "").rounded()), 1)
         let videoFrames = max(Int(configuration.numFrames), 1)
